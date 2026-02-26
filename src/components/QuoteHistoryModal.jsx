@@ -126,7 +126,7 @@ export default function QuoteHistoryModal({ open, onClose }) {
   const handleExportPdf = (quote) => {
     try {
       exportQuoteProposal(quote);
-      setState((prev) => ({ ...prev, feedback: `Opened print view for ${quote.quoteNumber}.` }));
+      setState((prev) => ({ ...prev, feedback: `Downloaded PDF for ${quote.quoteNumber}.` }));
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to export proposal PDF." }));
     }

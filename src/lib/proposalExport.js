@@ -1,13 +1,5 @@
+import { jsPDF } from "jspdf";
 import { currency } from "./quoteCalculator";
-
-function escapeHtml(value) {
-  return String(value || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function fmtDate(iso) {
   if (!iso) return "-";
@@ -16,90 +8,105 @@ function fmtDate(iso) {
   return dt.toLocaleDateString();
 }
 
-export function exportQuoteProposal(quote) {
-  if (typeof window === "undefined") return;
+function text(v) {
+  return String(v ?? "-");
+}
 
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=980,height=860");
-  if (!popup) {
-    throw new Error("Popup blocked. Allow popups to export proposal PDFs.");
+export function exportQuoteProposal(quote) {
+  if (!quote) {
+    throw new Error("Missing quote data for PDF export.");
   }
 
-  const html = `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(quote.quoteNumber || "Quote Proposal")}</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 28px; color: #1f2937; }
-      h1,h2,h3 { margin: 0; }
-      .top { display: flex; justify-content: space-between; gap: 1rem; }
-      .muted { color: #6b7280; font-size: 0.9rem; }
-      .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; margin-top: 14px; }
-      .grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
-      .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
-      .row:last-child { border-bottom: 0; }
-      .totals .row strong { font-size: 1.05rem; }
-      .footer { margin-top: 24px; font-size: 0.9rem; color: #374151; }
-      @media print { body { margin: 16px; } }
-    </style>
-  </head>
-  <body>
-    <div class="top">
-      <div>
-        <h1>Tony Catering Proposal</h1>
-        <p class="muted">Quote #${escapeHtml(quote.quoteNumber || "-")}</p>
-      </div>
-      <div style="text-align:right">
-        <p class="muted">Created: ${escapeHtml(fmtDate(quote.createdAtISO))}</p>
-        <p class="muted">Valid Through: ${escapeHtml(fmtDate(quote.expiresAtISO))}</p>
-      </div>
-    </div>
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const left = 48;
+  const right = pageWidth - 48;
+  const maxWidth = right - left;
+  const lineGap = 18;
+  let y = 52;
 
-    <div class="card grid">
-      <div><strong>Customer</strong><div>${escapeHtml(quote.customer?.name || "-")}</div></div>
-      <div><strong>Email</strong><div>${escapeHtml(quote.customer?.email || "-")}</div></div>
-      <div><strong>Event Date</strong><div>${escapeHtml(quote.event?.date || "-")}</div></div>
-      <div><strong>Venue</strong><div>${escapeHtml(quote.event?.venue || "-")}</div></div>
-      <div><strong>Guests</strong><div>${escapeHtml(quote.event?.guests || 0)}</div></div>
-      <div><strong>Service Style</strong><div>${escapeHtml(quote.event?.style || "-")}</div></div>
-    </div>
+  const ensureSpace = (needed = 24) => {
+    if (y + needed <= pageHeight - 48) return;
+    doc.addPage();
+    y = 52;
+  };
 
-    <div class="card">
-      <h3>Selections</h3>
-      <div class="row"><span>Package</span><span>${escapeHtml(quote.selection?.packageName || quote.selection?.packageId || "-")}</span></div>
-      <div class="row"><span>Add-ons</span><span>${escapeHtml((quote.selection?.addons || []).join(", ") || "-")}</span></div>
-      <div class="row"><span>Rentals</span><span>${escapeHtml((quote.selection?.rentals || []).join(", ") || "-")}</span></div>
-      <div class="row"><span>Payment Method</span><span>${escapeHtml(quote.selection?.payMethod || "-")}</span></div>
-      <div class="row"><span>Deposit Link</span><span>${escapeHtml(quote.payment?.depositLink || "-")}</span></div>
-    </div>
+  const title = (label) => {
+    ensureSpace(36);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.text(label, left, y);
+    y += 12;
+    doc.setDrawColor(193, 157, 92);
+    doc.line(left, y, right, y);
+    y += 16;
+  };
 
-    <div class="card totals">
-      <h3>Pricing</h3>
-      <div class="row"><span>Base</span><span>${escapeHtml(currency(quote.totals?.base || 0))}</span></div>
-      <div class="row"><span>Add-ons</span><span>${escapeHtml(currency(quote.totals?.addons || 0))}</span></div>
-      <div class="row"><span>Rentals</span><span>${escapeHtml(currency(quote.totals?.rentals || 0))}</span></div>
-      <div class="row"><span>Labor</span><span>${escapeHtml(currency(quote.totals?.labor || 0))}</span></div>
-      <div class="row"><span>Travel</span><span>${escapeHtml(currency(quote.totals?.travel || 0))}</span></div>
-      <div class="row"><span>Service Fee</span><span>${escapeHtml(currency(quote.totals?.serviceFee || 0))}</span></div>
-      <div class="row"><span>Tax</span><span>${escapeHtml(currency(quote.totals?.tax || 0))}</span></div>
-      <div class="row"><strong>Total</strong><strong>${escapeHtml(currency(quote.totals?.total || 0))}</strong></div>
-      <div class="row"><span>Deposit</span><span>${escapeHtml(currency(quote.totals?.deposit || 0))}</span></div>
-    </div>
+  const row = (label, value) => {
+    const safeValue = text(value);
+    const wrapped = doc.splitTextToSize(safeValue, maxWidth - 170);
+    ensureSpace(lineGap * Math.max(1, wrapped.length) + 4);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(`${label}:`, left, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(wrapped, left + 120, y);
+    y += lineGap * Math.max(1, wrapped.length);
+  };
 
-    <p class="footer">
-      Proposal generated from Tony Catering Quote Wizard.
-      Use browser Save as PDF in the print dialog.
-    </p>
-  </body>
-</html>
-`;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(22);
+  doc.text("Tony Catering Proposal", left, y);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Quote #${text(quote.quoteNumber)}`, left, y + 18);
+  doc.text(`Created: ${fmtDate(quote.createdAtISO)}`, right, y, { align: "right" });
+  doc.text(`Valid Through: ${fmtDate(quote.expiresAtISO)}`, right, y + 18, { align: "right" });
+  y += 40;
 
-  popup.document.open();
-  popup.document.write(html);
-  popup.document.close();
-  popup.focus();
-  setTimeout(() => {
-    popup.print();
-  }, 250);
+  title("Client and Event");
+  row("Customer", quote.customer?.name);
+  row("Email", quote.customer?.email);
+  row("Event Date", quote.event?.date);
+  row("Start Time", quote.event?.time);
+  row("Venue", quote.event?.venue);
+  row("Guests", quote.event?.guests);
+  row("Service Style", quote.event?.style);
+
+  title("Selections");
+  row("Package", quote.selection?.packageName || quote.selection?.packageId);
+  row("Add-ons", (quote.selection?.addons || []).join(", ") || "-");
+  row("Rentals", (quote.selection?.rentals || []).join(", ") || "-");
+  row("Travel (miles RT)", quote.selection?.milesRT);
+  row("Payment Method", quote.selection?.payMethod);
+  row("Deposit Link", quote.payment?.depositLink || "-");
+
+  title("Pricing");
+  row("Base", currency(quote.totals?.base || 0));
+  row("Add-ons", currency(quote.totals?.addons || 0));
+  row("Rentals", currency(quote.totals?.rentals || 0));
+  row("Labor", currency(quote.totals?.labor || 0));
+  row("Travel", currency(quote.totals?.travel || 0));
+  row("Service Fee", currency(quote.totals?.serviceFee || 0));
+  row("Tax", currency(quote.totals?.tax || 0));
+
+  ensureSpace(56);
+  doc.setDrawColor(193, 157, 92);
+  doc.line(left, y, right, y);
+  y += 16;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text(`Total: ${currency(quote.totals?.total || 0)}`, left, y);
+  y += 18;
+  doc.text(`Deposit Due: ${currency(quote.totals?.deposit || 0)}`, left, y);
+
+  y += 30;
+  ensureSpace(20);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text("Generated by Tony Catering Quote Wizard.", left, y);
+
+  const filename = `${text(quote.quoteNumber || "quote")}-proposal.pdf`.replace(/[^\w.-]/g, "_");
+  doc.save(filename);
 }
