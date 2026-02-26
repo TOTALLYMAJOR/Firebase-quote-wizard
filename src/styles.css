@@ -1,0 +1,422 @@
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: #0f172a;
+  background: linear-gradient(180deg, rgba(243, 234, 220, 0.65), rgba(255, 255, 255, 0.95)),
+    url("https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?auto=format&fit=crop&w=1800&q=80") center/cover fixed;
+}
+
+.app-shell {
+  min-height: 100vh;
+}
+
+.container {
+  width: min(1120px, calc(100% - 2rem));
+  margin: 0 auto;
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.9rem 0;
+}
+
+.brand {
+  font-weight: 700;
+}
+
+.hero {
+  color: #fff;
+  padding: 2.4rem 0 1.8rem;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4vw, 3rem);
+}
+
+.hero p {
+  margin-top: 0.5rem;
+  font-size: 1.05rem;
+}
+
+.wizard-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1rem;
+  padding-bottom: 2rem;
+}
+
+.panel {
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  padding: 1rem;
+}
+
+.stepper {
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  list-style: none;
+  gap: 0.75rem;
+}
+
+.stepper li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #64748b;
+}
+
+.stepper li span {
+  width: 1.7rem;
+  height: 1.7rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+}
+
+.stepper li.active {
+  color: #0f172a;
+}
+
+.stepper li.active span {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.grid.two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field > span,
+h4 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.05em;
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input,
+select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+}
+
+.checklist {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.checkrow {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.5rem 0.65rem;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.checkrow small {
+  color: #64748b;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 0.45rem;
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.summary-total {
+  margin-top: 1rem;
+}
+
+.summary-total strong {
+  font-size: 1.1rem;
+}
+
+.wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+  gap: 0.75rem;
+}
+
+.right-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.cta,
+.ghost {
+  border-radius: 999px;
+  padding: 0.58rem 0.95rem;
+  cursor: pointer;
+}
+
+.cta {
+  background: var(--brand);
+  color: #fff;
+  border: none;
+}
+
+.ghost {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+}
+
+.breakdown-panel h3 {
+  margin: 0;
+}
+
+.muted {
+  margin-top: 0.3rem;
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.kv-list {
+  margin: 0.8rem 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.kv-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  font-size: 0.93rem;
+}
+
+.kv-list dt {
+  color: #64748b;
+}
+
+.kv-list dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.source-note {
+  margin: 0.8rem 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.error-note {
+  margin: 0.4rem 0 0;
+  color: #b91c1c;
+  font-size: 0.85rem;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  padding: 1rem;
+}
+
+.modal-card {
+  width: min(1080px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  padding: 1rem;
+}
+
+.history-card {
+  width: min(1180px, 100%);
+}
+
+.modal-head,
+.modal-foot,
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.admin-section {
+  margin-top: 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.admin-section h3 {
+  margin: 0;
+}
+
+.admin-section-body {
+  display: grid;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+}
+
+.admin-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 1fr 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-grid-settings {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-grid-settings label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.83rem;
+  color: #475569;
+}
+
+.modal-foot {
+  margin-top: 0.9rem;
+}
+
+.history-table-wrap {
+  margin-top: 0.75rem;
+  overflow: auto;
+}
+
+.history-controls {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 0.5rem;
+}
+
+.deposit-link-field {
+  margin-top: 0.8rem;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.compact {
+  padding: 0.32rem 0.62rem;
+  font-size: 0.82rem;
+}
+
+.dashboard-card {
+  width: min(1200px, 100%);
+}
+
+.dashboard-grid {
+  margin-top: 0.7rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.metric-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.65rem 0.75rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.metric-card span {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.metric-card strong {
+  font-size: 1.1rem;
+}
+
+.status-strip {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  color: #475569;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 920px) {
+  .wizard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .grid.two-col,
+  .admin-grid-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .history-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .stepper em {
+    display: none;
+  }
+}
