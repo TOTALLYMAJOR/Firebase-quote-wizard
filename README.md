@@ -10,7 +10,7 @@ This scaffold ports the design language from `index-quote-wizard.html` into a cl
 
 ## Firebase Setup
 
-Create `.env` in this folder and add:
+Copy `.env.example` to `.env` in this folder and set:
 
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
@@ -20,6 +20,35 @@ Create `.env` in this folder and add:
 - `VITE_FIREBASE_APP_ID`
 
 If env vars are missing, app falls back to local default catalog data.
+
+## Deploy
+
+### Vercel
+
+1. Push this repo to GitHub.
+2. Import the repo in Vercel (`Add New Project`).
+3. Framework preset: `Vite` (auto-detected).
+4. Add the `VITE_FIREBASE_*` environment variables in Vercel project settings.
+5. Deploy.
+
+Build settings (default):
+
+- Build command: `npm run build`
+- Output directory: `dist`
+
+### Firebase Hosting
+
+1. Install Firebase CLI: `npm i -g firebase-tools`
+2. Login: `firebase login`
+3. Initialize hosting in this project:
+   - `firebase init hosting`
+   - Select your Firebase project.
+   - Public directory: `dist`
+   - Configure as single-page app: `Yes`
+   - Set up automatic builds/deploys with GitHub: optional
+4. Build and deploy:
+   - `npm run build`
+   - `firebase deploy --only hosting`
 
 ## Firestore Collections
 
