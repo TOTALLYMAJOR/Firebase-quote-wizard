@@ -9,7 +9,6 @@ import { useCatalogData } from "./hooks/useCatalogData";
 import { calculateQuote } from "./lib/quoteCalculator";
 import { submitQuote } from "./lib/quoteStore";
 
-const BRAND = "#b67a3d";
 const STEP_LABELS = ["Event", "Menu & Services", "Review"];
 
 export default function App() {
@@ -73,11 +72,27 @@ export default function App() {
   };
 
   return (
-    <div className="app-shell" style={{ "--brand": BRAND }}>
-      <header>
+    <div className="app-shell">
+      <header className="site-header">
         <div className="container nav">
-          <div className="brand">Tony Catering Quote Wizard</div>
-          <div className="right-actions">
+          <div className="brand-lockup">
+            <img className="brand-logo" src="/brand/logo.png" alt="Tasteful Touch logo" />
+            <div className="brand-copy">
+              <div className="brand">Tasteful Touch Catering</div>
+              <p>Chef Toni and Grill Master Irvin</p>
+            </div>
+          </div>
+          <div className="brand-crew">
+            <figure className="crew-chip">
+              <img src="/brand/chef-toni.png" alt="Chef Toni" />
+              <figcaption>Chef Toni</figcaption>
+            </figure>
+            <figure className="crew-chip">
+              <img src="/brand/grillmaster-irvin.png" alt="Grill Master Irvin" />
+              <figcaption>Grill Master Irvin</figcaption>
+            </figure>
+          </div>
+          <div className="right-actions header-actions">
             <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
             <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>
@@ -87,8 +102,8 @@ export default function App() {
       </header>
 
       <section className="hero container">
-        <h1>Elevated cuisine. Effortless planning.</h1>
-        <p>Transparent catering pricing for events up to 400 guests.</p>
+        <h1>Signature flavor. Streamlined quotes.</h1>
+        <p>Luxury-style pricing flow for weddings, corporate events, and celebrations up to 400 guests.</p>
       </section>
 
       <main className="container wizard-grid" ref={wizardRef}>
