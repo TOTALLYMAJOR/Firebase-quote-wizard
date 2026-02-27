@@ -120,6 +120,27 @@ function lifecyclePatch(status, nowISO) {
   };
 }
 
+function resolveMenuItemDetails(menuItemIds, settings) {
+  const selected = new Set(Array.isArray(menuItemIds) ? menuItemIds : []);
+  if (!selected.size) return [];
+
+  const sections = Array.isArray(settings?.menuSections) ? settings.menuSections : [];
+  const details = [];
+  sections.forEach((section) => {
+    (section.items || []).forEach((item) => {
+      if (selected.has(item.id)) {
+        details.push({
+          id: item.id,
+          name: item.name,
+          type: item.type || "per_event",
+          price: Number(item.price || 0)
+        });
+      }
+    });
+  });
+  return details;
+}
+
 export function getAllowedStatusTransitions(status) {
   const normalized = normalizeStatus(status);
   return STATUS_FLOW[normalized] || STATUS_FLOW.draft;
@@ -130,6 +151,9 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
   const quoteNumber = buildQuoteNumber();
   const validityDays = Math.max(1, Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS));
   const expiresAtISO = addDaysISO(nowISO, validityDays);
+  const menuItems = Array.isArray(form.menuItems) ? form.menuItems : [];
+  const menuItemDetails = resolveMenuItemDetails(menuItems, settings);
+  const menuItemNames = menuItemDetails.map((item) => item.name);
   const payload = {
     quoteNumber,
     customer: {
@@ -149,6 +173,9 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       packageName: totals.selectedPkg?.name || "",
       addons: form.addons,
       rentals: form.rentals,
+      menuItems,
+      menuItemNames,
+      menuItemDetails,
       milesRT: Number(form.milesRT || 0),
       payMethod: form.payMethod,
       eventTemplateId: form.eventTemplateId || "custom",
@@ -164,6 +191,7 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       base: totals.base,
       addons: totals.addons,
       rentals: totals.rentals,
+      menu: totals.menu,
       labor: totals.labor,
       travel: totals.travel,
       serviceFee: totals.serviceFee,

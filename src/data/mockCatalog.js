@@ -15,6 +15,162 @@ export const DEFAULT_RENTALS = [
   { id: "chafers", name: "Chafers", price: 12, qtyPerGuests: 40 }
 ];
 
+export const DEFAULT_MENU_SECTIONS = [
+  {
+    id: "appetizers",
+    name: "Appetizers",
+    items: [
+      "Cocktail Meatballs",
+      "Assorted Sliders",
+      "Finger Sandwiches",
+      "Fresh Fruit Kabobs",
+      "Assorted Meat Kabobs",
+      "Shrimp Kabobs",
+      "Assorted Meat Croissants",
+      "Veggie Croissants",
+      "Veggie Sliders",
+      "Heavenly Eggs"
+    ]
+  },
+  {
+    id: "meats",
+    name: "Meats",
+    items: [
+      "Roasted Chicken",
+      "Beef/Pork Ribs",
+      "Roast Beef",
+      "Blackened/Grill Fish",
+      "Blackened/Grill Shrimp",
+      "Teriyaki Glazed Chicken",
+      "Smoked Brisket",
+      "Pulled Pork/Chicken",
+      "Baked Ham",
+      "Smothered Chicken",
+      "Smothered Pork Chops",
+      "Grilled Steak",
+      "Roasted Lamb Chops",
+      "Roasted/Fried Turkey",
+      "Smothered Turkey Wings",
+      "Smothered Beef Tips",
+      "Meatloaf"
+    ]
+  },
+  {
+    id: "salads",
+    name: "Salads",
+    items: [
+      "Classic Caesar",
+      "Chicken Caesar",
+      "Garden Salad",
+      "Strawberry Fields",
+      "Classic Greek",
+      "Potato Salad",
+      "Chicken Salad",
+      "Egg Salad",
+      "Coleslaw"
+    ]
+  },
+  {
+    id: "pastas",
+    name: "Pastas",
+    items: [
+      "Creole Chicken Pasta",
+      "Seafood Pasta",
+      "Million Dollar Spaghetti",
+      "Veggie Alfredo Pasta",
+      "Chicken Alfredo Pasta",
+      "Shrimp Alfredo Pasta",
+      "Beef Alfredo Pasta",
+      "Baked Spaghetti",
+      "Mac & Cheese"
+    ]
+  },
+  {
+    id: "specialty_bars",
+    name: "Specialty Bars",
+    items: [
+      "Taco Bar",
+      "Soup Bar",
+      "Pasta Bar",
+      "Potato Bar",
+      "Salad Bar"
+    ]
+  },
+  {
+    id: "soups",
+    name: "Soups",
+    items: [
+      "Veggie Beef",
+      "Veggie Chicken",
+      "Chicken Noodle",
+      "Seafood Gumbo",
+      "Chicken & Sausage Gumbo",
+      "Creamy Potato",
+      "Creamy Tomato",
+      "Cyakaemen",
+      "Red Beans",
+      "Pinto Beans",
+      "White Beans"
+    ]
+  },
+  {
+    id: "sides",
+    name: "Sides",
+    items: [
+      "Jambalaya",
+      "Mashed Potatoes",
+      "Dirty Rice",
+      "Creamy Rice Pilaf",
+      "Collards",
+      "Cabbage",
+      "Green Beans",
+      "Glazed Carrots",
+      "Roasted Brussel Sprouts",
+      "Corn",
+      "Creole Corn",
+      "Veggie Medley",
+      "Creamed Spinach",
+      "Etouffee",
+      "Baked Beans"
+    ]
+  },
+  {
+    id: "desserts",
+    name: "Desserts",
+    items: [
+      "Bread Pudding",
+      "Banana Pudding",
+      "Assorted Cobblers",
+      "Assorted Cakes",
+      "Assorted Brownies",
+      "Assorted Pies"
+    ]
+  },
+  {
+    id: "beverages",
+    name: "Beverages",
+    items: [
+      "Fruit Punch",
+      "Assorted Lemonade",
+      "Assorted Teas",
+      "Coffee",
+      "Assorted Juices",
+      "Still/Sparkling Water"
+    ]
+  },
+  {
+    id: "breads",
+    name: "Breads",
+    items: [
+      "Cornbread Muffins",
+      "Hawaiian Rolls",
+      "Yeast Rolls",
+      "French Bread",
+      "Garlic Bread or Knots"
+    ]
+  }
+];
+
 export const DEFAULT_SERVICE_FEE_TIERS = [
   { id: "tier-small", minGuests: 0, maxGuests: 99, pct: 0.2 },
   { id: "tier-mid", minGuests: 100, maxGuests: 249, pct: 0.18 },
@@ -127,6 +283,7 @@ export const DEFAULT_SETTINGS = {
   taxRate: 0.1,
   taxRegions: DEFAULT_TAX_REGIONS,
   defaultTaxRegion: "local",
+  menuSections: DEFAULT_MENU_SECTIONS,
   depositPct: 0.5,
   quoteValidityDays: 30,
   serverRate: 22,
@@ -189,6 +346,7 @@ function normalizeTemplate(item, idx) {
     pkg: String(item.pkg || "classic"),
     addons: Array.isArray(item.addons) ? item.addons.map((id) => String(id)) : [],
     rentals: Array.isArray(item.rentals) ? item.rentals.map((id) => String(id)) : [],
+    menuItems: Array.isArray(item.menuItems) ? item.menuItems.map((id) => String(id)) : [],
     milesRT: toNumber(item.milesRT, 0, 0),
     payMethod: item.payMethod === "ach" ? "ach" : "card",
     taxRegion: String(item.taxRegion || ""),
@@ -199,6 +357,42 @@ function normalizeTemplate(item, idx) {
 function normalizeEventTemplates(input) {
   const source = Array.isArray(input) && input.length ? input : DEFAULT_EVENT_TEMPLATES;
   return source.map((item, idx) => normalizeTemplate(item, idx));
+}
+
+function normalizeMenuSections(input) {
+  const source = Array.isArray(input) && input.length ? input : DEFAULT_MENU_SECTIONS;
+  return source.map((section, idx) => {
+    const sectionId = normalizeId(section.id, `menu-${idx + 1}`);
+    const rawItems = Array.isArray(section.items) ? section.items : [];
+    const seen = new Set();
+    const items = rawItems
+      .map((item, itemIdx) => {
+        if (typeof item === "string") {
+          const name = item.trim();
+          const id = normalizeId(name, `${sectionId}-item-${itemIdx + 1}`);
+          return { id, name, price: 0, type: "per_event" };
+        }
+        const name = String(item?.name || "").trim();
+        const id = normalizeId(item?.id, `${sectionId}-item-${itemIdx + 1}`);
+        return {
+          id,
+          name,
+          price: toNumber(item?.price, 0, 0),
+          type: item?.type === "per_person" ? "per_person" : "per_event"
+        };
+      })
+      .filter((item) => {
+        if (!item.name || !item.id || seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+
+    return {
+      id: sectionId,
+      name: String(section.name || `Menu ${idx + 1}`),
+      items
+    };
+  });
 }
 
 function normalizeSeasonalProfiles(input) {
@@ -233,6 +427,7 @@ export function normalizeCatalog(raw) {
   const serviceFeeTiers = normalizeServiceFeeTiers(rawSettings.serviceFeeTiers);
   const taxRegions = normalizeTaxRegions(rawSettings.taxRegions);
   const eventTemplates = normalizeEventTemplates(rawSettings.eventTemplates);
+  const menuSections = normalizeMenuSections(rawSettings.menuSections);
   const seasonalProfiles = normalizeSeasonalProfiles(rawSettings.seasonalProfiles);
   const defaultTaxRegion = taxRegions.some((region) => region.id === rawSettings.defaultTaxRegion)
     ? rawSettings.defaultTaxRegion
@@ -282,6 +477,7 @@ export function normalizeCatalog(raw) {
       taxRate: toNumber(rawSettings.taxRate, fallbackTaxRate ?? DEFAULT_SETTINGS.taxRate, 0, 1),
       taxRegions,
       defaultTaxRegion,
+      menuSections,
       depositPct: toNumber(rawSettings.depositPct, DEFAULT_SETTINGS.depositPct, 0, 1),
       quoteValidityDays: toNumber(rawSettings.quoteValidityDays, DEFAULT_SETTINGS.quoteValidityDays, 1),
       serverRate: toNumber(rawSettings.serverRate, DEFAULT_SETTINGS.serverRate, 0),

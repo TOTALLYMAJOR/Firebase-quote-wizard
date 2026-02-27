@@ -35,6 +35,7 @@ export default function App() {
     pkg: "classic",
     addons: [],
     rentals: [],
+    menuItems: [],
     eventTemplateId: "custom",
     taxRegion: "",
     seasonProfileId: "auto",
@@ -92,6 +93,9 @@ export default function App() {
 
     const addonIds = new Set(catalog.addons.map((item) => item.id));
     const rentalIds = new Set(catalog.rentals.map((item) => item.id));
+    const menuItemIds = new Set(
+      (catalog.settings?.menuSections || []).flatMap((section) => (section.items || []).map((item) => item.id))
+    );
 
     setForm((prev) => ({
       ...prev,
@@ -101,6 +105,7 @@ export default function App() {
       pkg: template.pkg || prev.pkg,
       addons: (template.addons || []).filter((id) => addonIds.has(id)),
       rentals: (template.rentals || []).filter((id) => rentalIds.has(id)),
+      menuItems: (template.menuItems || []).filter((id) => menuItemIds.has(id)),
       milesRT: Number(template.milesRT || prev.milesRT || 0),
       payMethod: template.payMethod || prev.payMethod,
       taxRegion: template.taxRegion || prev.taxRegion || catalog.settings.defaultTaxRegion || "",

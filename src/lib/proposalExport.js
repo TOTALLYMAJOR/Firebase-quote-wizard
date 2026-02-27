@@ -104,6 +104,7 @@ export function exportQuoteProposal(quote) {
 
   section("Selections");
   row("Package", quote.selection?.packageName || quote.selection?.packageId);
+  row("Menu Selections", (quote.selection?.menuItemNames || quote.selection?.menuItems || []).join(", ") || "-");
   row("Add-ons", (quote.selection?.addons || []).join(", ") || "-");
   row("Rentals", (quote.selection?.rentals || []).join(", ") || "-");
   row("Travel (miles RT)", quote.selection?.milesRT);
@@ -116,6 +117,7 @@ export function exportQuoteProposal(quote) {
   row("Base", currency(quote.totals?.base || 0));
   row("Add-ons", currency(quote.totals?.addons || 0));
   row("Rentals", currency(quote.totals?.rentals || 0));
+  row("Menu Selections", currency(quote.totals?.menu || 0));
   row("Labor", currency(quote.totals?.labor || 0));
   row("Travel", currency(quote.totals?.travel || 0));
   row(

@@ -104,6 +104,10 @@ export function calculateQuote(form, catalog, settings) {
   const longDistanceRate = Number(settings?.longDistancePerMileRate || standardTravelRate);
   const baseMiles = Math.min(milesRT, thresholdMiles);
   const longDistanceMiles = Math.max(0, milesRT - thresholdMiles);
+  const selectedMenuIds = new Set(Array.isArray(form.menuItems) ? form.menuItems : []);
+  const menuCatalog = Array.isArray(settings?.menuSections)
+    ? settings.menuSections.flatMap((section) => section.items || [])
+    : [];
 
   if (guests <= 0) {
     return {
@@ -112,6 +116,7 @@ export function calculateQuote(form, catalog, settings) {
       base: 0,
       addons: 0,
       rentals: 0,
+      menu: 0,
       servers: 0,
       chefs: 0,
       labor: 0,
@@ -148,6 +153,16 @@ export function calculateQuote(form, catalog, settings) {
       0
     );
 
+  const menu = menuCatalog
+    .filter((item) => selectedMenuIds.has(item.id))
+    .reduce((sum, item) => {
+      const price = Number(item.price || 0);
+      if (item.type === "per_person") {
+        return sum + price * guests * addonMultiplier;
+      }
+      return sum + price * addonMultiplier;
+    }, 0);
+
   const styleRules = STAFF_RULES[form.style] || STAFF_RULES.Buffet;
   const servers =
     styleRules.serverRatio === Number.POSITIVE_INFINITY
@@ -158,9 +173,9 @@ export function calculateQuote(form, catalog, settings) {
 
   const labor = settings.serverRate * servers * hours + settings.chefRate * chefs * hours;
   const travel = baseMiles * standardTravelRate + longDistanceMiles * longDistanceRate;
-  const preFee = base + addons + rentals + labor + travel;
+  const preFee = base + addons + rentals + menu + labor + travel;
   const serviceFee = preFee * serviceFeePctApplied;
-  const tax = (base + addons + rentals + serviceFee) * taxRateApplied;
+  const tax = (base + addons + rentals + menu + serviceFee) * taxRateApplied;
 
   const total = preFee + serviceFee + tax;
   const deposit = total * settings.depositPct;
@@ -172,6 +187,7 @@ export function calculateQuote(form, catalog, settings) {
     base,
     addons,
     rentals,
+    menu,
     servers,
     chefs,
     labor,

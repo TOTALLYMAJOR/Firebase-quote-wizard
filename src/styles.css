@@ -415,6 +415,51 @@ textarea:focus {
   margin-bottom: 0.52rem;
 }
 
+.menu-library {
+  grid-column: 1 / -1;
+  margin-top: 0.35rem;
+  border: 1px solid #d7b372;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff8eb, #fff2d7);
+  padding: 0.78rem;
+}
+
+.menu-library h4 {
+  margin-bottom: 0.2rem;
+}
+
+.menu-grid {
+  margin-top: 0.58rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.menu-category {
+  border: 1px solid #ddc28f;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 0.5rem;
+}
+
+.menu-category-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.menu-category-head strong {
+  color: #3b2b17;
+  font-size: 0.86rem;
+}
+
+.menu-category-head small {
+  color: #6d5839;
+  font-size: 0.74rem;
+}
+
 .recommendation-list {
   display: grid;
   gap: 0.5rem;
@@ -640,6 +685,26 @@ hr {
   align-items: center;
 }
 
+.admin-menu-section {
+  border: 1px solid #e2c995;
+  border-radius: 12px;
+  background: rgba(255, 252, 245, 0.9);
+  padding: 0.6rem;
+}
+
+.admin-menu-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-menu-row {
+  display: grid;
+  grid-template-columns: 1.15fr 1.5fr 1fr 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
 .admin-grid-settings {
   margin-top: 0.6rem;
   display: grid;
@@ -814,11 +879,21 @@ hr {
 
   .grid.two-col,
   .admin-grid-settings,
-  .compare-grid {
+  .compare-grid,
+  .menu-grid {
     grid-template-columns: 1fr;
   }
 
   .admin-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-menu-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .admin-menu-row {
     grid-template-columns: 1fr;
   }
 

@@ -57,6 +57,8 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
 }
 
 export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecommendation }) {
+  const menuSections = Array.isArray(catalog.settings?.menuSections) ? catalog.settings.menuSections : [];
+
   const toggle = (key, id, checked) => {
     setForm((f) => {
       const set = new Set(f[key]);
@@ -128,6 +130,40 @@ export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecom
           </div>
         </div>
       )}
+
+      {menuSections.length > 0 && (
+        <div className="menu-library">
+          <h4>Customized Cuisine Menu</h4>
+          <p className="source-note">Select menu items to include in this quote proposal.</p>
+          <div className="menu-grid">
+            {menuSections.map((section) => (
+              <section className="menu-category" key={section.id}>
+                <div className="menu-category-head">
+                  <strong>{section.name}</strong>
+                  <small>
+                    {
+                      (section.items || []).filter((item) => form.menuItems.includes(item.id)).length
+                    }/{(section.items || []).length}
+                  </small>
+                </div>
+                <div className="checklist">
+                  {(section.items || []).map((item) => (
+                    <label className="checkrow" key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={form.menuItems.includes(item.id)}
+                        onChange={(e) => toggle("menuItems", item.id, e.target.checked)}
+                      />
+                      <span>{item.name}</span>
+                      <small>{item.type === "per_person" ? `${currency(item.price)}/person` : currency(item.price)}</small>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -152,6 +188,7 @@ export function StepReview({ form, totals, settings }) {
           </tr>
           <tr><td>Labor</td><td>1</td><td>S:{totals.servers} C:{totals.chefs}</td><td>{currency(totals.labor)}</td></tr>
           <tr><td>Service fee</td><td>1</td><td>{Math.round(totals.serviceFeePctApplied * 1000) / 10}%</td><td>{currency(totals.serviceFee)}</td></tr>
+          <tr><td>Menu selections</td><td>{(form.menuItems || []).length}</td><td>Selected menu items</td><td>{currency(totals.menu)}</td></tr>
           <tr><td>Tax ({totals.taxRegionName})</td><td>1</td><td>{Math.round(totals.taxRateApplied * 1000) / 10}%</td><td>{currency(totals.tax)}</td></tr>
         </tbody>
       </table>

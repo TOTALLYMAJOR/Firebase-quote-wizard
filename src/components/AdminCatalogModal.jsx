@@ -84,6 +84,82 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     setDraft((prev) => ({ ...prev, [key]: prev[key].filter((_, i) => i !== index) }));
   };
 
+  const patchMenuSection = (sectionIndex, field, value) => {
+    setDraft((prev) => {
+      const menuSections = [...(prev.settings?.menuSections || [])];
+      const section = { ...(menuSections[sectionIndex] || {}) };
+      section[field] = value;
+      menuSections[sectionIndex] = section;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          menuSections
+        }
+      };
+    });
+  };
+
+  const patchMenuItem = (sectionIndex, itemIndex, field, value) => {
+    setDraft((prev) => {
+      const menuSections = [...(prev.settings?.menuSections || [])];
+      const section = { ...(menuSections[sectionIndex] || {}) };
+      const items = [...(section.items || [])];
+      const item = { ...(items[itemIndex] || {}) };
+      item[field] = value;
+      items[itemIndex] = item;
+      section.items = items;
+      menuSections[sectionIndex] = section;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          menuSections
+        }
+      };
+    });
+  };
+
+  const addMenuItem = (sectionIndex) => {
+    const itemId = `menu-item-${Date.now()}`;
+    setDraft((prev) => {
+      const menuSections = [...(prev.settings?.menuSections || [])];
+      const section = { ...(menuSections[sectionIndex] || {}) };
+      const items = [...(section.items || [])];
+      items.push({
+        id: itemId,
+        name: "New Menu Item",
+        type: "per_event",
+        price: 0
+      });
+      section.items = items;
+      menuSections[sectionIndex] = section;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          menuSections
+        }
+      };
+    });
+  };
+
+  const removeMenuItem = (sectionIndex, itemIndex) => {
+    setDraft((prev) => {
+      const menuSections = [...(prev.settings?.menuSections || [])];
+      const section = { ...(menuSections[sectionIndex] || {}) };
+      section.items = (section.items || []).filter((_, i) => i !== itemIndex);
+      menuSections[sectionIndex] = section;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          menuSections
+        }
+      };
+    });
+  };
+
   const patchNumericSetting = (field, value) => {
     setDraft((prev) => ({
       ...prev,
@@ -194,6 +270,51 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             </div>
           ))}
         </Section>
+
+        <section className="admin-section">
+          <div className="admin-section-head"><h3>Menu Item Pricing</h3></div>
+          <div className="admin-section-body">
+            {(draft.settings?.menuSections || []).map((section, sectionIndex) => (
+              <div className="admin-menu-section" key={section.id || sectionIndex}>
+                <div className="admin-menu-head">
+                  <input
+                    type="text"
+                    value={section.name || ""}
+                    onChange={(e) => patchMenuSection(sectionIndex, "name", e.target.value)}
+                  />
+                  <button type="button" className="ghost compact" onClick={() => addMenuItem(sectionIndex)}>Add Menu Item</button>
+                </div>
+
+                <div className="admin-section-body">
+                  {(section.items || []).map((item, itemIndex) => (
+                    <div className="admin-menu-row" key={item.id || itemIndex}>
+                      <input value={item.id || ""} disabled />
+                      <input
+                        type="text"
+                        value={item.name || ""}
+                        onChange={(e) => patchMenuItem(sectionIndex, itemIndex, "name", e.target.value)}
+                      />
+                      <select
+                        value={item.type || "per_event"}
+                        onChange={(e) => patchMenuItem(sectionIndex, itemIndex, "type", e.target.value)}
+                      >
+                        <option value="per_event">per_event</option>
+                        <option value="per_person">per_person</option>
+                      </select>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={Number(item.price || 0)}
+                        onChange={(e) => patchMenuItem(sectionIndex, itemIndex, "price", Number(e.target.value))}
+                      />
+                      <button type="button" className="ghost compact" onClick={() => removeMenuItem(sectionIndex, itemIndex)}>Delete</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section className="admin-section">
           <div className="admin-section-head"><h3>Numeric Settings</h3></div>

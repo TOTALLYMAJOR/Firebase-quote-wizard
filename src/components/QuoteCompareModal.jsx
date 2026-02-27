@@ -216,6 +216,7 @@ export default function QuoteCompareModal({
                   <ComparisonRow label="Base" current={primaryTotals.base} scenario={compareTotals.base} />
                   <ComparisonRow label="Add-ons" current={primaryTotals.addons} scenario={compareTotals.addons} />
                   <ComparisonRow label="Rentals" current={primaryTotals.rentals} scenario={compareTotals.rentals} />
+                  <ComparisonRow label="Menu Items" current={primaryTotals.menu} scenario={compareTotals.menu} />
                   <ComparisonRow label="Labor" current={primaryTotals.labor} scenario={compareTotals.labor} />
                   <ComparisonRow label="Travel" current={primaryTotals.travel} scenario={compareTotals.travel} />
                   <ComparisonRow label="Service Fee" current={primaryTotals.serviceFee} scenario={compareTotals.serviceFee} />
