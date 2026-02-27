@@ -9,9 +9,19 @@ function Field({ label, children }) {
   );
 }
 
-export function StepEvent({ form, setForm, styles }) {
+export function StepEvent({ form, setForm, styles, settings, onTemplateChange }) {
+  const templates = Array.isArray(settings?.eventTemplates) ? settings.eventTemplates : [];
+  const taxRegions = Array.isArray(settings?.taxRegions) ? settings.taxRegions : [];
+  const seasonProfiles = Array.isArray(settings?.seasonalProfiles) ? settings.seasonalProfiles : [];
+
   return (
     <div className="grid two-col">
+      <Field label="Event template">
+        <select value={form.eventTemplateId || "custom"} onChange={(e) => onTemplateChange(e.target.value)}>
+          <option value="custom">Custom</option>
+          {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+        </select>
+      </Field>
       <Field label="Event date"><input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
       <Field label="Start time"><input type="time" value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} /></Field>
       <Field label="Event hours"><input type="number" min="1" max="12" value={form.hours} onChange={(e) => setForm((f) => ({ ...f, hours: Number(e.target.value) }))} /></Field>
@@ -22,13 +32,31 @@ export function StepEvent({ form, setForm, styles }) {
           {styles.map((style) => <option key={style} value={style}>{style}</option>)}
         </select>
       </Field>
+      <Field label="Tax region">
+        <select value={form.taxRegion || ""} onChange={(e) => setForm((f) => ({ ...f, taxRegion: e.target.value }))}>
+          {taxRegions.map((region) => (
+            <option key={region.id} value={region.id}>
+              {region.name} ({Math.round(Number(region.rate || 0) * 1000) / 10}%)
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Season profile">
+        <select
+          value={form.seasonProfileId || "auto"}
+          onChange={(e) => setForm((f) => ({ ...f, seasonProfileId: e.target.value }))}
+        >
+          <option value="auto">Auto detect</option>
+          {seasonProfiles.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}
+        </select>
+      </Field>
       <Field label="Your name"><input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
       <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></Field>
     </div>
   );
 }
 
-export function StepMenu({ form, setForm, catalog }) {
+export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecommendation }) {
   const toggle = (key, id, checked) => {
     setForm((f) => {
       const set = new Set(f[key]);
@@ -80,6 +108,26 @@ export function StepMenu({ form, setForm, catalog }) {
           ))}
         </div>
       </div>
+
+      {recommendations.length > 0 && (
+        <div className="recommendation-panel">
+          <h4>Recommended Upgrades</h4>
+          <div className="recommendation-list">
+            {recommendations.map((item) => (
+              <article className="recommendation-card" key={item.key}>
+                <div>
+                  <strong>{item.label}</strong>
+                  <p>{item.reason}</p>
+                  <small>{item.impact}</small>
+                </div>
+                <button type="button" className="ghost compact" onClick={() => onApplyRecommendation(item)}>
+                  Apply
+                </button>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -93,16 +141,25 @@ export function StepReview({ form, totals, settings }) {
         </thead>
         <tbody>
           <tr><td>{totals.selectedPkg?.name} package</td><td>{form.guests}</td><td>{currency(totals.selectedPkg?.ppp || 0)}</td><td>{currency(totals.base)}</td></tr>
-          <tr><td>Travel</td><td>1</td><td>{currency(settings.perMileRate)} x {form.milesRT} mi</td><td>{currency(totals.travel)}</td></tr>
+          <tr>
+            <td>Travel</td>
+            <td>1</td>
+            <td>
+              {currency(settings.perMileRate)} x {totals.travelBaseMiles} mi
+              {totals.travelLongDistanceMiles > 0 ? ` + ${currency(settings.longDistancePerMileRate)} x ${totals.travelLongDistanceMiles} mi` : ""}
+            </td>
+            <td>{currency(totals.travel)}</td>
+          </tr>
           <tr><td>Labor</td><td>1</td><td>S:{totals.servers} C:{totals.chefs}</td><td>{currency(totals.labor)}</td></tr>
-          <tr><td>Service fee</td><td>1</td><td>{Math.round(settings.serviceFeePct * 100)}%</td><td>{currency(totals.serviceFee)}</td></tr>
-          <tr><td>Tax</td><td>1</td><td>{Math.round(settings.taxRate * 100)}%</td><td>{currency(totals.tax)}</td></tr>
+          <tr><td>Service fee</td><td>1</td><td>{Math.round(totals.serviceFeePctApplied * 1000) / 10}%</td><td>{currency(totals.serviceFee)}</td></tr>
+          <tr><td>Tax ({totals.taxRegionName})</td><td>1</td><td>{Math.round(totals.taxRateApplied * 1000) / 10}%</td><td>{currency(totals.tax)}</td></tr>
         </tbody>
       </table>
 
       <div className="summary-total">
         <p>Estimated Total: <strong>{currency(totals.total)}</strong></p>
         <p>Deposit ({Math.round(settings.depositPct * 100)}%): <strong>{currency(totals.deposit)}</strong></p>
+        <p>Season Profile: <strong>{totals.seasonProfileName}</strong></p>
         {totals.cardFee > 0 && <p>Card Fee (3% deposit): <strong>{currency(totals.cardFee)}</strong></p>}
       </div>
     </div>

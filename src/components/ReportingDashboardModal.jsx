@@ -61,17 +61,34 @@ export default function ReportingDashboardModal({ open, onClose }) {
       accepted: 0,
       declined: 0,
       expired: 0,
+      paymentUnpaid: 0,
+      paymentSent: 0,
+      paymentPaid: 0,
+      paymentRefunded: 0,
       quotedValue: 0,
       pipelineValue: 0,
-      acceptedValue: 0
+      acceptedValue: 0,
+      paidDepositValue: 0
     };
 
     state.quotes.forEach((quote) => {
       const status = quote.status || "draft";
       const value = Number(quote.totals?.total || 0);
+      const depositValue = Number(quote.totals?.deposit || 0);
+      const paymentStatus = quote.payment?.depositStatus || "unpaid";
       totals.quotedValue += value;
       if (Object.prototype.hasOwnProperty.call(totals, status)) {
         totals[status] += 1;
+      }
+      if (paymentStatus === "paid") {
+        totals.paymentPaid += 1;
+        totals.paidDepositValue += depositValue;
+      } else if (paymentStatus === "sent") {
+        totals.paymentSent += 1;
+      } else if (paymentStatus === "refunded") {
+        totals.paymentRefunded += 1;
+      } else {
+        totals.paymentUnpaid += 1;
       }
       if (["draft", "sent", "viewed"].includes(status)) {
         totals.pipelineValue += value;
@@ -140,6 +157,7 @@ export default function ReportingDashboardModal({ open, onClose }) {
           <div className="metric-card"><span>Total Quoted</span><strong>{currency(metrics.quotedValue)}</strong></div>
           <div className="metric-card"><span>Pipeline Value</span><strong>{currency(metrics.pipelineValue)}</strong></div>
           <div className="metric-card"><span>Accepted Revenue</span><strong>{currency(metrics.acceptedValue)}</strong></div>
+          <div className="metric-card"><span>Paid Deposits</span><strong>{currency(metrics.paidDepositValue)}</strong></div>
           <div className="metric-card"><span>Close Rate</span><strong>{metrics.closeRate.toFixed(1)}%</strong></div>
           <div className="metric-card"><span>Conversion Rate</span><strong>{metrics.conversionRate.toFixed(1)}%</strong></div>
         </div>
@@ -151,6 +169,10 @@ export default function ReportingDashboardModal({ open, onClose }) {
           <span>Accepted: {metrics.accepted}</span>
           <span>Declined: {metrics.declined}</span>
           <span>Expired: {metrics.expired}</span>
+          <span>Payment Unpaid: {metrics.paymentUnpaid}</span>
+          <span>Payment Sent: {metrics.paymentSent}</span>
+          <span>Payment Paid: {metrics.paymentPaid}</span>
+          <span>Payment Refunded: {metrics.paymentRefunded}</span>
         </div>
 
         <div className="history-table-wrap">

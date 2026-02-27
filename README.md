@@ -80,3 +80,7 @@ Build settings (default):
 - `src/lib/quoteStore.js`: quote lifecycle + persistence + email template builder
 - `src/lib/proposalExport.js`: printable proposal/PDF export helper
 - `src/hooks/useCatalogData.js`: catalog/settings data source hook
+
+## Development Backlog
+
+- See `DEV_TASKS.md` for prioritized tasks and roadmap ideas (beauty, capability, configurability, and quality).

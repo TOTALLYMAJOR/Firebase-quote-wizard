@@ -15,14 +15,16 @@ export default function LiveBreakdown({ form, totals, settings, catalog }) {
         <div><dt>Add-ons</dt><dd>{selectedAddonNames.join(", ") || "-"}</dd></div>
         <div><dt>Rentals</dt><dd>{selectedRentalNames.join(", ") || "-"}</dd></div>
         <div><dt>Travel</dt><dd>{form.milesRT} mi</dd></div>
+        <div><dt>Tax Region</dt><dd>{totals.taxRegionName || "-"}</dd></div>
+        <div><dt>Season</dt><dd>{totals.seasonProfileName || "Standard"}</dd></div>
       </dl>
 
       <hr />
 
       <dl className="kv-list totals">
         <div><dt>Subtotal</dt><dd>{currency(totals.base + totals.addons + totals.rentals + totals.labor + totals.travel)}</dd></div>
-        <div><dt>Service</dt><dd>{currency(totals.serviceFee)}</dd></div>
-        <div><dt>Tax</dt><dd>{currency(totals.tax)}</dd></div>
+        <div><dt>Service ({Math.round(totals.serviceFeePctApplied * 1000) / 10}%)</dt><dd>{currency(totals.serviceFee)}</dd></div>
+        <div><dt>Tax ({Math.round(totals.taxRateApplied * 1000) / 10}%)</dt><dd>{currency(totals.tax)}</dd></div>
         <div><dt>Total</dt><dd>{currency(totals.total)}</dd></div>
         <div><dt>Deposit ({Math.round(settings.depositPct * 100)}%)</dt><dd>{currency(totals.deposit)}</dd></div>
         {totals.cardFee > 0 && <div><dt>Card Fee</dt><dd>{currency(totals.cardFee)}</dd></div>}

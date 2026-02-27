@@ -4,6 +4,8 @@ import {
   buildQuoteEmailTemplate,
   getAllowedStatusTransitions,
   getQuoteHistory,
+  PAYMENT_STATUSES,
+  updateQuotePaymentStatus,
   updateQuoteStatus
 } from "../lib/quoteStore";
 import { exportQuoteProposal } from "../lib/proposalExport";
@@ -26,6 +28,7 @@ export default function QuoteHistoryModal({ open, onClose }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [updatingId, setUpdatingId] = useState("");
+  const [updatingPaymentId, setUpdatingPaymentId] = useState("");
 
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "", feedback: "" }));
@@ -68,7 +71,8 @@ export default function QuoteHistoryModal({ open, onClose }) {
       quote.customer?.name,
       quote.customer?.email,
       quote.event?.date,
-      quote.event?.venue
+      quote.event?.venue,
+      quote.payment?.depositStatus
     ]
       .filter(Boolean)
       .join(" ")
@@ -82,6 +86,25 @@ export default function QuoteHistoryModal({ open, onClose }) {
       ...prev,
       quotes: prev.quotes.map((quote) =>
         quote.id === quoteId ? { ...quote, status: nextStatus } : quote
+      )
+    }));
+  };
+
+  const applyPaymentLocally = (quoteId, nextPaymentStatus) => {
+    setState((prev) => ({
+      ...prev,
+      quotes: prev.quotes.map((quote) =>
+        quote.id === quoteId
+          ? {
+            ...quote,
+            payment: {
+              ...(quote.payment || {}),
+              depositStatus: nextPaymentStatus,
+              depositConfirmedAtISO:
+                nextPaymentStatus === "paid" ? new Date().toISOString() : quote.payment?.depositConfirmedAtISO || ""
+            }
+          }
+          : quote
       )
     }));
   };
@@ -101,6 +124,22 @@ export default function QuoteHistoryModal({ open, onClose }) {
       }));
     } finally {
       setUpdatingId("");
+    }
+  };
+
+  const handlePaymentUpdate = async (quoteId, nextPaymentStatus) => {
+    setUpdatingPaymentId(quoteId);
+    try {
+      await updateQuotePaymentStatus(quoteId, nextPaymentStatus);
+      applyPaymentLocally(quoteId, nextPaymentStatus);
+      setState((prev) => ({ ...prev, feedback: `Payment marked ${nextPaymentStatus}.` }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "Failed to update payment status."
+      }));
+    } finally {
+      setUpdatingPaymentId("");
     }
   };
 
@@ -129,6 +168,22 @@ export default function QuoteHistoryModal({ open, onClose }) {
       setState((prev) => ({ ...prev, feedback: `Downloaded PDF for ${quote.quoteNumber}.` }));
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to export proposal PDF." }));
+    }
+  };
+
+  const handleCopyPaymentLink = async (quote) => {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard unavailable in this browser.");
+      }
+      const paymentLink = quote.payment?.depositLink;
+      if (!paymentLink) {
+        throw new Error("No deposit link saved for this quote.");
+      }
+      await navigator.clipboard.writeText(paymentLink);
+      setState((prev) => ({ ...prev, feedback: `Deposit link copied for ${quote.quoteNumber}.` }));
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err?.message || "Failed to copy payment link." }));
     }
   };
 
@@ -175,7 +230,9 @@ export default function QuoteHistoryModal({ open, onClose }) {
                 <th>Event Date</th>
                 <th>Guests</th>
                 <th>Total</th>
+                <th>Deposit</th>
                 <th>Status</th>
+                <th>Payment</th>
                 <th>Expires</th>
                 <th>Created</th>
                 <th>Actions</th>
@@ -184,7 +241,7 @@ export default function QuoteHistoryModal({ open, onClose }) {
             <tbody>
               {!state.loading && filteredQuotes.length === 0 && (
                 <tr>
-                  <td colSpan="9">No quotes saved yet.</td>
+                  <td colSpan="11">No quotes saved yet.</td>
                 </tr>
               )}
               {filteredQuotes.map((quote) => (
@@ -194,6 +251,7 @@ export default function QuoteHistoryModal({ open, onClose }) {
                   <td>{quote.event?.date || "-"}</td>
                   <td>{quote.event?.guests ?? "-"}</td>
                   <td>{currency(quote.totals?.total || 0)}</td>
+                  <td>{currency(quote.totals?.deposit || 0)}</td>
                   <td>
                     <select
                       value={quote.status || "draft"}
@@ -205,12 +263,24 @@ export default function QuoteHistoryModal({ open, onClose }) {
                       ))}
                     </select>
                   </td>
+                  <td>
+                    <select
+                      value={quote.payment?.depositStatus || "unpaid"}
+                      onChange={(e) => handlePaymentUpdate(quote.id, e.target.value)}
+                      disabled={updatingPaymentId === quote.id}
+                    >
+                      {PAYMENT_STATUSES.map((paymentStatus) => (
+                        <option key={paymentStatus} value={paymentStatus}>{paymentStatus}</option>
+                      ))}
+                    </select>
+                  </td>
                   <td>{fmtDate(quote.expiresAtISO)}</td>
                   <td>{fmtDate(quote.createdAtISO)}</td>
                   <td>
                     <div className="row-actions">
                       <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
                       <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
+                      <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>
                     </div>
                   </td>
                 </tr>

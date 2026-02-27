@@ -4,6 +4,7 @@ import { db, firebaseReady } from "./firebase";
 const LOCAL_QUOTES_KEY = "quoteWizard.quotes";
 const DEFAULT_VALIDITY_DAYS = 30;
 const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
+const PAYMENT_STATUSES = ["unpaid", "sent", "paid", "refunded"];
 const STATUS_LIFECYCLE_FIELD = {
   draft: "draftAtISO",
   sent: "sentAtISO",
@@ -22,6 +23,7 @@ const STATUS_FLOW = {
 };
 
 export const QUOTE_STATUSES = Object.keys(STATUS_FLOW);
+export { PAYMENT_STATUSES };
 
 function toCurrency(value) {
   return `$${(Math.round(Number(value || 0) * 100) / 100).toFixed(2)}`;
@@ -63,6 +65,22 @@ function normalizeStatus(status) {
   return QUOTE_STATUSES.includes(status) ? status : "draft";
 }
 
+function normalizePaymentStatus(status) {
+  return PAYMENT_STATUSES.includes(status) ? status : "unpaid";
+}
+
+function hydratePayment(payment) {
+  const payload = payment || {};
+  const depositLink = (payload.depositLink || "").trim();
+  const defaultStatus = depositLink ? "sent" : "unpaid";
+  return {
+    ...payload,
+    depositLink,
+    depositStatus: normalizePaymentStatus(payload.depositStatus || defaultStatus),
+    depositConfirmedAtISO: payload.depositConfirmedAtISO || ""
+  };
+}
+
 function hydrateQuote(item, nowISO = isoNow()) {
   const createdAtISO = item.createdAtISO || nowISO;
   const expiresAtISO = item.expiresAtISO || addDaysISO(createdAtISO, DEFAULT_VALIDITY_DAYS);
@@ -72,6 +90,7 @@ function hydrateQuote(item, nowISO = isoNow()) {
     status,
     createdAtISO,
     expiresAtISO,
+    payment: hydratePayment(item.payment),
     lifecycle: {
       ...(item.lifecycle || {})
     }
@@ -131,10 +150,15 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       addons: form.addons,
       rentals: form.rentals,
       milesRT: Number(form.milesRT || 0),
-      payMethod: form.payMethod
+      payMethod: form.payMethod,
+      eventTemplateId: form.eventTemplateId || "custom",
+      taxRegion: form.taxRegion || settings?.defaultTaxRegion || "",
+      seasonProfileId: form.seasonProfileId || settings?.defaultSeasonProfile || "auto"
     },
     payment: {
-      depositLink: (form.depositLink || "").trim()
+      depositLink: (form.depositLink || "").trim(),
+      depositStatus: form.depositLink ? "sent" : "unpaid",
+      depositConfirmedAtISO: ""
     },
     totals: {
       base: totals.base,
@@ -146,7 +170,16 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       tax: totals.tax,
       total: totals.total,
       deposit: totals.deposit,
-      cardFee: totals.cardFee
+      cardFee: totals.cardFee,
+      serviceFeePctApplied: totals.serviceFeePctApplied,
+      taxRateApplied: totals.taxRateApplied,
+      taxRegionId: totals.taxRegionId,
+      taxRegionName: totals.taxRegionName,
+      seasonProfileId: totals.seasonProfileId,
+      seasonProfileName: totals.seasonProfileName,
+      packageMultiplier: totals.packageMultiplier,
+      addonMultiplier: totals.addonMultiplier,
+      rentalMultiplier: totals.rentalMultiplier
     },
     status: "draft",
     source: catalogSource,
@@ -260,6 +293,54 @@ export async function updateQuoteStatus(quoteId, status) {
   return { ok: true, storage: "local" };
 }
 
+export async function updateQuotePaymentStatus(quoteId, paymentStatus) {
+  if (!quoteId) {
+    throw new Error("Quote id is required.");
+  }
+
+  const nowISO = isoNow();
+  const nextPaymentStatus = normalizePaymentStatus(paymentStatus);
+  const paymentPatch = {
+    "payment.depositStatus": nextPaymentStatus,
+    updatedAtISO: nowISO
+  };
+
+  if (nextPaymentStatus === "paid") {
+    paymentPatch["payment.depositConfirmedAtISO"] = nowISO;
+  }
+  if (nextPaymentStatus === "unpaid" || nextPaymentStatus === "sent") {
+    paymentPatch["payment.depositConfirmedAtISO"] = "";
+  }
+
+  if (firebaseReady) {
+    await updateDoc(doc(db, "quotes", quoteId), paymentPatch);
+    return { ok: true, storage: "firebase" };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const next = existing.map((quote) => {
+    if (quote.id !== quoteId) return quote;
+    const payment = hydratePayment(quote.payment);
+    return {
+      ...quote,
+      updatedAtISO: nowISO,
+      payment: {
+        ...payment,
+        depositStatus: nextPaymentStatus,
+        depositConfirmedAtISO:
+          nextPaymentStatus === "paid"
+            ? nowISO
+            : nextPaymentStatus === "unpaid" || nextPaymentStatus === "sent"
+              ? ""
+              : payment.depositConfirmedAtISO || ""
+      }
+    };
+  });
+
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return { ok: true, storage: "local" };
+}
+
 export function buildQuoteEmailTemplate(quote) {
   const customerName = quote.customer?.name || "there";
   const eventDate = quote.event?.date || "your event date";
@@ -269,6 +350,7 @@ export function buildQuoteEmailTemplate(quote) {
   const deposit = toCurrency(quote.totals?.deposit || 0);
   const paymentLink = quote.payment?.depositLink || "";
   const expiresOn = quote.expiresAtISO ? new Date(quote.expiresAtISO).toLocaleDateString() : "";
+  const paymentStatus = quote.payment?.depositStatus || "unpaid";
 
   const subject = `Catering Quote ${quoteNumber} - ${eventDate}`;
   const bodyLines = [
@@ -278,6 +360,7 @@ export function buildQuoteEmailTemplate(quote) {
     `Your quote (${quoteNumber}) total is ${total}.`,
     `To reserve your date, the deposit due is ${deposit}.`,
     paymentLink ? `Deposit payment link: ${paymentLink}` : "Reply to this email if you need a payment link.",
+    `Deposit status: ${paymentStatus}.`,
     expiresOn ? `This quote is valid through ${expiresOn}.` : "",
     "",
     "Please reply with any questions or requested adjustments.",

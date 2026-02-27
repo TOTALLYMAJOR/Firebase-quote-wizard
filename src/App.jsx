@@ -1,12 +1,14 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminCatalogModal from "./components/AdminCatalogModal";
 import LiveBreakdown from "./components/LiveBreakdown";
+import QuoteCompareModal from "./components/QuoteCompareModal";
 import QuoteHistoryModal from "./components/QuoteHistoryModal";
 import ReportingDashboardModal from "./components/ReportingDashboardModal";
 import { StepEvent, StepMenu, StepReview } from "./components/WizardSteps";
 import { STAFF_RULES } from "./data/mockCatalog";
 import { useCatalogData } from "./hooks/useCatalogData";
-import { calculateQuote } from "./lib/quoteCalculator";
+import { calculateQuote, currency } from "./lib/quoteCalculator";
+import { buildUpsellRecommendations } from "./lib/recommendations";
 import { submitQuote } from "./lib/quoteStore";
 
 const STEP_LABELS = ["Event", "Menu & Services", "Review"];
@@ -18,6 +20,7 @@ export default function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const [submitState, setSubmitState] = useState({ saving: false, message: "" });
 
   const [form, setForm] = useState({
@@ -32,6 +35,9 @@ export default function App() {
     pkg: "classic",
     addons: [],
     rentals: [],
+    eventTemplateId: "custom",
+    taxRegion: "",
+    seasonProfileId: "auto",
     milesRT: 0,
     depositLink: "",
     payMethod: "card"
@@ -41,6 +47,87 @@ export default function App() {
     () => calculateQuote(form, catalog, catalog.settings),
     [form, catalog]
   );
+
+  const recommendations = useMemo(
+    () => buildUpsellRecommendations({ form, catalog, totals }),
+    [form, catalog, totals]
+  );
+
+  useEffect(() => {
+    if (catalog.loading) return;
+    setForm((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      const defaultTaxRegion = catalog.settings?.defaultTaxRegion || catalog.settings?.taxRegions?.[0]?.id || "";
+      const defaultSeasonProfile = catalog.settings?.defaultSeasonProfile || "auto";
+
+      if (!next.taxRegion && defaultTaxRegion) {
+        next.taxRegion = defaultTaxRegion;
+        changed = true;
+      }
+      if (!next.seasonProfileId) {
+        next.seasonProfileId = defaultSeasonProfile;
+        changed = true;
+      }
+      if (!next.eventTemplateId) {
+        next.eventTemplateId = "custom";
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [catalog.loading, catalog.settings]);
+
+  const applyEventTemplate = (templateId) => {
+    if (templateId === "custom") {
+      setForm((prev) => ({ ...prev, eventTemplateId: "custom" }));
+      return;
+    }
+
+    const templates = Array.isArray(catalog.settings?.eventTemplates) ? catalog.settings.eventTemplates : [];
+    const template = templates.find((item) => item.id === templateId);
+    if (!template) {
+      setForm((prev) => ({ ...prev, eventTemplateId: "custom" }));
+      return;
+    }
+
+    const addonIds = new Set(catalog.addons.map((item) => item.id));
+    const rentalIds = new Set(catalog.rentals.map((item) => item.id));
+
+    setForm((prev) => ({
+      ...prev,
+      eventTemplateId: template.id,
+      style: template.style || prev.style,
+      hours: Number(template.hours || prev.hours || 0),
+      pkg: template.pkg || prev.pkg,
+      addons: (template.addons || []).filter((id) => addonIds.has(id)),
+      rentals: (template.rentals || []).filter((id) => rentalIds.has(id)),
+      milesRT: Number(template.milesRT || prev.milesRT || 0),
+      payMethod: template.payMethod || prev.payMethod,
+      taxRegion: template.taxRegion || prev.taxRegion || catalog.settings.defaultTaxRegion || "",
+      seasonProfileId: template.seasonProfileId || prev.seasonProfileId || "auto"
+    }));
+  };
+
+  const applyRecommendation = (item) => {
+    if (!item) return;
+
+    setForm((prev) => {
+      if (item.kind === "package") {
+        return { ...prev, eventTemplateId: "custom", pkg: item.id };
+      }
+      if (item.kind === "addon") {
+        const next = new Set(prev.addons || []);
+        next.add(item.id);
+        return { ...prev, eventTemplateId: "custom", addons: [...next] };
+      }
+      if (item.kind === "rental") {
+        const next = new Set(prev.rentals || []);
+        next.add(item.id);
+        return { ...prev, eventTemplateId: "custom", rentals: [...next] };
+      }
+      return prev;
+    });
+  };
 
   const handleSubmitQuote = async () => {
     if (totals.guests <= 0) {
@@ -102,8 +189,30 @@ export default function App() {
       </header>
 
       <section className="hero container">
-        <h1>Signature flavor. Streamlined quotes.</h1>
-        <p>Luxury-style pricing flow for weddings, corporate events, and celebrations up to 400 guests.</p>
+        <div className="hero-grid">
+          <div>
+            <p className="eyebrow">Premium Event Catering Workbench</p>
+            <h1>Signature flavor. Configurable quotes.</h1>
+            <p>
+              A polished sales cockpit for weddings, corporate events, and celebrations up to 400 guests.
+              Build scenarios, apply smart upsells, and send better proposals faster.
+            </p>
+            <div className="hero-pills">
+              <span>Config-driven pricing</span>
+              <span>Scenario compare</span>
+              <span>Proposal exports</span>
+            </div>
+          </div>
+          <aside className="hero-card">
+            <h3>Live Quote Snapshot</h3>
+            <dl>
+              <div><dt>Current Total</dt><dd>{currency(totals.total)}</dd></div>
+              <div><dt>Deposit</dt><dd>{currency(totals.deposit)}</dd></div>
+              <div><dt>Tax Region</dt><dd>{totals.taxRegionName}</dd></div>
+              <div><dt>Season</dt><dd>{totals.seasonProfileName}</dd></div>
+            </dl>
+          </aside>
+        </div>
       </section>
 
       <main className="container wizard-grid" ref={wizardRef}>
@@ -120,24 +229,45 @@ export default function App() {
             })}
           </ol>
 
-          {catalog.loading && <p className="source-note">Loading catalog...</p>}
-          {!catalog.loading && step === 1 && <StepEvent form={form} setForm={setForm} styles={Object.keys(STAFF_RULES)} />}
-          {!catalog.loading && step === 2 && <StepMenu form={form} setForm={setForm} catalog={catalog} />}
-          {!catalog.loading && step === 3 && <StepReview form={form} totals={totals} settings={catalog.settings} />}
-          {!catalog.loading && step === 3 && (
-            <label className="field deposit-link-field">
-              <span>Deposit payment link (optional)</span>
-              <input
-                type="url"
-                placeholder="https://payment-link.example.com"
-                value={form.depositLink}
-                onChange={(e) => setForm((f) => ({ ...f, depositLink: e.target.value }))}
+          <div className="step-stage" key={step}>
+            {catalog.loading && <p className="source-note">Loading catalog...</p>}
+            {!catalog.loading && step === 1 && (
+              <StepEvent
+                form={form}
+                setForm={setForm}
+                styles={Object.keys(STAFF_RULES)}
+                settings={catalog.settings}
+                onTemplateChange={applyEventTemplate}
               />
-            </label>
-          )}
+            )}
+            {!catalog.loading && step === 2 && (
+              <StepMenu
+                form={form}
+                setForm={setForm}
+                catalog={catalog}
+                recommendations={recommendations}
+                onApplyRecommendation={applyRecommendation}
+              />
+            )}
+            {!catalog.loading && step === 3 && <StepReview form={form} totals={totals} settings={catalog.settings} />}
+            {!catalog.loading && step === 3 && (
+              <label className="field deposit-link-field">
+                <span>Deposit payment link (optional)</span>
+                <input
+                  type="url"
+                  placeholder="https://payment-link.example.com"
+                  value={form.depositLink}
+                  onChange={(e) => setForm((f) => ({ ...f, depositLink: e.target.value }))}
+                />
+              </label>
+            )}
+          </div>
 
           <div className="wizard-actions">
-            <button className="ghost" onClick={() => setStep((s) => Math.max(1, s - 1))} disabled={step === 1 || catalog.loading}>Back</button>
+            <div className="right-actions">
+              <button className="ghost" onClick={() => setStep((s) => Math.max(1, s - 1))} disabled={step === 1 || catalog.loading}>Back</button>
+              <button className="ghost" onClick={() => setCompareOpen(true)} disabled={catalog.loading || step < 2}>Compare Scenario</button>
+            </div>
             <div className="right-actions">
               {step < 3 ? (
                 <button className="cta" onClick={() => setStep((s) => Math.min(3, s + 1))} disabled={catalog.loading}>Next</button>
@@ -178,6 +308,17 @@ export default function App() {
       <QuoteHistoryModal
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
+      />
+
+      <QuoteCompareModal
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        form={form}
+        setForm={setForm}
+        catalog={catalog}
+        settings={catalog.settings}
+        styles={Object.keys(STAFF_RULES)}
+        primaryTotals={totals}
       />
 
       <ReportingDashboardModal
