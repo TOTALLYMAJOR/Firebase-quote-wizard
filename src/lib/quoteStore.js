@@ -158,14 +158,18 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
     quoteNumber,
     customer: {
       name: form.name || "",
-      email: form.email || ""
+      email: form.email || "",
+      phone: form.phone || "",
+      organization: form.clientOrg || ""
     },
     event: {
+      name: form.eventName || "",
       date: form.date || "",
       time: form.time || "",
       venue: form.venue || "",
       guests: Number(form.guests || 0),
       hours: Number(form.hours || 0),
+      bartenders: Number(form.bartenders || 0),
       style: form.style || ""
     },
     selection: {
@@ -193,6 +197,7 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       rentals: totals.rentals,
       menu: totals.menu,
       labor: totals.labor,
+      bartenderLabor: totals.bartenderLabor,
       travel: totals.travel,
       serviceFee: totals.serviceFee,
       tax: totals.tax,
@@ -208,6 +213,16 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       packageMultiplier: totals.packageMultiplier,
       addonMultiplier: totals.addonMultiplier,
       rentalMultiplier: totals.rentalMultiplier
+    },
+    quoteMeta: {
+      quotePreparedBy: settings?.quotePreparedBy || "",
+      businessPhone: settings?.businessPhone || "",
+      businessEmail: settings?.businessEmail || "",
+      businessAddress: settings?.businessAddress || "",
+      acceptanceEmail: settings?.acceptanceEmail || "",
+      disposablesNote: settings?.disposablesNote || "",
+      depositNotice: settings?.depositNotice || "",
+      quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS)
     },
     status: "draft",
     source: catalogSource,
@@ -372,6 +387,7 @@ export async function updateQuotePaymentStatus(quoteId, paymentStatus) {
 export function buildQuoteEmailTemplate(quote) {
   const customerName = quote.customer?.name || "there";
   const eventDate = quote.event?.date || "your event date";
+  const eventName = quote.event?.name || "your event";
   const venue = quote.event?.venue || "your venue";
   const quoteNumber = quote.quoteNumber || "your quote";
   const total = toCurrency(quote.totals?.total || 0);
@@ -384,7 +400,7 @@ export function buildQuoteEmailTemplate(quote) {
   const bodyLines = [
     `Hi ${customerName},`,
     "",
-    `Thank you for considering us for your event on ${eventDate} at ${venue}.`,
+    `Thank you for considering us for ${eventName} on ${eventDate} at ${venue}.`,
     `Your quote (${quoteNumber}) total is ${total}.`,
     `To reserve your date, the deposit due is ${deposit}.`,
     paymentLink ? `Deposit payment link: ${paymentLink}` : "Reply to this email if you need a payment link.",

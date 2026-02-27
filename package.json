@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:env": "node ./scripts/check-env.mjs",
+    "deploy:firebase": "npm run build && npx firebase-tools deploy --only hosting,firestore",
+    "deploy:vercel": "npx vercel --prod",
+    "deploy:vercel:build": "npm run build && npx vercel --prod --prebuilt"
   },
   "dependencies": {
     "firebase": "^11.0.0",

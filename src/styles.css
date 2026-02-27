@@ -520,6 +520,151 @@ thead th {
   font-size: 1.08rem;
 }
 
+.quote-sheet {
+  border: 1px solid #5b5b5b;
+  background: linear-gradient(180deg, #ececec 0%, #dddddd 100%);
+  color: #131313;
+  padding: 0.9rem;
+  max-width: 860px;
+  margin: 0 auto;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.quote-sheet h2 {
+  margin: 0 0 0.75rem;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-family: "Bodoni Moda", "Georgia", serif;
+  font-size: clamp(1.7rem, 4.2vw, 2.5rem);
+}
+
+.quote-sheet p {
+  margin: 0;
+}
+
+.quote-sheet-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem 0.65rem;
+  border-bottom: 1px solid #5c5c5c;
+  padding-bottom: 0.55rem;
+}
+
+.quote-sheet-meta p {
+  font-size: 0.87rem;
+  line-height: 1.25;
+}
+
+.quote-sheet-meta-wide {
+  grid-column: 1 / -1;
+}
+
+.quote-sheet-menu {
+  margin-top: 0.55rem;
+  border: 1px solid #4f4f4f;
+  background: rgba(255, 255, 255, 0.35);
+  text-align: center;
+}
+
+.quote-sheet-menu h3 {
+  margin: 0;
+  font-size: 1.55rem;
+  text-transform: uppercase;
+}
+
+.quote-menu-subtitle {
+  margin-top: 0.1rem;
+  font-weight: 700;
+}
+
+.quote-sheet-menu p {
+  padding: 0.42rem 0.5rem;
+  border-top: 1px solid #4f4f4f;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.quote-sheet-charges {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem 0.9rem;
+}
+
+.quote-charge {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  font-size: 0.92rem;
+}
+
+.quote-charge span {
+  color: #1c1c1c;
+}
+
+.quote-charge strong {
+  white-space: nowrap;
+}
+
+.quote-charge-wide {
+  grid-column: 1 / -1;
+}
+
+.quote-center-note {
+  margin-top: 0.62rem;
+  text-align: center;
+  font-size: 0.93rem;
+}
+
+.quote-total-line {
+  margin-top: 0.58rem;
+  text-align: center;
+  font-size: 1.45rem;
+}
+
+.quote-total-line strong {
+  text-decoration: underline;
+}
+
+.quote-sheet-bottom {
+  margin-top: 0.72rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  font-size: 0.86rem;
+}
+
+.quote-acceptance {
+  margin-top: 0.55rem;
+  font-size: 0.84rem;
+}
+
+.quote-deposit-tag {
+  margin-top: 0.5rem;
+  text-align: center;
+}
+
+.quote-deposit-tag strong {
+  display: inline-block;
+  padding: 0.16rem 0.32rem;
+  background: #ffeb3b;
+}
+
+.quote-signoff {
+  margin-top: 0.48rem;
+  text-align: center;
+  font-size: 0.96rem;
+}
+
+.quote-contact-strip {
+  margin-top: 0.75rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #5c5c5c;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
 .wizard-actions {
   display: flex;
   justify-content: space-between;
@@ -903,6 +1048,15 @@ hr {
 
   .dashboard-grid {
     grid-template-columns: 1fr;
+  }
+
+  .quote-sheet-meta,
+  .quote-sheet-charges {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-sheet-bottom {
+    flex-direction: column;
   }
 
   .stepper em {

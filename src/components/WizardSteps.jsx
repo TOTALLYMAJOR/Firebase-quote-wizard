@@ -25,8 +25,11 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
       <Field label="Event date"><input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
       <Field label="Start time"><input type="time" value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} /></Field>
       <Field label="Event hours"><input type="number" min="1" max="12" value={form.hours} onChange={(e) => setForm((f) => ({ ...f, hours: Number(e.target.value) }))} /></Field>
+      <Field label="Bartenders"><input type="number" min="0" max="10" value={form.bartenders} onChange={(e) => setForm((f) => ({ ...f, bartenders: Number(e.target.value) }))} /></Field>
       <Field label="Guests (max 400)"><input type="number" min="1" max="400" value={form.guests} onChange={(e) => setForm((f) => ({ ...f, guests: Number(e.target.value) }))} /></Field>
+      <Field label="Event name"><input type="text" value={form.eventName} onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value }))} /></Field>
       <Field label="Venue"><input type="text" value={form.venue} onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))} /></Field>
+      <Field label="Client / Organization"><input type="text" value={form.clientOrg} onChange={(e) => setForm((f) => ({ ...f, clientOrg: e.target.value }))} /></Field>
       <Field label="Service style">
         <select value={form.style} onChange={(e) => setForm((f) => ({ ...f, style: e.target.value }))}>
           {styles.map((style) => <option key={style} value={style}>{style}</option>)}
@@ -51,6 +54,7 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
         </select>
       </Field>
       <Field label="Your name"><input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+      <Field label="Phone"><input type="tel" value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} /></Field>
       <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></Field>
     </div>
   );
@@ -169,34 +173,80 @@ export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecom
 }
 
 export function StepReview({ form, totals, settings }) {
+  const quoteDate = new Date().toLocaleDateString();
+  const eventDateLabel = form.date ? new Date(`${form.date}T12:00:00`).toLocaleDateString() : "-";
+  const eventTimeLabel = form.time ? new Date(`2000-01-01T${form.time}`).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "-";
+  const menuLookup = new Map(
+    (settings.menuSections || []).flatMap((section) =>
+      (section.items || []).map((item) => [item.id, item.name])
+    )
+  );
+  const menuNames = (form.menuItems || []).map((id) => menuLookup.get(id)).filter(Boolean);
+  const effectivePerPerson = totals.guests > 0 ? totals.base / totals.guests : 0;
+  const staffingOnly = Math.max(0, totals.labor - totals.bartenderLabor);
+  const validityDays = Math.max(1, Number(settings.quoteValidityDays || 30));
+  const businessContact = [
+    settings.businessAddress,
+    settings.businessPhone,
+    settings.businessEmail
+  ].filter(Boolean).join("  •  ");
+
   return (
     <div className="review">
-      <table>
-        <thead>
-          <tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>{totals.selectedPkg?.name} package</td><td>{form.guests}</td><td>{currency(totals.selectedPkg?.ppp || 0)}</td><td>{currency(totals.base)}</td></tr>
-          <tr>
-            <td>Travel</td>
-            <td>1</td>
-            <td>
-              {currency(settings.perMileRate)} x {totals.travelBaseMiles} mi
-              {totals.travelLongDistanceMiles > 0 ? ` + ${currency(settings.longDistancePerMileRate)} x ${totals.travelLongDistanceMiles} mi` : ""}
-            </td>
-            <td>{currency(totals.travel)}</td>
-          </tr>
-          <tr><td>Labor</td><td>1</td><td>S:{totals.servers} C:{totals.chefs}</td><td>{currency(totals.labor)}</td></tr>
-          <tr><td>Service fee</td><td>1</td><td>{Math.round(totals.serviceFeePctApplied * 1000) / 10}%</td><td>{currency(totals.serviceFee)}</td></tr>
-          <tr><td>Menu selections</td><td>{(form.menuItems || []).length}</td><td>Selected menu items</td><td>{currency(totals.menu)}</td></tr>
-          <tr><td>Tax ({totals.taxRegionName})</td><td>1</td><td>{Math.round(totals.taxRateApplied * 1000) / 10}%</td><td>{currency(totals.tax)}</td></tr>
-        </tbody>
-      </table>
+      <article className="quote-sheet">
+        <h2>Catering Quote</h2>
+
+        <div className="quote-sheet-meta">
+          <p><strong>Quote Date:</strong> {quoteDate}</p>
+          <p className="quote-sheet-meta-wide">
+            <strong>Responsible Party / Client:</strong> {form.name || "-"}
+            {form.clientOrg ? ` / ${form.clientOrg}` : ""}
+          </p>
+          <p><strong>Phone #:</strong> {form.phone || "-"}</p>
+          <p><strong>Email Address:</strong> {form.email || "-"}</p>
+          <p><strong># of Guests:</strong> {form.guests || 0}</p>
+          <p><strong>Time of Event:</strong> {eventTimeLabel}</p>
+          <p><strong>Name of Event:</strong> {form.eventName || "-"}</p>
+          <p><strong>Date of Event:</strong> {eventDateLabel}</p>
+          <p className="quote-sheet-meta-wide"><strong>Event Location:</strong> {form.venue || "-"}</p>
+        </div>
+
+        <section className="quote-sheet-menu">
+          <h3>Menu</h3>
+          <p className="quote-menu-subtitle">(Delivery Service)</p>
+          <p>{menuNames.join(", ") || "-"}</p>
+        </section>
+
+        <section className="quote-sheet-charges">
+          <div className="quote-charge"><span>Per Person: {currency(effectivePerPerson)} x ({totals.guests})</span><strong>{currency(totals.base)}</strong></div>
+          <div className="quote-charge"><span>Tax: ({Math.round(totals.taxRateApplied * 1000) / 10}%)</span><strong>{currency(totals.tax)}</strong></div>
+          <div className="quote-charge"><span>Staffing</span><strong>{currency(staffingOnly)}</strong></div>
+          <div className="quote-charge"><span>Travel Fee</span><strong>{currency(totals.travel)}</strong></div>
+          <div className="quote-charge"><span>Bartender</span><strong>{currency(totals.bartenderLabor)}</strong></div>
+          <div className="quote-charge"><span>Gratuity</span><strong>{currency(totals.serviceFee)}</strong></div>
+          {(totals.addons > 0 || totals.rentals > 0 || totals.menu > 0) && (
+            <div className="quote-charge quote-charge-wide">
+              <span>Add-ons/Rentals/Menu</span>
+              <strong>{currency(totals.addons + totals.rentals + totals.menu)}</strong>
+            </div>
+          )}
+        </section>
+
+        <p className="quote-center-note"><strong>{settings.disposablesNote || "All disposables are included in this quote."}</strong></p>
+        <p className="quote-total-line">TOTAL: <strong>{currency(totals.total)}</strong></p>
+
+        <div className="quote-sheet-bottom">
+          <p><strong>Quote prepared by:</strong> {settings.quotePreparedBy || "-"}</p>
+          <p><strong>Quote is valid for {validityDays} days.</strong></p>
+        </div>
+        <p className="quote-acceptance">To accept quote, please sign and return to {settings.acceptanceEmail || settings.businessEmail || "-"}</p>
+        <p className="quote-deposit-tag"><strong>{settings.depositNotice || "50% deposit is required to lock in your date."}</strong></p>
+        <p className="quote-signoff">Gratuity is never expected but is always appreciated!</p>
+        <p className="quote-contact-strip">{businessContact || "-"}</p>
+      </article>
 
       <div className="summary-total">
-        <p>Estimated Total: <strong>{currency(totals.total)}</strong></p>
         <p>Deposit ({Math.round(settings.depositPct * 100)}%): <strong>{currency(totals.deposit)}</strong></p>
-        <p>Season Profile: <strong>{totals.seasonProfileName}</strong></p>
         {totals.cardFee > 0 && <p>Card Fee (3% deposit): <strong>{currency(totals.cardFee)}</strong></p>}
       </div>
     </div>

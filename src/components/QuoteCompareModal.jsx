@@ -110,6 +110,16 @@ export default function QuoteCompareModal({
                 />
               </label>
               <label className="field">
+                <span>Bartenders</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="10"
+                  value={compareForm.bartenders || 0}
+                  onChange={(e) => updateField("bartenders", Number(e.target.value))}
+                />
+              </label>
+              <label className="field">
                 <span>Package</span>
                 <select value={compareForm.pkg} onChange={(e) => updateField("pkg", e.target.value)}>
                   {catalog.packages.map((item) => (
@@ -218,6 +228,7 @@ export default function QuoteCompareModal({
                   <ComparisonRow label="Rentals" current={primaryTotals.rentals} scenario={compareTotals.rentals} />
                   <ComparisonRow label="Menu Items" current={primaryTotals.menu} scenario={compareTotals.menu} />
                   <ComparisonRow label="Labor" current={primaryTotals.labor} scenario={compareTotals.labor} />
+                  <ComparisonRow label="Bartender Labor" current={primaryTotals.bartenderLabor} scenario={compareTotals.bartenderLabor} />
                   <ComparisonRow label="Travel" current={primaryTotals.travel} scenario={compareTotals.travel} />
                   <ComparisonRow label="Service Fee" current={primaryTotals.serviceFee} scenario={compareTotals.serviceFee} />
                   <ComparisonRow label="Tax" current={primaryTotals.tax} scenario={compareTotals.tax} />

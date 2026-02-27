@@ -90,6 +90,7 @@ export function resolveSeasonProfile(form, settings) {
 export function calculateQuote(form, catalog, settings) {
   const guests = Math.min(400, Number(form.guests || 0));
   const hours = Number(form.hours || 0);
+  const bartenders = Math.max(0, Number(form.bartenders || 0));
   const selectedPkg = catalog.packages.find((p) => p.id === form.pkg) || catalog.packages[0];
   const taxRegion = resolveTaxRegion(form, settings);
   const seasonProfile = resolveSeasonProfile(form, settings);
@@ -119,6 +120,8 @@ export function calculateQuote(form, catalog, settings) {
       menu: 0,
       servers: 0,
       chefs: 0,
+      bartenders,
+      bartenderLabor: 0,
       labor: 0,
       travel: 0,
       serviceFee: 0,
@@ -170,8 +173,8 @@ export function calculateQuote(form, catalog, settings) {
       : Math.max(styleRules.minServers, Math.ceil(guests / styleRules.serverRatio));
   const chefs =
     styleRules.chefRatio === Number.POSITIVE_INFINITY ? 0 : Math.ceil(guests / styleRules.chefRatio);
-
-  const labor = settings.serverRate * servers * hours + settings.chefRate * chefs * hours;
+  const bartenderLabor = settings.bartenderRate * bartenders * hours;
+  const labor = settings.serverRate * servers * hours + settings.chefRate * chefs * hours + bartenderLabor;
   const travel = baseMiles * standardTravelRate + longDistanceMiles * longDistanceRate;
   const preFee = base + addons + rentals + menu + labor + travel;
   const serviceFee = preFee * serviceFeePctApplied;
@@ -190,6 +193,8 @@ export function calculateQuote(form, catalog, settings) {
     menu,
     servers,
     chefs,
+    bartenders,
+    bartenderLabor,
     labor,
     travel,
     serviceFee,

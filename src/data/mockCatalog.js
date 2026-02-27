@@ -278,6 +278,7 @@ export const DEFAULT_SETTINGS = {
   perMileRate: 0.7,
   longDistancePerMileRate: 1.1,
   deliveryThresholdMiles: 30,
+  bartenderRate: 30,
   serviceFeePct: 0.2,
   serviceFeeTiers: DEFAULT_SERVICE_FEE_TIERS,
   taxRate: 0.1,
@@ -288,6 +289,13 @@ export const DEFAULT_SETTINGS = {
   quoteValidityDays: 30,
   serverRate: 22,
   chefRate: 28,
+  quotePreparedBy: "Chef Toni North",
+  businessPhone: "(205) 593-2004",
+  businessEmail: "tonitastefultouch@yahoo.com",
+  businessAddress: "6230 Eagle Ridge Cir, Pinson, AL 35126",
+  acceptanceEmail: "tonitastefultouch@yahoo.com",
+  disposablesNote: "All disposables are included in this quote.",
+  depositNotice: "50% deposit is required to lock in your date.",
   eventTemplates: DEFAULT_EVENT_TEMPLATES,
   seasonalProfiles: DEFAULT_SEASONAL_PROFILES,
   defaultSeasonProfile: "auto"
@@ -343,6 +351,7 @@ function normalizeTemplate(item, idx) {
     name: String(item.name || `Template ${idx + 1}`),
     style: String(item.style || "Buffet"),
     hours: toNumber(item.hours, 4, 1, 12),
+    bartenders: toNumber(item.bartenders, 0, 0, 20),
     pkg: String(item.pkg || "classic"),
     addons: Array.isArray(item.addons) ? item.addons.map((id) => String(id)) : [],
     rentals: Array.isArray(item.rentals) ? item.rentals.map((id) => String(id)) : [],
@@ -410,6 +419,11 @@ function normalizeSeasonalProfiles(input) {
   }));
 }
 
+function toText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
 export function normalizeRental(item) {
   const qtyPerGuests = Number(item.qtyPerGuests || 1);
   return {
@@ -472,6 +486,7 @@ export function normalizeCatalog(raw) {
         DEFAULT_SETTINGS.deliveryThresholdMiles,
         0
       ),
+      bartenderRate: toNumber(rawSettings.bartenderRate, DEFAULT_SETTINGS.bartenderRate, 0),
       serviceFeePct: toNumber(rawSettings.serviceFeePct, DEFAULT_SETTINGS.serviceFeePct, 0, 1),
       serviceFeeTiers,
       taxRate: toNumber(rawSettings.taxRate, fallbackTaxRate ?? DEFAULT_SETTINGS.taxRate, 0, 1),
@@ -482,6 +497,13 @@ export function normalizeCatalog(raw) {
       quoteValidityDays: toNumber(rawSettings.quoteValidityDays, DEFAULT_SETTINGS.quoteValidityDays, 1),
       serverRate: toNumber(rawSettings.serverRate, DEFAULT_SETTINGS.serverRate, 0),
       chefRate: toNumber(rawSettings.chefRate, DEFAULT_SETTINGS.chefRate, 0),
+      quotePreparedBy: toText(rawSettings.quotePreparedBy, DEFAULT_SETTINGS.quotePreparedBy),
+      businessPhone: toText(rawSettings.businessPhone, DEFAULT_SETTINGS.businessPhone),
+      businessEmail: toText(rawSettings.businessEmail, DEFAULT_SETTINGS.businessEmail),
+      businessAddress: toText(rawSettings.businessAddress, DEFAULT_SETTINGS.businessAddress),
+      acceptanceEmail: toText(rawSettings.acceptanceEmail, DEFAULT_SETTINGS.acceptanceEmail),
+      disposablesNote: toText(rawSettings.disposablesNote, DEFAULT_SETTINGS.disposablesNote),
+      depositNotice: toText(rawSettings.depositNotice, DEFAULT_SETTINGS.depositNotice),
       eventTemplates,
       seasonalProfiles,
       defaultSeasonProfile

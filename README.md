@@ -23,6 +23,8 @@ If env vars are missing, app falls back to local default catalog data.
 
 ## Deploy
 
+For the fastest launch path, use `GO_LIVE_OPTION1.md`.
+
 ### Vercel
 
 1. Push this repo to GitHub.
@@ -38,24 +40,17 @@ Build settings (default):
 
 ### Firebase Hosting
 
-1. Install Firebase CLI: `npm i -g firebase-tools`
-2. Login: `firebase login`
-3. Initialize hosting in this project:
-   - `firebase init hosting`
-   - Select your Firebase project.
-   - Public directory: `dist`
-   - Configure as single-page app: `Yes`
-   - Set up automatic builds/deploys with GitHub: optional
-4. Build and deploy:
-   - `npm run build`
-   - `firebase deploy --only hosting`
+1. Login: `npx firebase-tools login`
+2. Select project: `npx firebase-tools use --add`
+3. Build and deploy hosting + firestore rules:
+   - `npm run deploy:firebase`
 
 ## Firestore Collections
 
 - `catalogPackages` (doc id is package id): `{ name, ppp }`
 - `catalogAddons` (doc id is addon id): `{ name, type, price }`
 - `catalogRentals` (doc id is rental id): `{ name, price, qtyPerGuests }`
-- `pricing/settings`: `{ perMileRate, serviceFeePct, taxRate, depositPct, quoteValidityDays, serverRate, chefRate }`
+- `pricing/settings`: pricing settings including tax regions, service tiers, templates, menu sections, and seasonal profiles
 - `quotes` (auto id): quote submission records from `Accept & Continue`
 
 ## Admin + Save Flow
@@ -80,6 +75,7 @@ Build settings (default):
 - `src/lib/quoteStore.js`: quote lifecycle + persistence + email template builder
 - `src/lib/proposalExport.js`: printable proposal/PDF export helper
 - `src/hooks/useCatalogData.js`: catalog/settings data source hook
+- `GO_LIVE_OPTION1.md`: launch checklist for Option 1
 
 ## Development Backlog
 

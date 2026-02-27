@@ -69,7 +69,9 @@ export default function QuoteHistoryModal({ open, onClose }) {
     const haystack = [
       quote.quoteNumber,
       quote.customer?.name,
+      quote.customer?.phone,
       quote.customer?.email,
+      quote.event?.name,
       quote.event?.date,
       quote.event?.venue,
       quote.payment?.depositStatus

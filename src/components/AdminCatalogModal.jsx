@@ -322,12 +322,75 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             <label>Per-mile rate<input type="number" step="0.01" value={draft.settings.perMileRate} onChange={(e) => patchNumericSetting("perMileRate", e.target.value)} /></label>
             <label>Long-distance per-mile<input type="number" step="0.01" value={draft.settings.longDistancePerMileRate} onChange={(e) => patchNumericSetting("longDistancePerMileRate", e.target.value)} /></label>
             <label>Delivery threshold miles<input type="number" step="1" min="0" value={draft.settings.deliveryThresholdMiles} onChange={(e) => patchNumericSetting("deliveryThresholdMiles", e.target.value)} /></label>
+            <label>Bartender rate<input type="number" step="0.01" min="0" value={draft.settings.bartenderRate} onChange={(e) => patchNumericSetting("bartenderRate", e.target.value)} /></label>
             <label>Service fee pct fallback<input type="number" step="0.01" value={draft.settings.serviceFeePct} onChange={(e) => patchNumericSetting("serviceFeePct", e.target.value)} /></label>
             <label>Tax rate fallback<input type="number" step="0.01" value={draft.settings.taxRate} onChange={(e) => patchNumericSetting("taxRate", e.target.value)} /></label>
             <label>Deposit pct<input type="number" step="0.01" value={draft.settings.depositPct} onChange={(e) => patchNumericSetting("depositPct", e.target.value)} /></label>
             <label>Quote validity days<input type="number" step="1" min="1" value={draft.settings.quoteValidityDays} onChange={(e) => patchNumericSetting("quoteValidityDays", e.target.value)} /></label>
             <label>Server rate<input type="number" step="0.01" value={draft.settings.serverRate} onChange={(e) => patchNumericSetting("serverRate", e.target.value)} /></label>
             <label>Chef rate<input type="number" step="0.01" value={draft.settings.chefRate} onChange={(e) => patchNumericSetting("chefRate", e.target.value)} /></label>
+          </div>
+        </section>
+
+        <section className="admin-section">
+          <div className="admin-section-head"><h3>Quote Meta</h3></div>
+          <div className="admin-grid-settings">
+            <label>
+              Quote prepared by
+              <input
+                type="text"
+                value={draft.settings.quotePreparedBy || ""}
+                onChange={(e) => patchTextSetting("quotePreparedBy", e.target.value)}
+              />
+            </label>
+            <label>
+              Business phone
+              <input
+                type="text"
+                value={draft.settings.businessPhone || ""}
+                onChange={(e) => patchTextSetting("businessPhone", e.target.value)}
+              />
+            </label>
+            <label>
+              Business email
+              <input
+                type="text"
+                value={draft.settings.businessEmail || ""}
+                onChange={(e) => patchTextSetting("businessEmail", e.target.value)}
+              />
+            </label>
+            <label>
+              Business address
+              <input
+                type="text"
+                value={draft.settings.businessAddress || ""}
+                onChange={(e) => patchTextSetting("businessAddress", e.target.value)}
+              />
+            </label>
+            <label>
+              Acceptance email
+              <input
+                type="text"
+                value={draft.settings.acceptanceEmail || ""}
+                onChange={(e) => patchTextSetting("acceptanceEmail", e.target.value)}
+              />
+            </label>
+            <label>
+              Disposables note
+              <input
+                type="text"
+                value={draft.settings.disposablesNote || ""}
+                onChange={(e) => patchTextSetting("disposablesNote", e.target.value)}
+              />
+            </label>
+            <label>
+              Deposit notice
+              <input
+                type="text"
+                value={draft.settings.depositNotice || ""}
+                onChange={(e) => patchTextSetting("depositNotice", e.target.value)}
+              />
+            </label>
           </div>
         </section>
 

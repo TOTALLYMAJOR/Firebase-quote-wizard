@@ -15,6 +15,7 @@ export default function LiveBreakdown({ form, totals, settings, catalog }) {
         <div><dt>Add-ons</dt><dd>{selectedAddonNames.join(", ") || "-"}</dd></div>
         <div><dt>Rentals</dt><dd>{selectedRentalNames.join(", ") || "-"}</dd></div>
         <div><dt>Menu Picks</dt><dd>{(form.menuItems || []).length}</dd></div>
+        <div><dt>Bartenders</dt><dd>{totals.bartenders}</dd></div>
         <div><dt>Travel</dt><dd>{form.milesRT} mi</dd></div>
         <div><dt>Tax Region</dt><dd>{totals.taxRegionName || "-"}</dd></div>
         <div><dt>Season</dt><dd>{totals.seasonProfileName || "Standard"}</dd></div>
