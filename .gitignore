@@ -5,4 +5,5 @@ dist/
 .firebaserc
 .vercel
 .DS_Store
+.firebase/
 *.log
