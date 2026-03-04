@@ -8,7 +8,6 @@ import {
   updateQuotePaymentStatus,
   updateQuoteStatus
 } from "../lib/quoteStore";
-import { exportQuoteProposal } from "../lib/proposalExport";
 
 function fmtDate(iso) {
   if (!iso) return "-";
@@ -164,9 +163,10 @@ export default function QuoteHistoryModal({ open, onClose }) {
     }
   };
 
-  const handleExportPdf = (quote) => {
+  const handleExportPdf = async (quote) => {
     try {
-      exportQuoteProposal(quote);
+      const { exportQuoteProposal } = await import("../lib/proposalExport");
+      await exportQuoteProposal(quote);
       setState((prev) => ({ ...prev, feedback: `Downloaded PDF for ${quote.quoteNumber}.` }));
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to export proposal PDF." }));

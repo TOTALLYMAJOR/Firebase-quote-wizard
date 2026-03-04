@@ -176,7 +176,7 @@ export default function App() {
             <img className="brand-logo" src="/brand/logo.png" alt="Tasteful Touch logo" />
             <div className="brand-copy">
               <div className="brand">Tasteful Touch Catering</div>
-              <p>Chef Toni and Grill Master Irvin</p>
+              <p>Chef Toni and Grill Master Ervin</p>
             </div>
           </div>
           <div className="brand-crew">
@@ -185,8 +185,8 @@ export default function App() {
               <figcaption>Chef Toni</figcaption>
             </figure>
             <figure className="crew-chip">
-              <img src="/brand/grillmaster-irvin.png" alt="Grill Master Irvin" />
-              <figcaption>Grill Master Irvin</figcaption>
+              <img src="/brand/grillmaster-irvin.png" alt="Grill Master Ervin" />
+              <figcaption>Grill Master Ervin</figcaption>
             </figure>
           </div>
           <div className="right-actions header-actions">

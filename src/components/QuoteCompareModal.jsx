@@ -5,7 +5,8 @@ function cloneForm(form) {
   return {
     ...form,
     addons: Array.isArray(form?.addons) ? [...form.addons] : [],
-    rentals: Array.isArray(form?.rentals) ? [...form.rentals] : []
+    rentals: Array.isArray(form?.rentals) ? [...form.rentals] : [],
+    menuItems: Array.isArray(form?.menuItems) ? [...form.menuItems] : []
   };
 }
 

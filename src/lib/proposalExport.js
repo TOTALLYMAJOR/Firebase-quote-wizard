@@ -1,6 +1,17 @@
 import { jsPDF } from "jspdf";
 import { currency } from "./quoteCalculator";
 
+const BRANDING = {
+  title: "Tasteful Touch Catering Proposal",
+  crew: "Chef Toni and Grill Master Ervin",
+  logoPath: "/brand/logo.png",
+  crewMembers: [
+    { label: "Chef Toni", imagePath: "/brand/chef-toni.png" },
+    { label: "Grill Master Ervin", imagePath: "/brand/grillmaster-irvin.png" }
+  ]
+};
+let brandAssetsCache = null;
+
 function fmtDate(iso) {
   if (!iso) return "-";
   const dt = new Date(iso);
@@ -12,11 +23,59 @@ function text(v) {
   return String(v ?? "-");
 }
 
-export function exportQuoteProposal(quote) {
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read image blob."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function resolveImageFormat(mimeType = "") {
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") return "JPEG";
+  if (mimeType === "image/webp") return "WEBP";
+  return "PNG";
+}
+
+async function loadBrandImage(path) {
+  try {
+    const response = await fetch(path);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    return {
+      format: resolveImageFormat(blob.type),
+      dataUrl: await blobToDataUrl(blob)
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadBrandAssets() {
+  if (brandAssetsCache) {
+    return brandAssetsCache;
+  }
+  const [logo, ...crewImages] = await Promise.all([
+    loadBrandImage(BRANDING.logoPath),
+    ...BRANDING.crewMembers.map((member) => loadBrandImage(member.imagePath))
+  ]);
+  brandAssetsCache = {
+    logo,
+    crewMembers: BRANDING.crewMembers.map((member, index) => ({
+      ...member,
+      image: crewImages[index] || null
+    }))
+  };
+  return brandAssetsCache;
+}
+
+export async function exportQuoteProposal(quote) {
   if (!quote) {
     throw new Error("Missing quote data for PDF export.");
   }
 
+  const brandAssets = await loadBrandAssets();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -35,7 +94,8 @@ export function exportQuoteProposal(quote) {
   };
   const meta = quote.quoteMeta || {};
   const perPersonRate = Number(quote.event?.guests || 0) > 0 ? Number(quote.totals?.base || 0) / Number(quote.event?.guests) : 0;
-  let y = 116;
+  const headerHeight = 124;
+  let y = headerHeight + 18;
 
   const ensureSpace = (needed = 24) => {
     if (y + needed <= pageHeight - 48) return;
@@ -69,19 +129,44 @@ export function exportQuoteProposal(quote) {
   };
 
   doc.setFillColor(...palette.ink);
-  doc.rect(0, 0, pageWidth, 98, "F");
+  doc.rect(0, 0, pageWidth, headerHeight, "F");
   doc.setFillColor(...palette.gold);
-  doc.rect(0, 88, pageWidth, 10, "F");
+  doc.rect(0, headerHeight - 10, pageWidth, 10, "F");
 
+  if (brandAssets.logo) {
+    doc.addImage(brandAssets.logo.dataUrl, brandAssets.logo.format, left, 18, 52, 52);
+  }
+
+  const crewChipSize = 42;
+  const crewGap = 14;
+  const crewBlockWidth =
+    (brandAssets.crewMembers.length * crewChipSize) + ((brandAssets.crewMembers.length - 1) * crewGap);
+  const crewStartX = right - crewBlockWidth;
+  const crewTopY = 18;
+  brandAssets.crewMembers.forEach((member, index) => {
+    const chipX = crewStartX + (index * (crewChipSize + crewGap));
+    doc.setFillColor(...palette.cream);
+    doc.roundedRect(chipX - 2, crewTopY - 2, crewChipSize + 4, crewChipSize + 4, 8, 8, "F");
+    if (member.image) {
+      doc.addImage(member.image.dataUrl, member.image.format, chipX, crewTopY, crewChipSize, crewChipSize);
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(member.label, chipX + (crewChipSize / 2), crewTopY + crewChipSize + 13, { align: "center" });
+  });
+
+  const titleX = brandAssets.logo ? left + 64 : left;
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(24);
-  doc.text("Tony Catering Proposal", left, 46);
-  doc.setFontSize(11);
+  doc.setFontSize(20);
+  doc.text(BRANDING.title, titleX, 42);
+  doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(`Quote #${text(quote.quoteNumber)}`, left, 64);
-  doc.text(`Created: ${fmtDate(quote.createdAtISO)}`, right, 46, { align: "right" });
-  doc.text(`Valid Through: ${fmtDate(quote.expiresAtISO)}`, right, 64, { align: "right" });
+  doc.text(BRANDING.crew, titleX, 58);
+  doc.text(`Quote #${text(quote.quoteNumber)}`, titleX, 74);
+  doc.text(`Created: ${fmtDate(quote.createdAtISO)}`, right, 94, { align: "right" });
+  doc.text(`Valid Through: ${fmtDate(quote.expiresAtISO)}`, right, 110, { align: "right" });
 
   doc.setFillColor(...palette.cream);
   doc.roundedRect(left, y - 14, maxWidth, 38, 10, 10, "F");
