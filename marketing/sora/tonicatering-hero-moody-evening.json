@@ -1,0 +1,32 @@
+{
+  "create": {
+    "completed_at": null,
+    "created_at": 1772576760,
+    "error": null,
+    "expires_at": null,
+    "id": "video_69a75ff89e0481919cbd4654f0ffe0b30771285609e6bb86",
+    "model": "sora-2-pro",
+    "object": "video",
+    "progress": 0,
+    "prompt": "Use case: Website hero video for a premium catering quote app\nPrimary request: Premium website hero video for the Tasteful Touch Catering quote app that emphasizes live quoting, scenario comparison, and proposal export in a moody evening hospitality setting.\nScene/background: A moody upscale evening catering environment fused with a premium quote-app demo, designed for a homepage hero section.\nSubject: A sleek laptop and tablet showing a premium catering quote interface, elegant plated food, and two fictional adult catering staff moving in the background.\nAction: The camera glides through the interface as quote totals update, menu selections highlight, and a proposal export moment appears before the scene settles into a composed hero frame.\nCamera: Slow cinematic dolly with subtle parallax, macro-to-medium transitions, shallow depth of field, stable framing, no shaky cam.\nLighting/mood: Moody evening lighting with warm tungsten practicals, glossy highlights, soft edge light, elegant reflections, controlled contrast, premium restaurant ambiance.\nColor palette: Black, charcoal, ivory, champagne gold, and warm amber accents.\nStyle/format: Luxury hospitality advertising mixed with premium SaaS product film, photoreal, refined, polished, cinematic, clean UI.\nTiming/beats: 0-2 seconds establish premium environment and app screen; 2-5 seconds show live quote interactions and feature callouts; 5-7 seconds reveal proposal export energy; 7-8 seconds settle into a stable hero frame.\nAudio: No dialogue, no music, designed for muted autoplay hero use.\nText (verbatim): \"Minimal centered feature overlay only at the final frame: Live Quotes \u2022 Scenario Compare \u2022 Proposal Exports.\"\nConstraints: Keep all important content inside the central 60 percent safe area for desktop and mobile crops. Use only fictional adults. No real-person resemblance. The interface should feel inspired by a premium catering quote tool with gold and cream accents, not a generic dashboard. Keep the result elegant, legible, and product-focused. End on a stable frame suitable for a looping homepage hero.\nAvoid: No real brands, no celebrity likeness, no children, no wedding cliches, no neon purple, no horror mood, no chaotic movement, no distorted hands, no unreadable gibberish text blocks, no generic restaurant commercial, no alcohol focus.",
+    "remixed_from_video_id": null,
+    "seconds": "8",
+    "size": "1280x720",
+    "status": "queued"
+  },
+  "final": {
+    "completed_at": 1772577040,
+    "created_at": 1772576760,
+    "error": null,
+    "expires_at": 1772580640,
+    "id": "video_69a75ff89e0481919cbd4654f0ffe0b30771285609e6bb86",
+    "model": "sora-2-pro",
+    "object": "video",
+    "progress": 100,
+    "prompt": "Use case: Website hero video for a premium catering quote app\nPrimary request: Premium website hero video for the Tasteful Touch Catering quote app that emphasizes live quoting, scenario comparison, and proposal export in a moody evening hospitality setting.\nScene/background: A moody upscale evening catering environment fused with a premium quote-app demo, designed for a homepage hero section.\nSubject: A sleek laptop and tablet showing a premium catering quote interface, elegant plated food, and two fictional adult catering staff moving in the background.\nAction: The camera glides through the interface as quote totals update, menu selections highlight, and a proposal export moment appears before the scene settles into a composed hero frame.\nCamera: Slow cinematic dolly with subtle parallax, macro-to-medium transitions, shallow depth of field, stable framing, no shaky cam.\nLighting/mood: Moody evening lighting with warm tungsten practicals, glossy highlights, soft edge light, elegant reflections, controlled contrast, premium restaurant ambiance.\nColor palette: Black, charcoal, ivory, champagne gold, and warm amber accents.\nStyle/format: Luxury hospitality advertising mixed with premium SaaS product film, photoreal, refined, polished, cinematic, clean UI.\nTiming/beats: 0-2 seconds establish premium environment and app screen; 2-5 seconds show live quote interactions and feature callouts; 5-7 seconds reveal proposal export energy; 7-8 seconds settle into a stable hero frame.\nAudio: No dialogue, no music, designed for muted autoplay hero use.\nText (verbatim): \"Minimal centered feature overlay only at the final frame: Live Quotes \u2022 Scenario Compare \u2022 Proposal Exports.\"\nConstraints: Keep all important content inside the central 60 percent safe area for desktop and mobile crops. Use only fictional adults. No real-person resemblance. The interface should feel inspired by a premium catering quote tool with gold and cream accents, not a generic dashboard. Keep the result elegant, legible, and product-focused. End on a stable frame suitable for a looping homepage hero.\nAvoid: No real brands, no celebrity likeness, no children, no wedding cliches, no neon purple, no horror mood, no chaotic movement, no distorted hands, no unreadable gibberish text blocks, no generic restaurant commercial, no alcohol focus.",
+    "remixed_from_video_id": null,
+    "seconds": "8",
+    "size": "1280x720",
+    "status": "completed"
+  }
+}

@@ -83,7 +83,7 @@ Vite will start the local development server and print the local URL in the term
 
 ```bash
 npm run build
-```
+```up
 
 ### Preview Production Build
 
