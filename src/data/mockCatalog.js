@@ -285,7 +285,7 @@ export const DEFAULT_SETTINGS = {
   taxRegions: DEFAULT_TAX_REGIONS,
   defaultTaxRegion: "local",
   menuSections: DEFAULT_MENU_SECTIONS,
-  depositPct: 0.5,
+  depositPct: 0.3,
   quoteValidityDays: 30,
   serverRate: 22,
   chefRate: 28,
@@ -295,7 +295,7 @@ export const DEFAULT_SETTINGS = {
   businessAddress: "6230 Eagle Ridge Cir, Pinson, AL 35126",
   acceptanceEmail: "tonitastefultouch@yahoo.com",
   disposablesNote: "All disposables are included in this quote.",
-  depositNotice: "50% deposit is required to lock in your date.",
+  depositNotice: "30% deposit is required to lock in your date.",
   eventTemplates: DEFAULT_EVENT_TEMPLATES,
   seasonalProfiles: DEFAULT_SEASONAL_PROFILES,
   defaultSeasonProfile: "auto"
