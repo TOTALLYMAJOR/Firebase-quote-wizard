@@ -246,7 +246,6 @@ export function StepReview({ form, totals, settings }) {
 
       <div className="summary-total">
         <p>Deposit ({Math.round(settings.depositPct * 100)}%): <strong>{currency(totals.deposit)}</strong></p>
-        {totals.cardFee > 0 && <p>Card Fee (3% deposit): <strong>{currency(totals.cardFee)}</strong></p>}
       </div>
     </div>
   );

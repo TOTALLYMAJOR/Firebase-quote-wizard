@@ -128,7 +128,6 @@ export function calculateQuote(form, catalog, settings) {
       tax: 0,
       total: 0,
       deposit: 0,
-      cardFee: 0,
       serviceFeePctApplied,
       taxRateApplied,
       taxRegionId: taxRegion.id,
@@ -182,7 +181,6 @@ export function calculateQuote(form, catalog, settings) {
 
   const total = preFee + serviceFee + tax;
   const deposit = total * settings.depositPct;
-  const cardFee = form.payMethod === "card" ? deposit * 0.03 : 0;
 
   return {
     selectedPkg,
@@ -201,7 +199,6 @@ export function calculateQuote(form, catalog, settings) {
     tax,
     total,
     deposit,
-    cardFee,
     serviceFeePctApplied,
     taxRateApplied,
     taxRegionId: taxRegion.id,

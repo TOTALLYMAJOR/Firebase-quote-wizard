@@ -284,7 +284,7 @@ export default function App() {
               ) : (
                 <>
                   <select value={form.payMethod} onChange={(e) => setForm((f) => ({ ...f, payMethod: e.target.value }))}>
-                    <option value="card">Pay by Card (+3%)</option>
+                    <option value="card">Pay by Card</option>
                     <option value="ach">Pay by ACH/Check</option>
                   </select>
                   <button

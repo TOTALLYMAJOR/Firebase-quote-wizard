@@ -203,7 +203,6 @@ export async function submitQuote({ form, totals, catalogSource, settings }) {
       tax: totals.tax,
       total: totals.total,
       deposit: totals.deposit,
-      cardFee: totals.cardFee,
       serviceFeePctApplied: totals.serviceFeePctApplied,
       taxRateApplied: totals.taxRateApplied,
       taxRegionId: totals.taxRegionId,

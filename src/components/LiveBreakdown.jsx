@@ -30,7 +30,6 @@ export default function LiveBreakdown({ form, totals, settings, catalog }) {
         <div><dt>Tax ({Math.round(totals.taxRateApplied * 1000) / 10}%)</dt><dd>{currency(totals.tax)}</dd></div>
         <div><dt>Total</dt><dd>{currency(totals.total)}</dd></div>
         <div><dt>Deposit ({Math.round(settings.depositPct * 100)}%)</dt><dd>{currency(totals.deposit)}</dd></div>
-        {totals.cardFee > 0 && <div><dt>Card Fee</dt><dd>{currency(totals.cardFee)}</dd></div>}
       </dl>
     </aside>
   );

@@ -146,7 +146,7 @@ export default function QuoteCompareModal({
               <label className="field">
                 <span>Payment method</span>
                 <select value={compareForm.payMethod} onChange={(e) => updateField("payMethod", e.target.value)}>
-                  <option value="card">Pay by Card (+3%)</option>
+                  <option value="card">Pay by Card</option>
                   <option value="ach">Pay by ACH/Check</option>
                 </select>
               </label>
@@ -235,7 +235,6 @@ export default function QuoteCompareModal({
                   <ComparisonRow label="Tax" current={primaryTotals.tax} scenario={compareTotals.tax} />
                   <ComparisonRow label="Total" current={primaryTotals.total} scenario={compareTotals.total} />
                   <ComparisonRow label="Deposit" current={primaryTotals.deposit} scenario={compareTotals.deposit} />
-                  <ComparisonRow label="Card Fee" current={primaryTotals.cardFee} scenario={compareTotals.cardFee} />
                   <ComparisonRow label="Servers" current={primaryTotals.servers} scenario={compareTotals.servers} money={false} />
                   <ComparisonRow label="Chefs" current={primaryTotals.chefs} scenario={compareTotals.chefs} money={false} />
                 </tbody>
