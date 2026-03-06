@@ -239,13 +239,13 @@ export function StepReview({ form, totals, settings }) {
           <p><strong>Quote is valid for {validityDays} days.</strong></p>
         </div>
         <p className="quote-acceptance">To accept quote, please sign and return to {settings.acceptanceEmail || settings.businessEmail || "-"}</p>
-        <p className="quote-deposit-tag"><strong>30% deposit is required to lock in your date.</strong></p>
+        <p className="quote-deposit-tag"><strong>{settings.depositNotice || `${Math.round((settings.depositPct || 0) * 100)}% deposit is required to lock in your date.`}</strong></p>
         <p className="quote-signoff">Gratuity is never expected but is always appreciated!</p>
         <p className="quote-contact-strip">{businessContact || "-"}</p>
       </article>
 
       <div className="summary-total">
-        <p>Deposit (30%): <strong>{currency(totals.deposit)}</strong></p>
+        <p>Deposit ({Math.round((settings.depositPct || 0) * 100)}%): <strong>{currency(totals.deposit)}</strong></p>
         {totals.cardFee > 0 && <p>Card Fee (3% deposit): <strong>{currency(totals.cardFee)}</strong></p>}
       </div>
     </div>
