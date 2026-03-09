@@ -29,6 +29,7 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
       <Field label="Guests (max 400)"><input type="number" min="1" max="400" value={form.guests} onChange={(e) => setForm((f) => ({ ...f, guests: Number(e.target.value) }))} /></Field>
       <Field label="Event name"><input type="text" value={form.eventName} onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value }))} /></Field>
       <Field label="Venue"><input type="text" value={form.venue} onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))} /></Field>
+      <Field label="Venue address"><input type="text" value={form.venueAddress || ""} onChange={(e) => setForm((f) => ({ ...f, venueAddress: e.target.value }))} /></Field>
       <Field label="Client / Organization"><input type="text" value={form.clientOrg} onChange={(e) => setForm((f) => ({ ...f, clientOrg: e.target.value }))} /></Field>
       <Field label="Service style">
         <select value={form.style} onChange={(e) => setForm((f) => ({ ...f, style: e.target.value }))}>
@@ -51,6 +52,15 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
         >
           <option value="auto">Auto detect</option>
           {seasonProfiles.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Show disposables on quote">
+        <select
+          value={form.includeDisposables === false ? "no" : "yes"}
+          onChange={(e) => setForm((f) => ({ ...f, includeDisposables: e.target.value === "yes" }))}
+        >
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
         </select>
       </Field>
       <Field label="Your name"><input type="text" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
@@ -209,6 +219,7 @@ export function StepReview({ form, totals, settings }) {
           <p><strong>Name of Event:</strong> {form.eventName || "-"}</p>
           <p><strong>Date of Event:</strong> {eventDateLabel}</p>
           <p className="quote-sheet-meta-wide"><strong>Event Location:</strong> {form.venue || "-"}</p>
+          <p className="quote-sheet-meta-wide"><strong>Venue Address:</strong> {form.venueAddress || "-"}</p>
         </div>
 
         <section className="quote-sheet-menu">
@@ -231,7 +242,9 @@ export function StepReview({ form, totals, settings }) {
           )}
         </section>
 
-        <p className="quote-center-note"><strong>{settings.disposablesNote || "All disposables are included in this quote."}</strong></p>
+        {form.includeDisposables !== false && (
+          <p className="quote-center-note"><strong>{settings.disposablesNote || "All disposables are included in this quote."}</strong></p>
+        )}
         <p className="quote-total-line">TOTAL: <strong>{currency(totals.total)}</strong></p>
 
         <div className="quote-sheet-bottom">

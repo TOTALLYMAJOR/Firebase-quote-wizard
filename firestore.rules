@@ -1,24 +1,100 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/userRoles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.role == role;
+    }
+
+    function isBootstrapAdmin() {
+      return isSignedIn()
+        && request.auth.token.email in [
+          "tonitastefultouch@yahoo.com"
+        ];
+    }
+
+    function isAdmin() {
+      return isBootstrapAdmin() || hasRole("admin");
+    }
+
+    function isStaff() {
+      return isAdmin() || hasRole("sales");
+    }
+
+    function quoteBelongsToUser(data) {
+      return isSignedIn()
+        && (
+          data.ownerUid == request.auth.uid
+          || (
+            data.customerEmailKey != null
+            && request.auth.token.email != null
+            && data.customerEmailKey == request.auth.token.email
+          )
+        );
+    }
+
+    function statusPatchOnly() {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        "status",
+        "updatedAtISO",
+        "lifecycle"
+      ])
+      && request.resource.data.status in ["viewed", "accepted", "declined"]
+      && request.resource.data.portalKey == resource.data.portalKey;
+    }
+
+    match /userRoles/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin()
+        || (
+          isSignedIn()
+          && request.auth.uid == uid
+          && request.resource.data.role == "customer"
+          && request.resource.data.email == request.auth.token.email
+        );
+      allow update, delete: if isAdmin();
+    }
+
     match /catalogPackages/{docId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
     match /catalogAddons/{docId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
     match /catalogRentals/{docId} {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
     match /pricing/settings {
-      allow read, write: if true;
+      allow read: if isStaff();
+      allow write: if isAdmin();
     }
 
     match /quotes/{quoteId} {
-      allow read, write: if true;
+      allow create: if isStaff()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.portalKey is string
+        && request.resource.data.portalKey.size() >= 20;
+      allow read: if isStaff() || quoteBelongsToUser(resource.data);
+      allow update: if isStaff() || statusPatchOnly();
+      allow delete: if isAdmin();
+    }
+
+    match /customerPortalQuotes/{portalKey} {
+      allow get: if portalKey.size() >= 20;
+      allow list: if false;
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || statusPatchOnly();
     }
 
     match /{document=**} {

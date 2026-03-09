@@ -86,17 +86,32 @@ async function saveToFirebase(catalog) {
   await batch.commit();
 }
 
-export function useCatalogData() {
+export function useCatalogData({ enabled = true } = {}) {
   const [state, setState] = useState(() => ({
-    loading: true,
+    loading: enabled,
     saving: false,
-    source: firebaseReady ? "firebase" : "local-defaults",
+    source: enabled ? (firebaseReady ? "firebase" : "local-defaults") : "auth-required",
     error: "",
     ...defaultCatalog()
   }));
 
   useEffect(() => {
     let alive = true;
+
+    if (!enabled) {
+      const fallback = defaultCatalog();
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        saving: false,
+        source: "auth-required",
+        error: "",
+        ...fallback
+      }));
+      return () => {
+        alive = false;
+      };
+    }
 
     async function load() {
       try {
@@ -152,9 +167,12 @@ export function useCatalogData() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [enabled]);
 
   const saveCatalog = useCallback(async (nextCatalog) => {
+    if (!enabled) {
+      return { ok: false, error: "Sign in as staff to edit catalog." };
+    }
     const normalized = normalizeCatalog(nextCatalog);
     setState((prev) => ({ ...prev, saving: true, error: "" }));
 
@@ -179,7 +197,7 @@ export function useCatalogData() {
       }));
       return { ok: false, error: err?.message || "Failed to save catalog." };
     }
-  }, []);
+  }, [enabled]);
 
   return {
     ...state,

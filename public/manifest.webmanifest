@@ -1,0 +1,22 @@
+{
+  "name": "Tasteful Touch Quote Wizard",
+  "short_name": "Quote Wizard",
+  "description": "Staff quote builder and customer quote portal for Tasteful Touch Catering.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#100d09",
+  "theme_color": "#1b150f",
+  "icons": [
+    {
+      "src": "/brand/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/brand/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

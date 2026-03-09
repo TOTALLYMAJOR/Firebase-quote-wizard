@@ -673,6 +673,13 @@ thead th {
   flex-wrap: wrap;
 }
 
+.portal-link-row {
+  margin-top: 0.75rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+
 .cta,
 .ghost {
   border-radius: 999px;
@@ -765,6 +772,71 @@ hr {
   margin: 0.4rem 0 0;
   color: var(--tone-danger);
   font-size: 0.84rem;
+}
+
+.auth-shell,
+.portal-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.2rem 0;
+}
+
+.auth-card,
+.portal-card {
+  width: min(680px, 100%);
+}
+
+.auth-card h1,
+.portal-card h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  color: #2e230f;
+}
+
+.auth-mode-switch {
+  margin: 0.8rem 0;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.auth-actions,
+.portal-actions {
+  margin-top: 0.8rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.portal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.portal-entry {
+  margin-top: 0.8rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+
+.portal-quote {
+  margin-top: 0.9rem;
+  border: 1px solid #d7b372;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff8eb, #fff2d7);
+  padding: 0.85rem;
+}
+
+.portal-quote h2 {
+  margin: 0;
+}
+
+.portal-quote p {
+  margin: 0.35rem 0 0;
+  color: #5a452b;
 }
 
 .modal-overlay {
@@ -1043,6 +1115,11 @@ hr {
   }
 
   .history-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .portal-link-row,
+  .portal-entry {
     grid-template-columns: 1fr;
   }
 

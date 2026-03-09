@@ -1,4 +1,5 @@
 import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -14,4 +15,5 @@ const hasConfig = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
 
 export const app = hasConfig ? initializeApp(firebaseConfig) : null;
 export const db = app ? getFirestore(app) : null;
+export const auth = app ? getAuth(app) : null;
 export const firebaseReady = Boolean(db);

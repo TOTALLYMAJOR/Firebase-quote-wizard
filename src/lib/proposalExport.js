@@ -93,6 +93,7 @@ export async function exportQuoteProposal(quote) {
     line: [214, 184, 130]
   };
   const meta = quote.quoteMeta || {};
+  const showDisposablesNote = meta.includeDisposables !== false;
   const perPersonRate = Number(quote.event?.guests || 0) > 0 ? Number(quote.totals?.base || 0) / Number(quote.event?.guests) : 0;
   const headerHeight = 124;
   let y = headerHeight + 18;
@@ -189,6 +190,7 @@ export async function exportQuoteProposal(quote) {
   row("Event Date", quote.event?.date);
   row("Start Time", quote.event?.time);
   row("Venue", quote.event?.venue);
+  row("Venue Address", quote.event?.venueAddress || "-");
   row("Guests", quote.event?.guests);
   row("Service Style", quote.event?.style);
 
@@ -236,11 +238,13 @@ export async function exportQuoteProposal(quote) {
 
   y += 20;
   ensureSpace(84);
-  doc.setTextColor(...palette.text);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text(meta.disposablesNote || "All disposables are included in this quote.", left, y);
-  y += 14;
+  if (showDisposablesNote) {
+    doc.setTextColor(...palette.text);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(meta.disposablesNote || "All disposables are included in this quote.", left, y);
+    y += 14;
+  }
   doc.text(`Quote prepared by: ${text(meta.quotePreparedBy || "-")}`, left, y);
   doc.text(`Quote is valid for ${Number(meta.quoteValidityDays || 30)} days.`, right, y, { align: "right" });
   y += 14;

@@ -26,6 +26,12 @@ npm run check:env
 npm run build
 ```
 
+Optional bootstrap admins:
+
+```env
+VITE_BOOTSTRAP_ADMIN_EMAILS=owner@yourdomain.com,manager@yourdomain.com
+```
+
 ## 3) Deploy Firestore rules + Hosting (Firebase CLI path)
 
 1. Login and set project:
@@ -64,15 +70,28 @@ Use one of:
 
 Best practice: subdomain (`quotes.yourdomain.com`) + direct link.
 
-## 6) Post-launch checklist
+## 6) Enable authentication and roles
+
+1. In Firebase Console -> Authentication -> Sign-in method:
+   - enable Email/Password
+   - enable Google
+2. Sign in once with your owner account.
+3. In Firestore, verify `userRoles/{uid}` has role `admin` for your owner user.
+4. Add `sales` role docs for internal users who need quote access but not admin catalog control.
+
+## 7) Post-launch checklist
 
 1. Create at least one test quote.
 2. Confirm quote appears in Quote History.
 3. Confirm Admin Catalog save persists after refresh.
-4. Export one PDF proposal.
-5. Confirm mobile layout on iPhone + Android viewport.
+4. Copy customer portal link from Quote History and verify accept/decline updates status.
+5. Export one PDF proposal.
+6. Confirm mobile layout on iPhone + Android viewport.
 
 ## Security note
 
-Current `firestore.rules` are permissive to maximize speed of launch.
-For production hardening, add authentication and tighten write rules by role.
+Current `firestore.rules` are role-gated:
+
+- authenticated staff (`sales` / `admin`) can operate the quote workspace
+- only `admin` can modify catalog and pricing settings
+- customer portal links can only update limited status fields

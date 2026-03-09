@@ -23,6 +23,8 @@ The app supports:
 - quote history and status tracking
 - admin-controlled catalog and pricing updates
 - Firebase-backed persistence for live use
+- email/Google staff authentication with role-gated admin controls
+- customer quote portal links for view/accept/decline updates
 
 ## Core Features
 
@@ -52,6 +54,7 @@ The app supports:
 - quote lifecycle tracking: `draft`, `sent`, `viewed`, `accepted`, `declined`, `expired`
 - deposit payment status tracking
 - reporting dashboard with pipeline and conversion metrics
+- customer portal record sync in Firestore (`customerPortalQuotes`)
 
 ## Tech Stack
 
@@ -114,6 +117,12 @@ npm run check:env
 
 If Firebase variables are not present, the app falls back to local defaults and local cache where supported.
 
+Optional role bootstrap:
+
+```env
+VITE_BOOTSTRAP_ADMIN_EMAILS=owner@yourdomain.com,manager@yourdomain.com
+```
+
 ## Available Scripts
 
 ```bash
@@ -169,6 +178,8 @@ Primary collections used by the app:
 - `catalogRentals`
 - `pricing/settings`
 - `quotes`
+- `customerPortalQuotes`
+- `userRoles`
 
 The `pricing/settings` document contains configurable quote logic such as:
 
@@ -213,7 +224,7 @@ src/
 - Firebase Hosting is live at `https://tonicatering.web.app`
 - `.env` is ignored and should never be committed
 - `.firebase/` is ignored as local CLI state
-- current Firestore rules are permissive for fast launch and should be tightened before broader production rollout
+- Firestore rules enforce authentication, role-gated admin writes, and controlled customer portal status updates
 
 ## Roadmap
 

@@ -16,7 +16,7 @@ function fmtDate(iso) {
   return dt.toLocaleString();
 }
 
-export default function QuoteHistoryModal({ open, onClose }) {
+export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" }) {
   const [state, setState] = useState({
     loading: false,
     source: "",
@@ -189,6 +189,23 @@ export default function QuoteHistoryModal({ open, onClose }) {
     }
   };
 
+  const handleCopyPortalLink = async (quote) => {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard unavailable in this browser.");
+      }
+      if (!quote.portalKey) {
+        throw new Error("No customer portal key for this quote.");
+      }
+      const base = basePortalUrl || `${window.location.origin}${window.location.pathname}`;
+      const portalLink = `${base}?portal=${quote.portalKey}`;
+      await navigator.clipboard.writeText(portalLink);
+      setState((prev) => ({ ...prev, feedback: `Portal link copied for ${quote.quoteNumber}.` }));
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err?.message || "Failed to copy portal link." }));
+    }
+  };
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal-card history-card">
@@ -282,6 +299,7 @@ export default function QuoteHistoryModal({ open, onClose }) {
                     <div className="row-actions">
                       <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
                       <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
+                      <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
                       <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>
                     </div>
                   </td>

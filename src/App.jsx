@@ -1,27 +1,47 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import AdminCatalogModal from "./components/AdminCatalogModal";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import AuthGate from "./components/AuthGate";
+import CustomerPortalView from "./components/CustomerPortalView";
 import LiveBreakdown from "./components/LiveBreakdown";
-import QuoteCompareModal from "./components/QuoteCompareModal";
-import QuoteHistoryModal from "./components/QuoteHistoryModal";
-import ReportingDashboardModal from "./components/ReportingDashboardModal";
 import { StepEvent, StepMenu, StepReview } from "./components/WizardSteps";
 import { STAFF_RULES } from "./data/mockCatalog";
+import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
 import { submitQuote } from "./lib/quoteStore";
 
+const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
+const QuoteCompareModal = lazy(() => import("./components/QuoteCompareModal"));
+const QuoteHistoryModal = lazy(() => import("./components/QuoteHistoryModal"));
+const ReportingDashboardModal = lazy(() => import("./components/ReportingDashboardModal"));
+
 const STEP_LABELS = ["Event", "Menu & Services", "Review"];
 
+function readPortalKeyFromUrl() {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get("portal") || "").trim();
+}
+
+function copyText(text) {
+  if (!navigator?.clipboard) {
+    throw new Error("Clipboard is unavailable in this browser.");
+  }
+  return navigator.clipboard.writeText(text);
+}
+
 export default function App() {
-  const catalog = useCatalogData();
   const wizardRef = useRef(null);
+  const authSession = useAuthSession();
+  const [portalKey, setPortalKey] = useState(() => readPortalKeyFromUrl());
+  const [portalMode, setPortalMode] = useState(Boolean(portalKey));
+  const catalog = useCatalogData({ enabled: authSession.isStaff });
   const [step, setStep] = useState(1);
   const [adminOpen, setAdminOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
-  const [submitState, setSubmitState] = useState({ saving: false, message: "" });
+  const [submitState, setSubmitState] = useState({ saving: false, message: "", portalLink: "" });
 
   const [form, setForm] = useState({
     date: "",
@@ -30,6 +50,7 @@ export default function App() {
     bartenders: 0,
     guests: 0,
     venue: "",
+    venueAddress: "",
     eventName: "",
     clientOrg: "",
     style: "Buffet",
@@ -44,6 +65,7 @@ export default function App() {
     taxRegion: "",
     seasonProfileId: "auto",
     milesRT: 0,
+    includeDisposables: true,
     depositLink: "",
     payMethod: "card"
   });
@@ -140,26 +162,61 @@ export default function App() {
   };
 
   const handleSubmitQuote = async () => {
-    if (totals.guests <= 0) {
-      setSubmitState({ saving: false, message: "Add guest count before saving a quote." });
+    const requiredError =
+      totals.guests <= 0
+        ? "Add guest count before saving a quote."
+        : !form.name.trim()
+          ? "Client name is required."
+          : !form.email.trim()
+            ? "Client email is required."
+            : !/^\S+@\S+\.\S+$/.test(form.email.trim())
+              ? "Client email format is invalid."
+              : !form.date
+                ? "Event date is required."
+                : !form.eventName.trim()
+                  ? "Event name is required."
+                  : !form.venue.trim()
+                    ? "Venue is required."
+                    : "";
+
+    if (requiredError) {
+      setSubmitState({ saving: false, message: requiredError, portalLink: "" });
       return;
     }
 
-    setSubmitState({ saving: true, message: "" });
+    setSubmitState({ saving: true, message: "", portalLink: "" });
     try {
       const result = await submitQuote({
         form,
         totals,
         catalogSource: catalog.source,
-        settings: catalog.settings
+        settings: catalog.settings,
+        ownerUid: authSession.user?.uid || "",
+        ownerEmail: authSession.user?.email || ""
       });
+      const basePath = `${window.location.origin}${window.location.pathname}`;
+      const portalLink = result.portalKey ? `${basePath}?portal=${result.portalKey}` : "";
       setSubmitState({
         saving: false,
-        message: `Quote ${result.quoteNumber} saved to ${result.storage}.`
+        message: `Quote ${result.quoteNumber} saved to ${result.storage}.`,
+        portalLink
       });
       setHistoryOpen(true);
     } catch (err) {
-      setSubmitState({ saving: false, message: err?.message || "Failed to save quote." });
+      setSubmitState({ saving: false, message: err?.message || "Failed to save quote.", portalLink: "" });
+    }
+  };
+
+  const handleCopyPortalLink = async () => {
+    try {
+      if (!submitState.portalLink) return;
+      await copyText(submitState.portalLink);
+      setSubmitState((prev) => ({ ...prev, message: "Customer portal link copied." }));
+    } catch (err) {
+      setSubmitState((prev) => ({
+        ...prev,
+        message: err?.message || "Failed to copy customer portal link."
+      }));
     }
   };
 
@@ -168,12 +225,73 @@ export default function App() {
     wizardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const handleSignOut = async () => {
+    try {
+      await authSession.signOut();
+    } catch (err) {
+      setSubmitState((prev) => ({ ...prev, message: err?.message || "Failed to sign out." }));
+    }
+  };
+
+  const openPortalMode = () => {
+    setPortalKey("");
+    setPortalMode(true);
+  };
+
+  const closePortalMode = () => {
+    setPortalMode(false);
+    setPortalKey("");
+    const nextUrl = `${window.location.pathname}${window.location.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+  };
+
+  if (portalMode) {
+    return (
+      <div className="app-shell">
+        <CustomerPortalView initialPortalKey={portalKey} onBackToStaff={closePortalMode} />
+      </div>
+    );
+  }
+
+  if (authSession.loading) {
+    return (
+      <main className="auth-shell container">
+        <section className="panel auth-card">
+          <h1>Loading</h1>
+          <p className="muted">Checking your session...</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!authSession.user) {
+    return <AuthGate sessionError={authSession.error} />;
+  }
+
+  if (!authSession.isStaff) {
+    return (
+      <main className="auth-shell container">
+        <section className="panel auth-card">
+          <h1>Access Restricted</h1>
+          <p className="muted">
+            Signed in as {authSession.user.email}. Your account role is <strong>{authSession.role}</strong>.
+          </p>
+          <p className="source-note">Ask an admin to set your role to `sales` or `admin` in `userRoles/{authSession.user.uid}`.</p>
+          <div className="auth-actions">
+            <button type="button" className="ghost" onClick={openPortalMode}>Open Customer Portal</button>
+            <button type="button" className="cta" onClick={handleSignOut}>Sign Out</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="app-shell">
       <header className="site-header">
         <div className="container nav">
           <div className="brand-lockup">
-            <img className="brand-logo" src="/brand/logo.png" alt="Tasteful Touch logo" />
+            <img className="brand-logo" src="/brand/logo.png" alt="Tasteful Touch logo" loading="eager" decoding="async" />
             <div className="brand-copy">
               <div className="brand">Tasteful Touch Catering</div>
               <p>Chef Toni and Grill Master Ervin</p>
@@ -181,19 +299,21 @@ export default function App() {
           </div>
           <div className="brand-crew">
             <figure className="crew-chip">
-              <img src="/brand/chef-toni.png" alt="Chef Toni" />
+              <img src="/brand/chef-toni.png" alt="Chef Toni" loading="lazy" decoding="async" />
               <figcaption>Chef Toni</figcaption>
             </figure>
             <figure className="crew-chip">
-              <img src="/brand/grillmaster-irvin.png" alt="Grill Master Ervin" />
+              <img src="/brand/grillmaster-irvin.png" alt="Grill Master Ervin" loading="lazy" decoding="async" />
               <figcaption>Grill Master Ervin</figcaption>
             </figure>
           </div>
           <div className="right-actions header-actions">
             <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
-            <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>
+            {authSession.isAdmin && <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>}
+            <button className="ghost" onClick={openPortalMode}>Customer Portal</button>
             <button className="cta" onClick={handleGetInstantQuote}>Get Instant Quote</button>
+            <button className="ghost" onClick={handleSignOut}>Sign Out</button>
           </div>
         </div>
       </header>
@@ -208,9 +328,9 @@ export default function App() {
               Build scenarios, apply smart upsells, and send better proposals faster.
             </p>
             <div className="hero-pills">
-              <span>Config-driven pricing</span>
-              <span>Scenario compare</span>
-              <span>Proposal exports</span>
+              <span>Signed in: {authSession.user.email}</span>
+              <span>Role: {authSession.role}</span>
+              <span>Source: {catalog.source}</span>
             </div>
           </div>
           <aside className="hero-card">
@@ -298,7 +418,14 @@ export default function App() {
               )}
             </div>
           </div>
-          <p className="source-note">Catalog source: {catalog.source}</p>
+
+          {submitState.portalLink && (
+            <div className="portal-link-row">
+              <input type="text" readOnly value={submitState.portalLink} />
+              <button type="button" className="ghost" onClick={handleCopyPortalLink}>Copy Portal Link</button>
+            </div>
+          )}
+
           <p className="source-note">Quote validity: {Math.max(1, Number(catalog.settings?.quoteValidityDays || 30))} days</p>
           {catalog.error && <p className="error-note">{catalog.error}</p>}
           {submitState.message && <p className="source-note">{submitState.message}</p>}
@@ -307,34 +434,39 @@ export default function App() {
         <LiveBreakdown form={form} totals={totals} settings={catalog.settings} catalog={catalog} />
       </main>
 
-      <AdminCatalogModal
-        open={adminOpen}
-        catalog={catalog}
-        onClose={() => setAdminOpen(false)}
-        onSave={catalog.saveCatalog}
-        saving={catalog.saving}
-      />
+      <Suspense fallback={null}>
+        {authSession.isAdmin && (
+          <AdminCatalogModal
+            open={adminOpen}
+            catalog={catalog}
+            onClose={() => setAdminOpen(false)}
+            onSave={catalog.saveCatalog}
+            saving={catalog.saving}
+          />
+        )}
 
-      <QuoteHistoryModal
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-      />
+        <QuoteHistoryModal
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          basePortalUrl={`${window.location.origin}${window.location.pathname}`}
+        />
 
-      <QuoteCompareModal
-        open={compareOpen}
-        onClose={() => setCompareOpen(false)}
-        form={form}
-        setForm={setForm}
-        catalog={catalog}
-        settings={catalog.settings}
-        styles={Object.keys(STAFF_RULES)}
-        primaryTotals={totals}
-      />
+        <QuoteCompareModal
+          open={compareOpen}
+          onClose={() => setCompareOpen(false)}
+          form={form}
+          setForm={setForm}
+          catalog={catalog}
+          settings={catalog.settings}
+          styles={Object.keys(STAFF_RULES)}
+          primaryTotals={totals}
+        />
 
-      <ReportingDashboardModal
-        open={dashboardOpen}
-        onClose={() => setDashboardOpen(false)}
-      />
+        <ReportingDashboardModal
+          open={dashboardOpen}
+          onClose={() => setDashboardOpen(false)}
+        />
+      </Suspense>
     </div>
   );
 }
