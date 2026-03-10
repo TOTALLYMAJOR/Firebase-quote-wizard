@@ -781,6 +781,12 @@ hr {
   font-size: 0.84rem;
 }
 
+.warning-note {
+  margin: 0.4rem 0 0;
+  color: #8a5308;
+  font-size: 0.84rem;
+}
+
 .auth-shell,
 .portal-shell {
   min-height: 100vh;

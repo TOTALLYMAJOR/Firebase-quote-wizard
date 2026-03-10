@@ -8,7 +8,7 @@ import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
-import { submitQuote } from "./lib/quoteStore";
+import { checkEventAvailability, submitQuote } from "./lib/quoteStore";
 
 const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
 const QuoteCompareModal = lazy(() => import("./components/QuoteCompareModal"));
@@ -42,6 +42,7 @@ export default function App() {
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
   const [submitState, setSubmitState] = useState({ saving: false, message: "", portalLink: "" });
+  const [availabilityNotice, setAvailabilityNotice] = useState("");
 
   const [form, setForm] = useState({
     date: "",
@@ -127,6 +128,10 @@ export default function App() {
     });
   }, [catalog.loading, catalog.settings]);
 
+  useEffect(() => {
+    setAvailabilityNotice("");
+  }, [form.date, form.venue]);
+
   const applyEventTemplate = (templateId) => {
     if (templateId === "custom") {
       setForm((prev) => ({ ...prev, eventTemplateId: "custom" }));
@@ -209,6 +214,38 @@ export default function App() {
 
     setSubmitState({ saving: true, message: "", portalLink: "" });
     try {
+      const availability = await checkEventAvailability({
+        eventDate: form.date,
+        venue: form.venue
+      });
+      if (availability.hasBlockingConflict) {
+        const conflictRefs = availability.conflicts
+          .filter((item) => item.status === "booked")
+          .slice(0, 3)
+          .map((item) => item.quoteNumber || item.id)
+          .join(", ");
+        setSubmitState({
+          saving: false,
+          message:
+            `Availability conflict: this date/venue is already booked.` +
+            `${conflictRefs ? ` Existing booking(s): ${conflictRefs}.` : ""}`,
+          portalLink: ""
+        });
+        return;
+      }
+      const softConflicts = availability.conflicts.filter((item) => item.status === "accepted");
+      if (softConflicts.length) {
+        const refs = softConflicts
+          .slice(0, 3)
+          .map((item) => item.quoteNumber || item.id)
+          .join(", ");
+        setAvailabilityNotice(
+          `Availability note: ${softConflicts.length} accepted quote(s) already exist for this date/venue${refs ? ` (${refs})` : ""}.`
+        );
+      } else {
+        setAvailabilityNotice("");
+      }
+
       const result = await submitQuote({
         form,
         totals,
@@ -458,6 +495,7 @@ export default function App() {
 
           <p className="source-note">Quote validity: {Math.max(1, Number(catalog.settings?.quoteValidityDays || 30))} days</p>
           {catalog.error && <p className="error-note">{catalog.error}</p>}
+          {availabilityNotice && <p className="warning-note">{availabilityNotice}</p>}
           {submitState.message && <p className="source-note">{submitState.message}</p>}
         </section>
 

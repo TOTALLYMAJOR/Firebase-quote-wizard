@@ -16,12 +16,14 @@ const LOCAL_QUOTES_KEY = "quoteWizard.quotes";
 const PORTAL_COLLECTION = "customerPortalQuotes";
 const DEFAULT_VALIDITY_DAYS = 30;
 const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
+const AVAILABILITY_CONFLICT_STATUSES = new Set(["accepted", "booked"]);
 const PAYMENT_STATUSES = ["unpaid", "sent", "paid", "refunded"];
 const STATUS_LIFECYCLE_FIELD = {
   draft: "draftAtISO",
   sent: "sentAtISO",
   viewed: "viewedAtISO",
   accepted: "acceptedAtISO",
+  booked: "bookedAtISO",
   declined: "declinedAtISO",
   expired: "expiredAtISO"
 };
@@ -29,7 +31,8 @@ const STATUS_FLOW = {
   draft: ["draft", "sent", "declined", "expired"],
   sent: ["sent", "viewed", "accepted", "declined", "expired"],
   viewed: ["viewed", "accepted", "declined", "expired"],
-  accepted: ["accepted"],
+  accepted: ["accepted", "booked", "declined"],
+  booked: ["booked"],
   declined: ["declined"],
   expired: ["expired", "draft", "sent"]
 };
@@ -58,6 +61,10 @@ function parseSafe(input, fallback) {
 
 function normalizeEmail(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function normalizeVenueKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function buildPortalKey() {
@@ -102,6 +109,9 @@ function buildPortalSnapshot(quoteId, quote) {
     status: normalizeStatus(quote.status),
     expiresAtISO: quote.expiresAtISO || addDaysISO(createdAtISO, DEFAULT_VALIDITY_DAYS),
     payment: hydratePayment(quote.payment),
+    booking: {
+      ...(quote.booking || {})
+    },
     lifecycle: {
       ...(quote.lifecycle || {})
     },
@@ -176,6 +186,9 @@ function hydrateQuote(item, nowISO = isoNow()) {
     createdAtISO,
     expiresAtISO,
     payment: hydratePayment(item.payment),
+    booking: {
+      ...(item.booking || {})
+    },
     lifecycle: {
       ...(item.lifecycle || {})
     }
@@ -231,6 +244,39 @@ export function getAllowedStatusTransitions(status) {
   return STATUS_FLOW[normalized] || STATUS_FLOW.draft;
 }
 
+export async function checkEventAvailability({ eventDate = "", venue = "", excludeQuoteId = "" } = {}) {
+  const date = String(eventDate || "").trim();
+  if (!date) {
+    return { conflicts: [], hasBlockingConflict: false };
+  }
+
+  const venueKey = normalizeVenueKey(venue);
+  const { quotes } = await getQuoteHistory();
+  const conflicts = quotes
+    .filter((quote) => quote.id !== excludeQuoteId)
+    .filter((quote) => AVAILABILITY_CONFLICT_STATUSES.has(normalizeStatus(quote.status)))
+    .filter((quote) => String(quote.event?.date || "").trim() === date)
+    .filter((quote) => {
+      if (!venueKey) return true;
+      return normalizeVenueKey(quote.event?.venue) === venueKey;
+    })
+    .map((quote) => ({
+      id: quote.id,
+      quoteNumber: quote.quoteNumber || "",
+      status: normalizeStatus(quote.status),
+      eventName: quote.event?.name || "",
+      eventDate: quote.event?.date || "",
+      eventTime: quote.event?.time || "",
+      venue: quote.event?.venue || "",
+      customerName: quote.customer?.name || ""
+    }));
+
+  return {
+    conflicts,
+    hasBlockingConflict: conflicts.some((item) => item.status === "booked")
+  };
+}
+
 export async function submitQuote({ form, totals, catalogSource, settings, ownerUid = "", ownerEmail = "" }) {
   const nowISO = isoNow();
   const quoteNumber = buildQuoteNumber();
@@ -282,6 +328,10 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       depositLink: (form.depositLink || "").trim(),
       depositStatus: form.depositLink ? "sent" : "unpaid",
       depositConfirmedAtISO: ""
+    },
+    booking: {
+      bookedAtISO: "",
+      bookedByEmail: ""
     },
     totals: {
       base: totals.base,
@@ -415,13 +465,17 @@ export async function updateQuoteStatus(quoteId, status) {
 
   const nowISO = isoNow();
   const nextStatus = normalizeStatus(status);
+  const statusPayload = {
+    status: nextStatus,
+    updatedAtISO: nowISO,
+    ...lifecyclePatch(nextStatus, nowISO)
+  };
+  if (nextStatus === "booked") {
+    statusPayload["booking.bookedAtISO"] = nowISO;
+  }
 
   if (firebaseReady) {
-    await updateDoc(doc(db, "quotes", quoteId), {
-      status: nextStatus,
-      updatedAtISO: nowISO,
-      ...lifecyclePatch(nextStatus, nowISO)
-    });
+    await updateDoc(doc(db, "quotes", quoteId), statusPayload);
     await syncPortalSnapshotFromQuoteDoc(quoteId);
     return { ok: true, storage: "firebase" };
   }
@@ -433,6 +487,13 @@ export async function updateQuoteStatus(quoteId, status) {
       ...quote,
       status: nextStatus,
       updatedAtISO: nowISO,
+      booking:
+        nextStatus === "booked"
+          ? {
+            ...(quote.booking || {}),
+            bookedAtISO: nowISO
+          }
+          : { ...(quote.booking || {}) },
       lifecycle: lifecycleObject(nextStatus, nowISO, quote.lifecycle)
     };
   });
@@ -534,6 +595,9 @@ export async function updatePortalQuoteStatus(portalKey, status) {
       throw new Error("Quote not found.");
     }
     const portalData = portalSnap.data();
+    if (normalizeStatus(portalData.status) === "booked") {
+      throw new Error("This quote is already booked and can no longer be changed from the portal.");
+    }
     const lifecycle = lifecycleObject(nextStatus, nowISO, portalData.lifecycle);
     await updateDoc(portalRef, {
       status: nextStatus,
@@ -552,6 +616,10 @@ export async function updatePortalQuoteStatus(portalKey, status) {
   }
 
   const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const locked = existing.find((quote) => quote.portalKey === key && normalizeStatus(quote.status) === "booked");
+  if (locked) {
+    throw new Error("This quote is already booked and can no longer be changed from the portal.");
+  }
   const next = existing.map((quote) => {
     if (quote.portalKey !== key) return quote;
     return {

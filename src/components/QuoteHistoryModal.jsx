@@ -235,6 +235,7 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
             <option value="sent">Sent</option>
             <option value="viewed">Viewed</option>
             <option value="accepted">Accepted</option>
+            <option value="booked">Booked</option>
             <option value="declined">Declined</option>
             <option value="expired">Expired</option>
           </select>
@@ -297,6 +298,16 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
                   <td>{fmtDate(quote.createdAtISO)}</td>
                   <td>
                     <div className="row-actions">
+                      {quote.status === "accepted" && (
+                        <button
+                          type="button"
+                          className="cta compact"
+                          onClick={() => handleStatusUpdate(quote.id, "booked")}
+                          disabled={updatingId === quote.id}
+                        >
+                          Book
+                        </button>
+                      )}
                       <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
                       <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
                       <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>

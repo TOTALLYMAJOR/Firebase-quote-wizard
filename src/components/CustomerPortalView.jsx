@@ -128,7 +128,7 @@ export default function CustomerPortalView({ initialPortalKey = "", onBackToStaf
                 type="button"
                 className="cta"
                 onClick={() => applyStatus("accepted")}
-                disabled={state.busy || state.quote.status === "accepted"}
+                disabled={state.busy || ["accepted", "declined", "booked"].includes(state.quote.status)}
               >
                 Accept Quote
               </button>
@@ -136,7 +136,7 @@ export default function CustomerPortalView({ initialPortalKey = "", onBackToStaf
                 type="button"
                 className="ghost"
                 onClick={() => applyStatus("declined")}
-                disabled={state.busy || state.quote.status === "declined"}
+                disabled={state.busy || ["accepted", "declined", "booked"].includes(state.quote.status)}
               >
                 Decline Quote
               </button>
