@@ -67,6 +67,36 @@ function normalizeVenueKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function parseTimeToMinutes(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{1,2}:\d{2}$/.test(text)) return null;
+  const [hRaw, mRaw] = text.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return (h * 60) + m;
+}
+
+function toTimeWindow(time, hours) {
+  const start = parseTimeToMinutes(time);
+  const durationMin = Math.round(toNumber(hours, 0) * 60);
+  if (start === null || durationMin <= 0) return null;
+  return {
+    start,
+    end: start + durationMin
+  };
+}
+
+function windowsOverlap(a, b) {
+  if (!a || !b) return false;
+  return a.start < b.end && b.start < a.end;
+}
+
 function buildPortalKey() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID().replace(/-/g, "");
@@ -244,15 +274,26 @@ export function getAllowedStatusTransitions(status) {
   return STATUS_FLOW[normalized] || STATUS_FLOW.draft;
 }
 
-export async function checkEventAvailability({ eventDate = "", venue = "", excludeQuoteId = "" } = {}) {
+export async function checkEventAvailability({
+  eventDate = "",
+  venue = "",
+  eventTime = "",
+  eventHours = 0,
+  eventGuests = 0,
+  capacityLimit = 400,
+  excludeQuoteId = ""
+} = {}) {
   const date = String(eventDate || "").trim();
   if (!date) {
     return { conflicts: [], hasBlockingConflict: false };
   }
 
   const venueKey = normalizeVenueKey(venue);
+  const inputWindow = toTimeWindow(eventTime, eventHours);
+  const guestCount = Math.max(0, toNumber(eventGuests, 0));
+  const maxCapacity = Math.max(1, toNumber(capacityLimit, 400));
   const { quotes } = await getQuoteHistory();
-  const conflicts = quotes
+  const candidateConflicts = quotes
     .filter((quote) => quote.id !== excludeQuoteId)
     .filter((quote) => AVAILABILITY_CONFLICT_STATUSES.has(normalizeStatus(quote.status)))
     .filter((quote) => String(quote.event?.date || "").trim() === date)
@@ -260,21 +301,83 @@ export async function checkEventAvailability({ eventDate = "", venue = "", exclu
       if (!venueKey) return true;
       return normalizeVenueKey(quote.event?.venue) === venueKey;
     })
-    .map((quote) => ({
-      id: quote.id,
-      quoteNumber: quote.quoteNumber || "",
-      status: normalizeStatus(quote.status),
-      eventName: quote.event?.name || "",
-      eventDate: quote.event?.date || "",
-      eventTime: quote.event?.time || "",
-      venue: quote.event?.venue || "",
-      customerName: quote.customer?.name || ""
-    }));
+    .map((quote) => {
+      const status = normalizeStatus(quote.status);
+      const otherWindow = toTimeWindow(quote.event?.time, quote.event?.hours);
+      let reason = "same_day_venue";
+      if (inputWindow && otherWindow) {
+        reason = windowsOverlap(inputWindow, otherWindow) ? "time_overlap" : "time_clear";
+      } else if (inputWindow || otherWindow) {
+        reason = "time_unknown";
+      }
+      return {
+        id: quote.id,
+        quoteNumber: quote.quoteNumber || "",
+        status,
+        eventName: quote.event?.name || "",
+        eventDate: quote.event?.date || "",
+        eventTime: quote.event?.time || "",
+        eventHours: toNumber(quote.event?.hours, 0),
+        venue: quote.event?.venue || "",
+        customerName: quote.customer?.name || "",
+        guests: Math.max(0, toNumber(quote.event?.guests, 0)),
+        reason
+      };
+    })
+    .filter((item) => item.reason !== "time_clear");
+
+  const sameVenueLoad = venueKey
+    ? candidateConflicts.reduce((sum, item) => sum + item.guests, 0) + guestCount
+    : 0;
+  const capacityExceeded = Boolean(venueKey) && sameVenueLoad > maxCapacity;
+
+  const conflicts = candidateConflicts.map((item) => ({
+    ...item,
+    capacityExceeded
+  }));
 
   return {
     conflicts,
-    hasBlockingConflict: conflicts.some((item) => item.status === "booked")
+    hasBlockingConflict: conflicts.some((item) => item.status === "booked"),
+    capacityExceeded,
+    capacityLimit: maxCapacity,
+    sameVenueLoad
   };
+}
+
+export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } = {}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+  const nowISO = isoNow();
+  const nextLead = String(staffLead || "").trim();
+
+  if (firebaseReady) {
+    await updateDoc(doc(db, "quotes", id), {
+      "booking.staffLead": nextLead,
+      "booking.staffAssignedAtISO": nowISO,
+      updatedAtISO: nowISO
+    });
+    await syncPortalSnapshotFromQuoteDoc(id);
+    return { ok: true, storage: "firebase" };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const next = existing.map((quote) => {
+    if (quote.id !== id) return quote;
+    return {
+      ...quote,
+      updatedAtISO: nowISO,
+      booking: {
+        ...(quote.booking || {}),
+        staffLead: nextLead,
+        staffAssignedAtISO: nowISO
+      }
+    };
+  });
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return { ok: true, storage: "local" };
 }
 
 export async function submitQuote({ form, totals, catalogSource, settings, ownerUid = "", ownerEmail = "" }) {

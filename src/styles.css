@@ -1091,6 +1091,15 @@ hr {
   background: #fff8ea;
 }
 
+.schedule-day-cell.has-conflict {
+  border-color: #c38f49;
+}
+
+.schedule-day-cell.has-capacity {
+  border-color: #b24a2f;
+  box-shadow: inset 0 0 0 1px rgba(178, 74, 47, 0.15);
+}
+
 .schedule-day-num {
   font-weight: 700;
   color: #3d2e19;
@@ -1121,6 +1130,18 @@ hr {
   background: #f6edd6;
   border-color: #c3a66a;
   color: #56401d;
+}
+
+.schedule-day-badges .conflict {
+  background: #f3e3cb;
+  border-color: #c78f45;
+  color: #6d3f0f;
+}
+
+.schedule-day-badges .capacity {
+  background: #f8d8cf;
+  border-color: #bf4a31;
+  color: #6f2417;
 }
 
 .schedule-week-grid {
@@ -1181,6 +1202,15 @@ hr {
   background: #fce8cf;
 }
 
+.schedule-mini-event.has-conflict {
+  border-color: #c58942;
+}
+
+.schedule-mini-event.has-capacity {
+  border-color: #bf4a31;
+  background: #fde4dc;
+}
+
 .schedule-mini-event strong {
   font-size: 0.7rem;
 }
@@ -1188,6 +1218,13 @@ hr {
 .schedule-mini-event span {
   font-size: 0.68rem;
   color: #58462e;
+}
+
+.schedule-mini-event small {
+  font-size: 0.63rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #7b4522;
 }
 
 .schedule-day-panel h3 {
@@ -1214,6 +1251,15 @@ hr {
   background: #fff2df;
 }
 
+.schedule-event-card.has-conflict {
+  border-color: #c08640;
+}
+
+.schedule-event-card.has-capacity {
+  border-color: #bf4a31;
+  background: #fde9e3;
+}
+
 .schedule-event-card header {
   display: flex;
   justify-content: space-between;
@@ -1235,6 +1281,142 @@ hr {
   margin: 0.23rem 0 0;
   font-size: 0.79rem;
   color: #5b4528;
+}
+
+.schedule-assignment-field {
+  margin-top: 0.45rem;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.schedule-assignment-field span {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #5f4728;
+}
+
+.schedule-conflict-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  color: #7a3f14;
+}
+
+.schedule-day-risk-note {
+  margin: 0;
+  font-size: 0.69rem;
+}
+
+.schedule-staff-board {
+  margin-top: 0.72rem;
+  border-top: 1px solid #ead5ab;
+  padding-top: 0.62rem;
+}
+
+.schedule-staff-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.schedule-staff-head h4 {
+  margin: 0;
+  font-family: var(--font-display);
+  color: #3d2a14;
+}
+
+.schedule-staff-lanes {
+  margin-top: 0.52rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.schedule-staff-lane {
+  border: 1px dashed #cfab6d;
+  border-radius: 11px;
+  background: #fffdf8;
+  padding: 0.45rem;
+  min-height: 120px;
+}
+
+.schedule-staff-lane.unassigned {
+  background: #fff8ec;
+}
+
+.schedule-staff-lane.drop-target {
+  border-color: #b67725;
+  background: #fff0d8;
+}
+
+.schedule-staff-lane header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  margin-bottom: 0.32rem;
+}
+
+.schedule-staff-lane header strong {
+  font-size: 0.79rem;
+  color: #3d2d18;
+}
+
+.schedule-staff-lane header span {
+  font-size: 0.66rem;
+  color: #6a5537;
+  border: 1px solid #dcbf91;
+  border-radius: 999px;
+  padding: 0.04rem 0.35rem;
+}
+
+.schedule-staff-items {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.schedule-staff-card {
+  width: 100%;
+  border: 1px solid #dec49a;
+  border-radius: 9px;
+  background: #fff8ea;
+  padding: 0.28rem 0.35rem;
+  display: grid;
+  justify-items: start;
+  gap: 0.12rem;
+  text-align: left;
+}
+
+.schedule-staff-card.booked {
+  border-color: #bd853f;
+  background: #fde9d1;
+}
+
+.schedule-staff-card.has-conflict {
+  border-color: #c58942;
+}
+
+.schedule-staff-card.has-capacity {
+  border-color: #bf4a31;
+  background: #fde3da;
+}
+
+.schedule-staff-card strong {
+  font-size: 0.72rem;
+  color: #3f2c13;
+}
+
+.schedule-staff-card span {
+  font-size: 0.66rem;
+  color: #5f4a30;
+}
+
+.schedule-staff-card small {
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7b4522;
 }
 
 .dashboard-grid {
@@ -1374,6 +1556,10 @@ hr {
 
   .schedule-range {
     justify-self: start;
+  }
+
+  .schedule-staff-lanes {
+    grid-template-columns: 1fr;
   }
 
   .schedule-month-grid {

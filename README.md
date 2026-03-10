@@ -56,8 +56,10 @@ The app supports:
 - deposit payment status tracking
 - reporting dashboard with pipeline and conversion metrics
 - schedule calendar modal with month/week views and booked/accepted date visibility
+- schedule conflict flags for time overlap, unknown timing, and capacity risk
+- drag/drop staff lead assignment lanes with persistent booking assignment updates
 - customer portal record sync in Firestore (`customerPortalQuotes`)
-- availability checks against existing accepted/booked events on submit
+- availability checks against existing accepted/booked events on submit (time + duration + capacity aware)
 
 ## Tech Stack
 
@@ -89,7 +91,7 @@ Vite will start the local development server and print the local URL in the term
 
 ```bash
 npm run build
-```up
+```
 
 ### Preview Production Build
 

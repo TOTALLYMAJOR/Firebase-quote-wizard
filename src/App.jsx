@@ -92,6 +92,10 @@ export default function App() {
   const brandBackgroundMid = catalog.settings?.brandBackgroundMid || "#221a12";
   const brandBackgroundEnd = catalog.settings?.brandBackgroundEnd || "#ae7d2b";
   const brandCrew = Array.isArray(catalog.settings?.brandCrew) ? catalog.settings.brandCrew : [];
+  const scheduleStaffLeads = brandCrew
+    .map((member) => String(member?.label || "").trim())
+    .filter(Boolean);
+  const scheduleCapacityLimit = Math.max(1, Number(catalog.settings?.capacityLimit || 400));
   const heroEyebrow = catalog.settings?.heroEyebrow || "Premium Event Catering Workbench";
   const heroHeadline = catalog.settings?.heroHeadline || "Signature flavor. Configurable quotes.";
   const heroDescription =
@@ -218,7 +222,11 @@ export default function App() {
     try {
       const availability = await checkEventAvailability({
         eventDate: form.date,
-        venue: form.venue
+        venue: form.venue,
+        eventTime: form.time,
+        eventHours: form.hours,
+        eventGuests: form.guests,
+        capacityLimit: scheduleCapacityLimit
       });
       if (availability.hasBlockingConflict) {
         const conflictRefs = availability.conflicts
@@ -226,24 +234,37 @@ export default function App() {
           .slice(0, 3)
           .map((item) => item.quoteNumber || item.id)
           .join(", ");
+        const capacityNote = availability.capacityExceeded
+          ? ` Capacity alert: projected load (${availability.sameVenueLoad}) exceeds configured threshold (${availability.capacityLimit}).`
+          : "";
         setSubmitState({
           saving: false,
           message:
             `Availability conflict: this date/venue is already booked.` +
-            `${conflictRefs ? ` Existing booking(s): ${conflictRefs}.` : ""}`,
+            `${conflictRefs ? ` Existing booking(s): ${conflictRefs}.` : ""}` +
+            capacityNote,
           portalLink: ""
         });
         return;
       }
       const softConflicts = availability.conflicts.filter((item) => item.status === "accepted");
+      const notes = [];
       if (softConflicts.length) {
         const refs = softConflicts
           .slice(0, 3)
           .map((item) => item.quoteNumber || item.id)
           .join(", ");
-        setAvailabilityNotice(
+        notes.push(
           `Availability note: ${softConflicts.length} accepted quote(s) already exist for this date/venue${refs ? ` (${refs})` : ""}.`
         );
+      }
+      if (availability.capacityExceeded) {
+        notes.push(
+          `Capacity note: projected same-venue load is ${availability.sameVenueLoad} guests (limit ${availability.capacityLimit}).`
+        );
+      }
+      if (notes.length) {
+        setAvailabilityNotice(notes.join(" "));
       } else {
         setAvailabilityNotice("");
       }
@@ -525,6 +546,8 @@ export default function App() {
         <EventScheduleModal
           open={scheduleOpen}
           onClose={() => setScheduleOpen(false)}
+          staffLeads={scheduleStaffLeads}
+          capacityLimit={scheduleCapacityLimit}
         />
 
         <QuoteCompareModal
