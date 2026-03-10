@@ -307,6 +307,13 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
     },
     quoteMeta: {
       quotePreparedBy: settings?.quotePreparedBy || "",
+      brandName: settings?.brandName || "",
+      brandTagline: settings?.brandTagline || "",
+      brandLogoUrl: settings?.brandLogoUrl || "",
+      brandPrimaryColor: settings?.brandPrimaryColor || "",
+      brandAccentColor: settings?.brandAccentColor || "",
+      brandDarkAccentColor: settings?.brandDarkAccentColor || "",
+      brandCrew: Array.isArray(settings?.brandCrew) ? settings.brandCrew : [],
       businessPhone: settings?.businessPhone || "",
       businessEmail: settings?.businessEmail || "",
       businessAddress: settings?.businessAddress || "",

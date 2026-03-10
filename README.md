@@ -40,6 +40,7 @@ The app supports:
 - editable packages, add-ons, rentals, and menu items
 - admin-controlled pricing settings
 - configurable quote metadata such as prepared-by, deposit notice, and business contact info
+- configurable branding settings (brand name, tagline, logo upload/path, hero copy, crew display, and brand colors)
 - advanced JSON-backed settings for pricing tiers, templates, and seasonal rules
 
 ### Proposal Output
@@ -192,6 +193,7 @@ The `pricing/settings` document contains configurable quote logic such as:
 - event templates
 - seasonal profiles
 - quote meta content
+- brand/hero content and brand color palette
 
 ## Project Structure
 
@@ -234,6 +236,15 @@ See `DEV_TASKS.md` for planned enhancements across:
 - advanced capability
 - configurability
 - testing and platform quality
+
+Requested operations expansion includes:
+
+- production reporting for planning and post-event review
+- QuickBooks integration for accounting sync
+- CRM integration for lead/client lifecycle management
+- event scheduling and staffing calendar workflows
+- booking workflows from quote to confirmation
+- a more robust integration and audit foundation
 
 ## Status
 

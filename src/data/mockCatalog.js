@@ -274,6 +274,11 @@ export const DEFAULT_SEASONAL_PROFILES = [
   }
 ];
 
+export const DEFAULT_BRAND_CREW = [
+  { label: "Chef Toni", imageUrl: "/brand/chef-toni.png" },
+  { label: "Grill Master Ervin", imageUrl: "/brand/grillmaster-irvin.png" }
+];
+
 export const DEFAULT_SETTINGS = {
   perMileRate: 0.7,
   longDistancePerMileRate: 1.1,
@@ -290,6 +295,20 @@ export const DEFAULT_SETTINGS = {
   serverRate: 22,
   chefRate: 28,
   quotePreparedBy: "Chef Toni North",
+  brandName: "Tasteful Touch Catering",
+  brandTagline: "Chef Toni and Grill Master Ervin",
+  brandLogoUrl: "/brand/logo.png",
+  brandPrimaryColor: "#c99334",
+  brandAccentColor: "#f0d29a",
+  brandDarkAccentColor: "#8d611a",
+  brandBackgroundStart: "#100d09",
+  brandBackgroundMid: "#221a12",
+  brandBackgroundEnd: "#ae7d2b",
+  heroEyebrow: "Premium Event Catering Workbench",
+  heroHeadline: "Signature flavor. Configurable quotes.",
+  heroDescription:
+    "A polished sales cockpit for weddings, corporate events, and celebrations up to 400 guests. Build scenarios, apply smart upsells, and send better proposals faster.",
+  brandCrew: DEFAULT_BRAND_CREW,
   businessPhone: "(205) 593-2004",
   businessEmail: "tonitastefultouch@yahoo.com",
   businessAddress: "6230 Eagle Ridge Cir, Pinson, AL 35126",
@@ -419,9 +438,32 @@ function normalizeSeasonalProfiles(input) {
   }));
 }
 
+function normalizeBrandCrew(input) {
+  const source = Array.isArray(input) && input.length ? input : DEFAULT_BRAND_CREW;
+  return source
+    .map((item, idx) => ({
+      label: toText(item?.label, `Team Member ${idx + 1}`),
+      imageUrl: toText(item?.imageUrl, "")
+    }))
+    .filter((item) => Boolean(item.label))
+    .slice(0, 4);
+}
+
 function toText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
+}
+
+function normalizeHexColor(value, fallback) {
+  const raw = String(value || "").trim();
+  if (/^#[\da-fA-F]{6}$/.test(raw)) {
+    return raw.toLowerCase();
+  }
+  if (/^#[\da-fA-F]{3}$/.test(raw)) {
+    const v = raw.slice(1).toLowerCase();
+    return `#${v[0]}${v[0]}${v[1]}${v[1]}${v[2]}${v[2]}`;
+  }
+  return fallback;
 }
 
 export function normalizeRental(item) {
@@ -443,6 +485,7 @@ export function normalizeCatalog(raw) {
   const eventTemplates = normalizeEventTemplates(rawSettings.eventTemplates);
   const menuSections = normalizeMenuSections(rawSettings.menuSections);
   const seasonalProfiles = normalizeSeasonalProfiles(rawSettings.seasonalProfiles);
+  const brandCrew = normalizeBrandCrew(rawSettings.brandCrew);
   const defaultTaxRegion = taxRegions.some((region) => region.id === rawSettings.defaultTaxRegion)
     ? rawSettings.defaultTaxRegion
     : taxRegions[0]?.id || DEFAULT_SETTINGS.defaultTaxRegion;
@@ -498,6 +541,19 @@ export function normalizeCatalog(raw) {
       serverRate: toNumber(rawSettings.serverRate, DEFAULT_SETTINGS.serverRate, 0),
       chefRate: toNumber(rawSettings.chefRate, DEFAULT_SETTINGS.chefRate, 0),
       quotePreparedBy: toText(rawSettings.quotePreparedBy, DEFAULT_SETTINGS.quotePreparedBy),
+      brandName: toText(rawSettings.brandName, DEFAULT_SETTINGS.brandName),
+      brandTagline: toText(rawSettings.brandTagline, DEFAULT_SETTINGS.brandTagline),
+      brandLogoUrl: toText(rawSettings.brandLogoUrl, DEFAULT_SETTINGS.brandLogoUrl),
+      brandPrimaryColor: normalizeHexColor(rawSettings.brandPrimaryColor, DEFAULT_SETTINGS.brandPrimaryColor),
+      brandAccentColor: normalizeHexColor(rawSettings.brandAccentColor, DEFAULT_SETTINGS.brandAccentColor),
+      brandDarkAccentColor: normalizeHexColor(rawSettings.brandDarkAccentColor, DEFAULT_SETTINGS.brandDarkAccentColor),
+      brandBackgroundStart: normalizeHexColor(rawSettings.brandBackgroundStart, DEFAULT_SETTINGS.brandBackgroundStart),
+      brandBackgroundMid: normalizeHexColor(rawSettings.brandBackgroundMid, DEFAULT_SETTINGS.brandBackgroundMid),
+      brandBackgroundEnd: normalizeHexColor(rawSettings.brandBackgroundEnd, DEFAULT_SETTINGS.brandBackgroundEnd),
+      heroEyebrow: toText(rawSettings.heroEyebrow, DEFAULT_SETTINGS.heroEyebrow),
+      heroHeadline: toText(rawSettings.heroHeadline, DEFAULT_SETTINGS.heroHeadline),
+      heroDescription: toText(rawSettings.heroDescription, DEFAULT_SETTINGS.heroDescription),
+      brandCrew,
       businessPhone: toText(rawSettings.businessPhone, DEFAULT_SETTINGS.businessPhone),
       businessEmail: toText(rawSettings.businessEmail, DEFAULT_SETTINGS.businessEmail),
       businessAddress: toText(rawSettings.businessAddress, DEFAULT_SETTINGS.businessAddress),

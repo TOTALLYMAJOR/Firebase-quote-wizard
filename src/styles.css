@@ -42,10 +42,7 @@
 body {
   margin: 0;
   color: var(--tone-ink-1);
-  background:
-    radial-gradient(circle at 16% 12%, rgba(240, 210, 154, 0.34), transparent 34%),
-    radial-gradient(circle at 84% 84%, rgba(201, 147, 52, 0.26), transparent 36%),
-    linear-gradient(145deg, #100d09 0%, #221a12 32%, #5c3e12 69%, #ae7d2b 100%);
+  background: #100d09;
   min-height: 100vh;
 }
 
@@ -53,6 +50,16 @@ body {
   position: relative;
   min-height: 100vh;
   isolation: isolate;
+  background:
+    radial-gradient(circle at 16% 12%, rgba(240, 210, 154, 0.34), transparent 34%),
+    radial-gradient(circle at 84% 84%, rgba(201, 147, 52, 0.26), transparent 36%),
+    linear-gradient(
+      145deg,
+      var(--app-bg-start, #100d09) 0%,
+      var(--app-bg-mid, #221a12) 32%,
+      var(--tone-gold-3, #8d611a) 69%,
+      var(--app-bg-end, #ae7d2b) 100%
+    );
 }
 
 .app-shell::before {

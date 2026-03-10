@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
+import { firebaseReady, storage } from "../lib/firebase";
 
 const JSON_FIELD_META = [
   {
@@ -20,6 +22,11 @@ const JSON_FIELD_META = [
     key: "seasonalProfiles",
     label: "Seasonal Profiles JSON",
     hint: "Array of { id, name, startMonth, startDay, endMonth, endDay, multipliers }."
+  },
+  {
+    key: "brandCrew",
+    label: "Brand Crew JSON",
+    hint: "Array of { label, imageUrl } shown in header and proposal."
   }
 ];
 
@@ -29,8 +36,18 @@ function buildJsonDrafts(catalog) {
     serviceFeeTiers: JSON.stringify(settings.serviceFeeTiers || [], null, 2),
     taxRegions: JSON.stringify(settings.taxRegions || [], null, 2),
     eventTemplates: JSON.stringify(settings.eventTemplates || [], null, 2),
-    seasonalProfiles: JSON.stringify(settings.seasonalProfiles || [], null, 2)
+    seasonalProfiles: JSON.stringify(settings.seasonalProfiles || [], null, 2),
+    brandCrew: JSON.stringify(settings.brandCrew || [], null, 2)
   };
+}
+
+function toDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("Failed to read file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function Section({ title, onAdd, children }) {
@@ -48,6 +65,7 @@ function Section({ title, onAdd, children }) {
 export default function AdminCatalogModal({ open, catalog, onClose, onSave, saving }) {
   const [draft, setDraft] = useState(catalog);
   const [status, setStatus] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [jsonDrafts, setJsonDrafts] = useState(() => buildJsonDrafts(catalog));
 
   useEffect(() => {
@@ -55,6 +73,7 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       setDraft(catalog);
       setJsonDrafts(buildJsonDrafts(catalog));
       setStatus("");
+      setUploadingLogo(false);
     }
   }, [open, catalog]);
 
@@ -184,6 +203,35 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     setJsonDrafts((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handleLogoUpload = async (file) => {
+    if (!file) return;
+    if (!String(file.type || "").startsWith("image/")) {
+      setStatus("Logo upload failed: choose an image file.");
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      if (firebaseReady && storage) {
+        const safeName = String(file.name || "logo").replace(/[^\w.-]+/g, "_");
+        const path = `brand-assets/logos/${Date.now()}-${safeName}`;
+        const logoRef = storageRef(storage, path);
+        await uploadBytes(logoRef, file, { contentType: file.type || "image/png" });
+        const downloadUrl = await getDownloadURL(logoRef);
+        patchTextSetting("brandLogoUrl", downloadUrl);
+        setStatus("Logo uploaded. Click Save Catalog to persist.");
+      } else {
+        const dataUrl = await toDataUrl(file);
+        patchTextSetting("brandLogoUrl", dataUrl);
+        setStatus("Logo loaded locally. Click Save Catalog to persist.");
+      }
+    } catch (err) {
+      setStatus(err?.message || "Logo upload failed.");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   const parseJsonArray = (field, label) => {
     try {
       const parsed = JSON.parse(jsonDrafts[field] || "[]");
@@ -202,6 +250,7 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       const taxRegions = parseJsonArray("taxRegions", "Tax Regions JSON");
       const eventTemplates = parseJsonArray("eventTemplates", "Event Templates JSON");
       const seasonalProfiles = parseJsonArray("seasonalProfiles", "Seasonal Profiles JSON");
+      const brandCrew = parseJsonArray("brandCrew", "Brand Crew JSON");
 
       const nextDraft = {
         ...draft,
@@ -210,7 +259,8 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
           serviceFeeTiers,
           taxRegions,
           eventTemplates,
-          seasonalProfiles
+          seasonalProfiles,
+          brandCrew
         }
       };
 
@@ -389,6 +439,116 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
                 type="text"
                 value={draft.settings.depositNotice || ""}
                 onChange={(e) => patchTextSetting("depositNotice", e.target.value)}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="admin-section">
+          <div className="admin-section-head"><h3>Branding</h3></div>
+          <div className="admin-grid-settings">
+            <label>
+              Brand name
+              <input
+                type="text"
+                value={draft.settings.brandName || ""}
+                onChange={(e) => patchTextSetting("brandName", e.target.value)}
+              />
+            </label>
+            <label>
+              Brand tagline
+              <input
+                type="text"
+                value={draft.settings.brandTagline || ""}
+                onChange={(e) => patchTextSetting("brandTagline", e.target.value)}
+              />
+            </label>
+            <label>
+              Brand logo URL/path
+              <input
+                type="text"
+                value={draft.settings.brandLogoUrl || ""}
+                onChange={(e) => patchTextSetting("brandLogoUrl", e.target.value)}
+              />
+            </label>
+            <label>
+              Upload logo image
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => handleLogoUpload(e.target.files?.[0])}
+                disabled={uploadingLogo}
+              />
+            </label>
+            <label>
+              Primary color
+              <input
+                type="color"
+                value={draft.settings.brandPrimaryColor || "#c99334"}
+                onChange={(e) => patchTextSetting("brandPrimaryColor", e.target.value)}
+              />
+            </label>
+            <label>
+              Accent color
+              <input
+                type="color"
+                value={draft.settings.brandAccentColor || "#f0d29a"}
+                onChange={(e) => patchTextSetting("brandAccentColor", e.target.value)}
+              />
+            </label>
+            <label>
+              Deep accent color
+              <input
+                type="color"
+                value={draft.settings.brandDarkAccentColor || "#8d611a"}
+                onChange={(e) => patchTextSetting("brandDarkAccentColor", e.target.value)}
+              />
+            </label>
+            <label>
+              Background start
+              <input
+                type="color"
+                value={draft.settings.brandBackgroundStart || "#100d09"}
+                onChange={(e) => patchTextSetting("brandBackgroundStart", e.target.value)}
+              />
+            </label>
+            <label>
+              Background mid
+              <input
+                type="color"
+                value={draft.settings.brandBackgroundMid || "#221a12"}
+                onChange={(e) => patchTextSetting("brandBackgroundMid", e.target.value)}
+              />
+            </label>
+            <label>
+              Background end
+              <input
+                type="color"
+                value={draft.settings.brandBackgroundEnd || "#ae7d2b"}
+                onChange={(e) => patchTextSetting("brandBackgroundEnd", e.target.value)}
+              />
+            </label>
+            <label>
+              Hero eyebrow
+              <input
+                type="text"
+                value={draft.settings.heroEyebrow || ""}
+                onChange={(e) => patchTextSetting("heroEyebrow", e.target.value)}
+              />
+            </label>
+            <label>
+              Hero headline
+              <input
+                type="text"
+                value={draft.settings.heroHeadline || ""}
+                onChange={(e) => patchTextSetting("heroHeadline", e.target.value)}
+              />
+            </label>
+            <label>
+              Hero description
+              <textarea
+                value={draft.settings.heroDescription || ""}
+                onChange={(e) => patchTextSetting("heroDescription", e.target.value)}
               />
             </label>
           </div>

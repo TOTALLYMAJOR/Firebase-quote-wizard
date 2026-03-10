@@ -79,6 +79,29 @@ export default function App() {
     () => buildUpsellRecommendations({ form, catalog, totals }),
     [form, catalog, totals]
   );
+  const brandName = catalog.settings?.brandName || "Tasteful Touch Catering";
+  const brandTagline = catalog.settings?.brandTagline || "Chef Toni and Grill Master Ervin";
+  const brandLogoUrl = catalog.settings?.brandLogoUrl || "/brand/logo.png";
+  const brandPrimaryColor = catalog.settings?.brandPrimaryColor || "#c99334";
+  const brandAccentColor = catalog.settings?.brandAccentColor || "#f0d29a";
+  const brandDarkAccentColor = catalog.settings?.brandDarkAccentColor || "#8d611a";
+  const brandBackgroundStart = catalog.settings?.brandBackgroundStart || "#100d09";
+  const brandBackgroundMid = catalog.settings?.brandBackgroundMid || "#221a12";
+  const brandBackgroundEnd = catalog.settings?.brandBackgroundEnd || "#ae7d2b";
+  const brandCrew = Array.isArray(catalog.settings?.brandCrew) ? catalog.settings.brandCrew : [];
+  const heroEyebrow = catalog.settings?.heroEyebrow || "Premium Event Catering Workbench";
+  const heroHeadline = catalog.settings?.heroHeadline || "Signature flavor. Configurable quotes.";
+  const heroDescription =
+    catalog.settings?.heroDescription ||
+    "A polished sales cockpit for weddings, corporate events, and celebrations up to 400 guests. Build scenarios, apply smart upsells, and send better proposals faster.";
+  const appThemeVars = {
+    "--tone-gold-1": brandAccentColor,
+    "--tone-gold-2": brandPrimaryColor,
+    "--tone-gold-3": brandDarkAccentColor,
+    "--app-bg-start": brandBackgroundStart,
+    "--app-bg-mid": brandBackgroundMid,
+    "--app-bg-end": brandBackgroundEnd
+  };
 
   useEffect(() => {
     if (catalog.loading) return;
@@ -247,7 +270,7 @@ export default function App() {
 
   if (portalMode) {
     return (
-      <div className="app-shell">
+      <div className="app-shell" style={appThemeVars}>
         <CustomerPortalView initialPortalKey={portalKey} onBackToStaff={closePortalMode} />
       </div>
     );
@@ -287,26 +310,36 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={appThemeVars}>
       <header className="site-header">
         <div className="container nav">
           <div className="brand-lockup">
-            <img className="brand-logo" src="/brand/logo.png" alt="Tasteful Touch logo" loading="eager" decoding="async" />
+            <img
+              className="brand-logo"
+              src={brandLogoUrl}
+              alt={`${brandName} logo`}
+              loading="eager"
+              decoding="async"
+            />
             <div className="brand-copy">
-              <div className="brand">Tasteful Touch Catering</div>
-              <p>Chef Toni and Grill Master Ervin</p>
+              <div className="brand">{brandName}</div>
+              <p>{brandTagline}</p>
             </div>
           </div>
-          <div className="brand-crew">
-            <figure className="crew-chip">
-              <img src="/brand/chef-toni.png" alt="Chef Toni" loading="lazy" decoding="async" />
-              <figcaption>Chef Toni</figcaption>
-            </figure>
-            <figure className="crew-chip">
-              <img src="/brand/grillmaster-irvin.png" alt="Grill Master Ervin" loading="lazy" decoding="async" />
-              <figcaption>Grill Master Ervin</figcaption>
-            </figure>
-          </div>
+          {brandCrew.length > 0 && (
+            <div className="brand-crew">
+              {brandCrew.map((member, idx) => (
+                <figure className="crew-chip" key={`${member.label || "member"}-${idx}`}>
+                  {member.imageUrl ? (
+                    <img src={member.imageUrl} alt={member.label || `Team member ${idx + 1}`} loading="lazy" decoding="async" />
+                  ) : (
+                    <img src={brandLogoUrl} alt={member.label || `Team member ${idx + 1}`} loading="lazy" decoding="async" />
+                  )}
+                  <figcaption>{member.label || `Team member ${idx + 1}`}</figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
           <div className="right-actions header-actions">
             <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
@@ -321,12 +354,9 @@ export default function App() {
       <section className="hero container">
         <div className="hero-grid">
           <div>
-            <p className="eyebrow">Premium Event Catering Workbench</p>
-            <h1>Signature flavor. Configurable quotes.</h1>
-            <p>
-              A polished sales cockpit for weddings, corporate events, and celebrations up to 400 guests.
-              Build scenarios, apply smart upsells, and send better proposals faster.
-            </p>
+            <p className="eyebrow">{heroEyebrow}</p>
+            <h1>{heroHeadline}</h1>
+            <p>{heroDescription}</p>
             <div className="hero-pills">
               <span>Signed in: {authSession.user.email}</span>
               <span>Role: {authSession.role}</span>

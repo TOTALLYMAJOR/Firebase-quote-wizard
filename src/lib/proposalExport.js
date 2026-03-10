@@ -1,16 +1,16 @@
 import { jsPDF } from "jspdf";
 import { currency } from "./quoteCalculator";
 
-const BRANDING = {
-  title: "Tasteful Touch Catering Proposal",
-  crew: "Chef Toni and Grill Master Ervin",
+const DEFAULT_BRANDING = {
+  name: "Tasteful Touch Catering",
+  tagline: "Chef Toni and Grill Master Ervin",
   logoPath: "/brand/logo.png",
   crewMembers: [
     { label: "Chef Toni", imagePath: "/brand/chef-toni.png" },
     { label: "Grill Master Ervin", imagePath: "/brand/grillmaster-irvin.png" }
   ]
 };
-let brandAssetsCache = null;
+const BRAND_ASSET_CACHE = new Map();
 
 function fmtDate(iso) {
   if (!iso) return "-";
@@ -21,6 +21,58 @@ function fmtDate(iso) {
 
 function text(v) {
   return String(v ?? "-");
+}
+
+function cleanText(v, fallback = "") {
+  const value = String(v ?? "").trim();
+  return value || fallback;
+}
+
+function normalizeCrewMembers(input) {
+  const source = Array.isArray(input) && input.length ? input : DEFAULT_BRANDING.crewMembers;
+  return source
+    .map((member, idx) => ({
+      label: cleanText(member?.label, `Team Member ${idx + 1}`),
+      imagePath: cleanText(member?.imagePath ?? member?.imageUrl ?? "", "")
+    }))
+    .filter((member) => Boolean(member.label))
+    .slice(0, 4);
+}
+
+function resolveBranding(meta) {
+  const brandName = cleanText(meta?.brandName, DEFAULT_BRANDING.name);
+  const brandTagline = cleanText(meta?.brandTagline, DEFAULT_BRANDING.tagline);
+  return {
+    title: `${brandName} Proposal`,
+    crew: brandTagline,
+    logoPath: cleanText(meta?.brandLogoUrl, DEFAULT_BRANDING.logoPath),
+    crewMembers: normalizeCrewMembers(meta?.brandCrew)
+  };
+}
+
+function hexToRgb(value, fallback) {
+  const raw = String(value || "").trim();
+  const full = /^#[\da-fA-F]{6}$/.test(raw)
+    ? raw
+    : /^#[\da-fA-F]{3}$/.test(raw)
+      ? `#${raw[1]}${raw[1]}${raw[2]}${raw[2]}${raw[3]}${raw[3]}`
+      : "";
+  if (!full) return fallback;
+  const n = Number.parseInt(full.slice(1), 16);
+  if (Number.isNaN(n)) return fallback;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function resolvePalette(meta) {
+  return {
+    ink: [31, 24, 15],
+    gold: hexToRgb(meta?.brandPrimaryColor, [198, 145, 57]),
+    goldSoft: hexToRgb(meta?.brandAccentColor, [242, 224, 184]),
+    text: [56, 44, 30],
+    muted: [103, 87, 62],
+    cream: [251, 246, 234],
+    line: hexToRgb(meta?.brandDarkAccentColor, [214, 184, 130])
+  };
 }
 
 function blobToDataUrl(blob) {
@@ -39,6 +91,7 @@ function resolveImageFormat(mimeType = "") {
 }
 
 async function loadBrandImage(path) {
+  if (!path) return null;
   try {
     const response = await fetch(path);
     if (!response.ok) return null;
@@ -52,22 +105,27 @@ async function loadBrandImage(path) {
   }
 }
 
-async function loadBrandAssets() {
-  if (brandAssetsCache) {
-    return brandAssetsCache;
+async function loadBrandAssets(branding) {
+  const cacheKey = JSON.stringify([
+    branding.logoPath,
+    ...branding.crewMembers.map((member) => member.imagePath)
+  ]);
+  if (BRAND_ASSET_CACHE.has(cacheKey)) {
+    return BRAND_ASSET_CACHE.get(cacheKey);
   }
   const [logo, ...crewImages] = await Promise.all([
-    loadBrandImage(BRANDING.logoPath),
-    ...BRANDING.crewMembers.map((member) => loadBrandImage(member.imagePath))
+    loadBrandImage(branding.logoPath),
+    ...branding.crewMembers.map((member) => loadBrandImage(member.imagePath))
   ]);
-  brandAssetsCache = {
+  const assets = {
     logo,
-    crewMembers: BRANDING.crewMembers.map((member, index) => ({
+    crewMembers: branding.crewMembers.map((member, index) => ({
       ...member,
       image: crewImages[index] || null
     }))
   };
-  return brandAssetsCache;
+  BRAND_ASSET_CACHE.set(cacheKey, assets);
+  return assets;
 }
 
 export async function exportQuoteProposal(quote) {
@@ -75,7 +133,9 @@ export async function exportQuoteProposal(quote) {
     throw new Error("Missing quote data for PDF export.");
   }
 
-  const brandAssets = await loadBrandAssets();
+  const meta = quote.quoteMeta || {};
+  const branding = resolveBranding(meta);
+  const brandAssets = await loadBrandAssets(branding);
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -83,16 +143,7 @@ export async function exportQuoteProposal(quote) {
   const right = pageWidth - 44;
   const maxWidth = right - left;
   const lineGap = 17;
-  const palette = {
-    ink: [31, 24, 15],
-    gold: [198, 145, 57],
-    goldSoft: [242, 224, 184],
-    text: [56, 44, 30],
-    muted: [103, 87, 62],
-    cream: [251, 246, 234],
-    line: [214, 184, 130]
-  };
-  const meta = quote.quoteMeta || {};
+  const palette = resolvePalette(meta);
   const showDisposablesNote = meta.includeDisposables !== false;
   const perPersonRate = Number(quote.event?.guests || 0) > 0 ? Number(quote.totals?.base || 0) / Number(quote.event?.guests) : 0;
   const headerHeight = 124;
@@ -140,8 +191,9 @@ export async function exportQuoteProposal(quote) {
 
   const crewChipSize = 42;
   const crewGap = 14;
+  const crewCount = brandAssets.crewMembers.length;
   const crewBlockWidth =
-    (brandAssets.crewMembers.length * crewChipSize) + ((brandAssets.crewMembers.length - 1) * crewGap);
+    crewCount > 0 ? (crewCount * crewChipSize) + ((crewCount - 1) * crewGap) : 0;
   const crewStartX = right - crewBlockWidth;
   const crewTopY = 18;
   brandAssets.crewMembers.forEach((member, index) => {
@@ -161,10 +213,10 @@ export async function exportQuoteProposal(quote) {
   doc.setTextColor(255, 255, 255);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(20);
-  doc.text(BRANDING.title, titleX, 42);
+  doc.text(branding.title, titleX, 42);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(BRANDING.crew, titleX, 58);
+  doc.text(branding.crew, titleX, 58);
   doc.text(`Quote #${text(quote.quoteNumber)}`, titleX, 74);
   doc.text(`Created: ${fmtDate(quote.createdAtISO)}`, right, 94, { align: "right" });
   doc.text(`Valid Through: ${fmtDate(quote.expiresAtISO)}`, right, 110, { align: "right" });
