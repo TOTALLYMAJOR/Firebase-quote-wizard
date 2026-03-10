@@ -461,14 +461,6 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
           <div className="admin-section-head"><h3>Integrations</h3></div>
           <div className="admin-grid-settings">
             <label>
-              QuickBooks realm/company id
-              <input
-                type="text"
-                value={draft.settings.quickbooksRealmId || ""}
-                onChange={(e) => patchTextSetting("quickbooksRealmId", e.target.value)}
-              />
-            </label>
-            <label>
               CRM provider
               <input
                 type="text"
@@ -485,35 +477,11 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               />
             </label>
             <label>
-              <span>Enable QuickBooks sync</span>
-              <input
-                type="checkbox"
-                checked={Boolean(draft.settings.quickbooksEnabled)}
-                onChange={(e) => patchToggleSetting("quickbooksEnabled", e.target.checked)}
-              />
-            </label>
-            <label>
               <span>Enable CRM sync</span>
               <input
                 type="checkbox"
                 checked={Boolean(draft.settings.crmEnabled)}
                 onChange={(e) => patchToggleSetting("crmEnabled", e.target.checked)}
-              />
-            </label>
-            <label>
-              <span>QuickBooks auto-sync on sent</span>
-              <input
-                type="checkbox"
-                checked={Boolean(draft.settings.quickbooksAutoSyncOnSent)}
-                onChange={(e) => patchToggleSetting("quickbooksAutoSyncOnSent", e.target.checked)}
-              />
-            </label>
-            <label>
-              <span>QuickBooks auto-sync on booked</span>
-              <input
-                type="checkbox"
-                checked={Boolean(draft.settings.quickbooksAutoSyncOnBooked)}
-                onChange={(e) => patchToggleSetting("quickbooksAutoSyncOnBooked", e.target.checked)}
               />
             </label>
             <label>

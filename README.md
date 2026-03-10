@@ -58,7 +58,7 @@ The app supports:
 - schedule calendar modal with month/week views and booked/accepted date visibility
 - schedule conflict flags for time overlap, unknown timing, and capacity risk
 - drag/drop staff lead assignment lanes with persistent booking assignment updates
-- integration ops modal for QuickBooks/CRM sync event logging and audit review
+- integration ops modal for CRM sync event logging and audit review
 - admin-configurable integration settings (provider toggles, retry limits, and audit retention)
 - customer portal record sync in Firestore (`customerPortalQuotes`)
 - availability checks against existing accepted/booked events on submit (time + duration + capacity aware)

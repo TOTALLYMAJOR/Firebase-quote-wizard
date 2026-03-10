@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { currency } from "../lib/quoteCalculator";
 import { getQuoteHistory, recordQuoteIntegrationSync } from "../lib/quoteStore";
 
-const PROVIDERS = ["quickbooks", "crm"];
+const PROVIDERS = ["crm"];
 const STATES = ["queued", "success", "error", "retrying", "skipped"];
 const DIRECTIONS = ["push", "pull"];
 
@@ -20,7 +20,7 @@ function formatDateTime(value) {
 
 function toProvider(value) {
   const provider = String(value || "").trim().toLowerCase();
-  return PROVIDERS.includes(provider) ? provider : "quickbooks";
+  return PROVIDERS.includes(provider) ? provider : "crm";
 }
 
 function toState(value) {
@@ -78,7 +78,7 @@ export default function IntegrationOpsModal({
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     quoteId: "",
-    provider: "quickbooks",
+    provider: "crm",
     state: "queued",
     direction: "push",
     attempt: 1,
@@ -197,10 +197,6 @@ export default function IntegrationOpsModal({
             <h3>Provider Config</h3>
           </div>
           <div className="status-strip">
-            <span>
-              QuickBooks: <strong>{settings.quickbooksEnabled ? "enabled" : "disabled"}</strong>
-            </span>
-            <span>Realm: <strong>{settings.quickbooksRealmId || "-"}</strong></span>
             <span>
               CRM: <strong>{settings.crmEnabled ? "enabled" : "disabled"}</strong>
             </span>

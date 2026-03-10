@@ -18,7 +18,7 @@ const DEFAULT_VALIDITY_DAYS = 30;
 const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
 const AVAILABILITY_CONFLICT_STATUSES = new Set(["accepted", "booked"]);
 const PAYMENT_STATUSES = ["unpaid", "sent", "paid", "refunded"];
-const INTEGRATION_PROVIDER_SET = new Set(["quickbooks", "crm"]);
+const INTEGRATION_PROVIDER_SET = new Set(["crm"]);
 const INTEGRATION_STATE_SET = new Set(["queued", "success", "error", "retrying", "skipped"]);
 const STATUS_LIFECYCLE_FIELD = {
   draft: "draftAtISO",
@@ -101,7 +101,7 @@ function windowsOverlap(a, b) {
 
 function normalizeIntegrationProvider(value) {
   const provider = String(value || "").trim().toLowerCase();
-  return INTEGRATION_PROVIDER_SET.has(provider) ? provider : "quickbooks";
+  return INTEGRATION_PROVIDER_SET.has(provider) ? provider : "crm";
 }
 
 function normalizeIntegrationState(value) {
@@ -110,7 +110,7 @@ function normalizeIntegrationState(value) {
 }
 
 function buildIntegrationLogEntry({
-  provider = "quickbooks",
+  provider = "crm",
   direction = "push",
   state = "queued",
   message = "",
@@ -388,7 +388,7 @@ export async function checkEventAvailability({
 
 export async function recordQuoteIntegrationSync({
   quoteId,
-  provider = "quickbooks",
+  provider = "crm",
   direction = "push",
   state = "queued",
   message = "",
@@ -589,12 +589,6 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       retention: Math.max(10, Number(settings?.integrationAuditRetention || 50)),
       lastSyncAtISO: "",
       providers: {
-        quickbooks: {
-          enabled: Boolean(settings?.quickbooksEnabled),
-          state: "idle",
-          occurredAtISO: "",
-          realmId: settings?.quickbooksRealmId || ""
-        },
         crm: {
           enabled: Boolean(settings?.crmEnabled),
           state: "idle",
@@ -643,10 +637,6 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       disposablesNote: settings?.disposablesNote || "",
       depositNotice: settings?.depositNotice || "",
       quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
-      quickbooksEnabled: Boolean(settings?.quickbooksEnabled),
-      quickbooksRealmId: settings?.quickbooksRealmId || "",
-      quickbooksAutoSyncOnSent: Boolean(settings?.quickbooksAutoSyncOnSent),
-      quickbooksAutoSyncOnBooked: Boolean(settings?.quickbooksAutoSyncOnBooked),
       crmEnabled: Boolean(settings?.crmEnabled),
       crmProvider: settings?.crmProvider || "webhook",
       crmWebhookUrl: settings?.crmWebhookUrl || "",
