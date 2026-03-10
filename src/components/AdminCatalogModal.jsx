@@ -199,6 +199,16 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     }));
   };
 
+  const patchToggleSetting = (field, checked) => {
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        [field]: Boolean(checked)
+      }
+    }));
+  };
+
   const patchJsonDraft = (field, value) => {
     setJsonDrafts((prev) => ({ ...prev, [field]: value }));
   };
@@ -372,6 +382,7 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             <label>Per-mile rate<input type="number" step="0.01" value={draft.settings.perMileRate} onChange={(e) => patchNumericSetting("perMileRate", e.target.value)} /></label>
             <label>Long-distance per-mile<input type="number" step="0.01" value={draft.settings.longDistancePerMileRate} onChange={(e) => patchNumericSetting("longDistancePerMileRate", e.target.value)} /></label>
             <label>Delivery threshold miles<input type="number" step="1" min="0" value={draft.settings.deliveryThresholdMiles} onChange={(e) => patchNumericSetting("deliveryThresholdMiles", e.target.value)} /></label>
+            <label>Capacity limit<input type="number" step="1" min="1" value={draft.settings.capacityLimit || 400} onChange={(e) => patchNumericSetting("capacityLimit", e.target.value)} /></label>
             <label>Bartender rate<input type="number" step="0.01" min="0" value={draft.settings.bartenderRate} onChange={(e) => patchNumericSetting("bartenderRate", e.target.value)} /></label>
             <label>Service fee pct fallback<input type="number" step="0.01" value={draft.settings.serviceFeePct} onChange={(e) => patchNumericSetting("serviceFeePct", e.target.value)} /></label>
             <label>Tax rate fallback<input type="number" step="0.01" value={draft.settings.taxRate} onChange={(e) => patchNumericSetting("taxRate", e.target.value)} /></label>
@@ -379,6 +390,8 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             <label>Quote validity days<input type="number" step="1" min="1" value={draft.settings.quoteValidityDays} onChange={(e) => patchNumericSetting("quoteValidityDays", e.target.value)} /></label>
             <label>Server rate<input type="number" step="0.01" value={draft.settings.serverRate} onChange={(e) => patchNumericSetting("serverRate", e.target.value)} /></label>
             <label>Chef rate<input type="number" step="0.01" value={draft.settings.chefRate} onChange={(e) => patchNumericSetting("chefRate", e.target.value)} /></label>
+            <label>Integration retry limit<input type="number" step="1" min="1" max="10" value={draft.settings.integrationRetryLimit || 3} onChange={(e) => patchNumericSetting("integrationRetryLimit", e.target.value)} /></label>
+            <label>Integration audit retention<input type="number" step="1" min="10" max="200" value={draft.settings.integrationAuditRetention || 50} onChange={(e) => patchNumericSetting("integrationAuditRetention", e.target.value)} /></label>
           </div>
         </section>
 
@@ -439,6 +452,84 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
                 type="text"
                 value={draft.settings.depositNotice || ""}
                 onChange={(e) => patchTextSetting("depositNotice", e.target.value)}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="admin-section">
+          <div className="admin-section-head"><h3>Integrations</h3></div>
+          <div className="admin-grid-settings">
+            <label>
+              QuickBooks realm/company id
+              <input
+                type="text"
+                value={draft.settings.quickbooksRealmId || ""}
+                onChange={(e) => patchTextSetting("quickbooksRealmId", e.target.value)}
+              />
+            </label>
+            <label>
+              CRM provider
+              <input
+                type="text"
+                value={draft.settings.crmProvider || "webhook"}
+                onChange={(e) => patchTextSetting("crmProvider", e.target.value)}
+              />
+            </label>
+            <label>
+              CRM webhook URL
+              <input
+                type="url"
+                value={draft.settings.crmWebhookUrl || ""}
+                onChange={(e) => patchTextSetting("crmWebhookUrl", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>Enable QuickBooks sync</span>
+              <input
+                type="checkbox"
+                checked={Boolean(draft.settings.quickbooksEnabled)}
+                onChange={(e) => patchToggleSetting("quickbooksEnabled", e.target.checked)}
+              />
+            </label>
+            <label>
+              <span>Enable CRM sync</span>
+              <input
+                type="checkbox"
+                checked={Boolean(draft.settings.crmEnabled)}
+                onChange={(e) => patchToggleSetting("crmEnabled", e.target.checked)}
+              />
+            </label>
+            <label>
+              <span>QuickBooks auto-sync on sent</span>
+              <input
+                type="checkbox"
+                checked={Boolean(draft.settings.quickbooksAutoSyncOnSent)}
+                onChange={(e) => patchToggleSetting("quickbooksAutoSyncOnSent", e.target.checked)}
+              />
+            </label>
+            <label>
+              <span>QuickBooks auto-sync on booked</span>
+              <input
+                type="checkbox"
+                checked={Boolean(draft.settings.quickbooksAutoSyncOnBooked)}
+                onChange={(e) => patchToggleSetting("quickbooksAutoSyncOnBooked", e.target.checked)}
+              />
+            </label>
+            <label>
+              <span>CRM auto-sync on sent</span>
+              <input
+                type="checkbox"
+                checked={Boolean(draft.settings.crmAutoSyncOnSent)}
+                onChange={(e) => patchToggleSetting("crmAutoSyncOnSent", e.target.checked)}
+              />
+            </label>
+            <label>
+              <span>CRM auto-sync on booked</span>
+              <input
+                type="checkbox"
+                checked={Boolean(draft.settings.crmAutoSyncOnBooked)}
+                onChange={(e) => patchToggleSetting("crmAutoSyncOnBooked", e.target.checked)}
               />
             </label>
           </div>

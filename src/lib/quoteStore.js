@@ -18,6 +18,8 @@ const DEFAULT_VALIDITY_DAYS = 30;
 const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
 const AVAILABILITY_CONFLICT_STATUSES = new Set(["accepted", "booked"]);
 const PAYMENT_STATUSES = ["unpaid", "sent", "paid", "refunded"];
+const INTEGRATION_PROVIDER_SET = new Set(["quickbooks", "crm"]);
+const INTEGRATION_STATE_SET = new Set(["queued", "success", "error", "retrying", "skipped"]);
 const STATUS_LIFECYCLE_FIELD = {
   draft: "draftAtISO",
   sent: "sentAtISO",
@@ -95,6 +97,39 @@ function toTimeWindow(time, hours) {
 function windowsOverlap(a, b) {
   if (!a || !b) return false;
   return a.start < b.end && b.start < a.end;
+}
+
+function normalizeIntegrationProvider(value) {
+  const provider = String(value || "").trim().toLowerCase();
+  return INTEGRATION_PROVIDER_SET.has(provider) ? provider : "quickbooks";
+}
+
+function normalizeIntegrationState(value) {
+  const state = String(value || "").trim().toLowerCase();
+  return INTEGRATION_STATE_SET.has(state) ? state : "queued";
+}
+
+function buildIntegrationLogEntry({
+  provider = "quickbooks",
+  direction = "push",
+  state = "queued",
+  message = "",
+  actorEmail = "",
+  attempt = 1,
+  payloadRef = ""
+} = {}) {
+  const nowISO = isoNow();
+  return {
+    id: buildPortalKey(),
+    provider: normalizeIntegrationProvider(provider),
+    direction: direction === "pull" ? "pull" : "push",
+    state: normalizeIntegrationState(state),
+    message: String(message || "").trim(),
+    actorEmail: normalizeEmail(actorEmail),
+    attempt: Math.max(1, Math.round(toNumber(attempt, 1))),
+    payloadRef: String(payloadRef || "").trim(),
+    occurredAtISO: nowISO
+  };
 }
 
 function buildPortalKey() {
@@ -210,6 +245,8 @@ function hydrateQuote(item, nowISO = isoNow()) {
   const createdAtISO = item.createdAtISO || nowISO;
   const expiresAtISO = item.expiresAtISO || addDaysISO(createdAtISO, DEFAULT_VALIDITY_DAYS);
   const status = normalizeStatus(item.status);
+  const integrationPayload = item.integrations || {};
+  const integrationLogs = Array.isArray(integrationPayload.logs) ? integrationPayload.logs : [];
   return {
     ...item,
     status,
@@ -218,6 +255,10 @@ function hydrateQuote(item, nowISO = isoNow()) {
     payment: hydratePayment(item.payment),
     booking: {
       ...(item.booking || {})
+    },
+    integrations: {
+      ...integrationPayload,
+      logs: integrationLogs
     },
     lifecycle: {
       ...(item.lifecycle || {})
@@ -345,6 +386,113 @@ export async function checkEventAvailability({
   };
 }
 
+export async function recordQuoteIntegrationSync({
+  quoteId,
+  provider = "quickbooks",
+  direction = "push",
+  state = "queued",
+  message = "",
+  actorEmail = "",
+  attempt = 1,
+  payloadRef = ""
+} = {}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  const entry = buildIntegrationLogEntry({
+    provider,
+    direction,
+    state,
+    message,
+    actorEmail,
+    attempt,
+    payloadRef
+  });
+
+  if (firebaseReady) {
+    const quoteRef = doc(db, "quotes", id);
+    const quoteSnap = await getDoc(quoteRef);
+    if (!quoteSnap.exists()) {
+      throw new Error("Quote not found.");
+    }
+    const data = quoteSnap.data();
+    const current = data.integrations || {};
+    const existingLogs = Array.isArray(current.logs) ? current.logs : [];
+    const retention = Math.max(10, toNumber(current.retention, data.quoteMeta?.integrationAuditRetention || 50));
+    const logs = [entry, ...existingLogs].slice(0, retention);
+    const providerKey = entry.provider;
+    const nextProviders = {
+      ...(current.providers || {}),
+      [providerKey]: {
+        ...((current.providers || {})[providerKey] || {}),
+        state: entry.state,
+        direction: entry.direction,
+        occurredAtISO: entry.occurredAtISO,
+        attempt: entry.attempt,
+        message: entry.message,
+        actorEmail: entry.actorEmail
+      }
+    };
+
+    await updateDoc(quoteRef, {
+      integrations: {
+        ...current,
+        providers: nextProviders,
+        logs,
+        lastSyncAtISO: entry.occurredAtISO,
+        retention
+      },
+      updatedAtISO: entry.occurredAtISO
+    });
+    await syncPortalSnapshotFromQuoteDoc(id);
+    return { ok: true, storage: "firebase", entry };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  let found = false;
+  const next = existing.map((quote) => {
+    if (quote.id !== id) return quote;
+    found = true;
+    const current = quote.integrations || {};
+    const existingLogs = Array.isArray(current.logs) ? current.logs : [];
+    const retention = Math.max(10, toNumber(current.retention, quote.quoteMeta?.integrationAuditRetention || 50));
+    const logs = [entry, ...existingLogs].slice(0, retention);
+    const providerKey = entry.provider;
+    const nextProviders = {
+      ...(current.providers || {}),
+      [providerKey]: {
+        ...((current.providers || {})[providerKey] || {}),
+        state: entry.state,
+        direction: entry.direction,
+        occurredAtISO: entry.occurredAtISO,
+        attempt: entry.attempt,
+        message: entry.message,
+        actorEmail: entry.actorEmail
+      }
+    };
+    return {
+      ...quote,
+      updatedAtISO: entry.occurredAtISO,
+      integrations: {
+        ...current,
+        providers: nextProviders,
+        logs,
+        lastSyncAtISO: entry.occurredAtISO,
+        retention
+      }
+    };
+  });
+
+  if (!found) {
+    throw new Error("Quote not found.");
+  }
+
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return { ok: true, storage: "local", entry };
+}
+
 export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } = {}) {
   const id = String(quoteId || "").trim();
   if (!id) {
@@ -436,6 +584,26 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       bookedAtISO: "",
       bookedByEmail: ""
     },
+    integrations: {
+      retryLimit: Math.max(1, Number(settings?.integrationRetryLimit || 3)),
+      retention: Math.max(10, Number(settings?.integrationAuditRetention || 50)),
+      lastSyncAtISO: "",
+      providers: {
+        quickbooks: {
+          enabled: Boolean(settings?.quickbooksEnabled),
+          state: "idle",
+          occurredAtISO: "",
+          realmId: settings?.quickbooksRealmId || ""
+        },
+        crm: {
+          enabled: Boolean(settings?.crmEnabled),
+          state: "idle",
+          occurredAtISO: "",
+          provider: settings?.crmProvider || "webhook"
+        }
+      },
+      logs: []
+    },
     totals: {
       base: totals.base,
       addons: totals.addons,
@@ -474,7 +642,18 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       includeDisposables: form.includeDisposables !== false,
       disposablesNote: settings?.disposablesNote || "",
       depositNotice: settings?.depositNotice || "",
-      quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS)
+      quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
+      quickbooksEnabled: Boolean(settings?.quickbooksEnabled),
+      quickbooksRealmId: settings?.quickbooksRealmId || "",
+      quickbooksAutoSyncOnSent: Boolean(settings?.quickbooksAutoSyncOnSent),
+      quickbooksAutoSyncOnBooked: Boolean(settings?.quickbooksAutoSyncOnBooked),
+      crmEnabled: Boolean(settings?.crmEnabled),
+      crmProvider: settings?.crmProvider || "webhook",
+      crmWebhookUrl: settings?.crmWebhookUrl || "",
+      crmAutoSyncOnSent: Boolean(settings?.crmAutoSyncOnSent),
+      crmAutoSyncOnBooked: Boolean(settings?.crmAutoSyncOnBooked),
+      integrationRetryLimit: Math.max(1, Number(settings?.integrationRetryLimit || 3)),
+      integrationAuditRetention: Math.max(10, Number(settings?.integrationAuditRetention || 50))
     },
     status: "draft",
     source: catalogSource,

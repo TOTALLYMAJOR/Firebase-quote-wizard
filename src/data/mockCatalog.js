@@ -283,6 +283,7 @@ export const DEFAULT_SETTINGS = {
   perMileRate: 0.7,
   longDistancePerMileRate: 1.1,
   deliveryThresholdMiles: 30,
+  capacityLimit: 400,
   bartenderRate: 30,
   serviceFeePct: 0.2,
   serviceFeeTiers: DEFAULT_SERVICE_FEE_TIERS,
@@ -315,6 +316,17 @@ export const DEFAULT_SETTINGS = {
   acceptanceEmail: "tonitastefultouch@yahoo.com",
   disposablesNote: "All disposables are included in this quote.",
   depositNotice: "30% deposit is required to lock in your date.",
+  quickbooksEnabled: false,
+  quickbooksRealmId: "",
+  quickbooksAutoSyncOnSent: false,
+  quickbooksAutoSyncOnBooked: true,
+  crmEnabled: false,
+  crmProvider: "webhook",
+  crmWebhookUrl: "",
+  crmAutoSyncOnSent: true,
+  crmAutoSyncOnBooked: true,
+  integrationRetryLimit: 3,
+  integrationAuditRetention: 50,
   eventTemplates: DEFAULT_EVENT_TEMPLATES,
   seasonalProfiles: DEFAULT_SEASONAL_PROFILES,
   defaultSeasonProfile: "auto"
@@ -454,6 +466,17 @@ function toText(value, fallback = "") {
   return text || fallback;
 }
 
+function toBoolean(value, fallback = false) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(text)) return true;
+    if (["false", "0", "no", "off"].includes(text)) return false;
+  }
+  return fallback;
+}
+
 function normalizeHexColor(value, fallback) {
   const raw = String(value || "").trim();
   if (/^#[\da-fA-F]{6}$/.test(raw)) {
@@ -529,6 +552,7 @@ export function normalizeCatalog(raw) {
         DEFAULT_SETTINGS.deliveryThresholdMiles,
         0
       ),
+      capacityLimit: toNumber(rawSettings.capacityLimit, DEFAULT_SETTINGS.capacityLimit, 1),
       bartenderRate: toNumber(rawSettings.bartenderRate, DEFAULT_SETTINGS.bartenderRate, 0),
       serviceFeePct: toNumber(rawSettings.serviceFeePct, DEFAULT_SETTINGS.serviceFeePct, 0, 1),
       serviceFeeTiers,
@@ -560,6 +584,22 @@ export function normalizeCatalog(raw) {
       acceptanceEmail: toText(rawSettings.acceptanceEmail, DEFAULT_SETTINGS.acceptanceEmail),
       disposablesNote: toText(rawSettings.disposablesNote, DEFAULT_SETTINGS.disposablesNote),
       depositNotice: toText(rawSettings.depositNotice, DEFAULT_SETTINGS.depositNotice),
+      quickbooksEnabled: toBoolean(rawSettings.quickbooksEnabled, DEFAULT_SETTINGS.quickbooksEnabled),
+      quickbooksRealmId: toText(rawSettings.quickbooksRealmId, DEFAULT_SETTINGS.quickbooksRealmId),
+      quickbooksAutoSyncOnSent: toBoolean(rawSettings.quickbooksAutoSyncOnSent, DEFAULT_SETTINGS.quickbooksAutoSyncOnSent),
+      quickbooksAutoSyncOnBooked: toBoolean(rawSettings.quickbooksAutoSyncOnBooked, DEFAULT_SETTINGS.quickbooksAutoSyncOnBooked),
+      crmEnabled: toBoolean(rawSettings.crmEnabled, DEFAULT_SETTINGS.crmEnabled),
+      crmProvider: toText(rawSettings.crmProvider, DEFAULT_SETTINGS.crmProvider),
+      crmWebhookUrl: toText(rawSettings.crmWebhookUrl, DEFAULT_SETTINGS.crmWebhookUrl),
+      crmAutoSyncOnSent: toBoolean(rawSettings.crmAutoSyncOnSent, DEFAULT_SETTINGS.crmAutoSyncOnSent),
+      crmAutoSyncOnBooked: toBoolean(rawSettings.crmAutoSyncOnBooked, DEFAULT_SETTINGS.crmAutoSyncOnBooked),
+      integrationRetryLimit: toNumber(rawSettings.integrationRetryLimit, DEFAULT_SETTINGS.integrationRetryLimit, 1, 10),
+      integrationAuditRetention: toNumber(
+        rawSettings.integrationAuditRetention,
+        DEFAULT_SETTINGS.integrationAuditRetention,
+        10,
+        200
+      ),
       eventTemplates,
       seasonalProfiles,
       defaultSeasonProfile

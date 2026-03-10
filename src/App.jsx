@@ -12,6 +12,7 @@ import { checkEventAvailability, submitQuote } from "./lib/quoteStore";
 
 const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
 const EventScheduleModal = lazy(() => import("./components/EventScheduleModal"));
+const IntegrationOpsModal = lazy(() => import("./components/IntegrationOpsModal"));
 const QuoteCompareModal = lazy(() => import("./components/QuoteCompareModal"));
 const QuoteHistoryModal = lazy(() => import("./components/QuoteHistoryModal"));
 const ReportingDashboardModal = lazy(() => import("./components/ReportingDashboardModal"));
@@ -40,6 +41,7 @@ export default function App() {
   const [step, setStep] = useState(1);
   const [adminOpen, setAdminOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -402,6 +404,7 @@ export default function App() {
           )}
           <div className="right-actions header-actions">
             <button className="ghost" onClick={() => setScheduleOpen(true)}>Schedule</button>
+            <button className="ghost" onClick={() => setIntegrationsOpen(true)}>Integrations</button>
             <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
             {authSession.isAdmin && <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>}
@@ -548,6 +551,13 @@ export default function App() {
           onClose={() => setScheduleOpen(false)}
           staffLeads={scheduleStaffLeads}
           capacityLimit={scheduleCapacityLimit}
+        />
+
+        <IntegrationOpsModal
+          open={integrationsOpen}
+          onClose={() => setIntegrationsOpen(false)}
+          settings={catalog.settings}
+          currentUserEmail={authSession.user?.email || ""}
         />
 
         <QuoteCompareModal

@@ -1008,6 +1008,25 @@ hr {
   width: min(1200px, 100%);
 }
 
+.integration-card {
+  width: min(1320px, 100%);
+}
+
+.integration-form-grid {
+  align-items: end;
+}
+
+.integration-message-field {
+  grid-column: 1 / -1;
+}
+
+.integration-filters {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: 1fr 180px 180px;
+  gap: 0.5rem;
+}
+
 .schedule-card {
   width: min(1300px, 100%);
 }
@@ -1542,6 +1561,10 @@ hr {
   }
 
   .history-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .integration-filters {
     grid-template-columns: 1fr;
   }
 
