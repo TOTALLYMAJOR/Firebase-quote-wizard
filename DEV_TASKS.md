@@ -22,7 +22,7 @@
 - [ ] Add payment/deposit link support and confirmation tracking.
 - [ ] Add basic analytics events for funnel drop-off by step and most-selected add-ons.
 - [ ] Add production reporting modules (prep sheets, labor plans, purchasing projections, and post-event actuals).
-- [ ] Add QuickBooks integration for invoice, payment, deposit, and reconciliation sync.
+- [ ] Add accounting integration for invoice, payment, deposit, and reconciliation sync (deferred for now).
 - [ ] Add CRM integrations (HubSpot/Salesforce or webhook adapters) for lead and client record sync.
 - [ ] Add event scheduling with calendar views, staffing assignments, and kitchen timeline checkpoints.
 - [ ] Add booking workflows with availability checks, proposal-to-contract conversion, and confirmation tracking.

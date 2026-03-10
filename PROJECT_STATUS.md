@@ -143,7 +143,7 @@ Vercel support files exist, but Vercel has not been completed because Firebase H
 2. connect a custom domain or business-site link to Firebase Hosting
 3. add a client-facing handoff/training document
 4. finalize sales proposal and pricing materials
-5. prioritize production reports, QuickBooks/CRM integrations, event scheduling, and booking workflows
+5. prioritize production reports, CRM integrations, event scheduling, and booking workflows
 
 ### Engineering Next
 

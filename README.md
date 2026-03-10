@@ -247,7 +247,7 @@ See `DEV_TASKS.md` for planned enhancements across:
 Requested operations expansion includes:
 
 - production reporting for planning and post-event review
-- QuickBooks integration for accounting sync
+- accounting integration for invoice and reconciliation sync (deferred for now)
 - CRM integration for lead/client lifecycle management
 - event scheduling and staffing calendar workflows
 - booking workflows from quote to confirmation
