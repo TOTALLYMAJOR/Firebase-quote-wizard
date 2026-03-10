@@ -11,6 +11,7 @@ import { buildUpsellRecommendations } from "./lib/recommendations";
 import { checkEventAvailability, submitQuote } from "./lib/quoteStore";
 
 const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
+const EventScheduleModal = lazy(() => import("./components/EventScheduleModal"));
 const QuoteCompareModal = lazy(() => import("./components/QuoteCompareModal"));
 const QuoteHistoryModal = lazy(() => import("./components/QuoteHistoryModal"));
 const ReportingDashboardModal = lazy(() => import("./components/ReportingDashboardModal"));
@@ -38,6 +39,7 @@ export default function App() {
   const catalog = useCatalogData({ enabled: authSession.isStaff });
   const [step, setStep] = useState(1);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -378,6 +380,7 @@ export default function App() {
             </div>
           )}
           <div className="right-actions header-actions">
+            <button className="ghost" onClick={() => setScheduleOpen(true)}>Schedule</button>
             <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
             {authSession.isAdmin && <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>}
@@ -517,6 +520,11 @@ export default function App() {
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           basePortalUrl={`${window.location.origin}${window.location.pathname}`}
+        />
+
+        <EventScheduleModal
+          open={scheduleOpen}
+          onClose={() => setScheduleOpen(false)}
         />
 
         <QuoteCompareModal

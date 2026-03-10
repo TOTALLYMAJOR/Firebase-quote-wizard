@@ -55,6 +55,7 @@ The app supports:
 - quote lifecycle tracking: `draft`, `sent`, `viewed`, `accepted`, `booked`, `declined`, `expired`
 - deposit payment status tracking
 - reporting dashboard with pipeline and conversion metrics
+- schedule calendar modal with month/week views and booked/accepted date visibility
 - customer portal record sync in Firestore (`customerPortalQuotes`)
 - availability checks against existing accepted/booked events on submit
 
