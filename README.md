@@ -8,6 +8,7 @@ This project helps catering businesses create polished quotes, manage pricing, u
 
 - Firebase Hosting: https://tonicatering.web.app
 - GitHub Repository: https://github.com/TOTALLYMAJOR/Firebase-quote-wizard
+- Changelog: `CHANGELOG.md`
 
 ## Overview
 
