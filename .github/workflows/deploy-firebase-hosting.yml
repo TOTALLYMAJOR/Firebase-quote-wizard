@@ -33,6 +33,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install functions dependencies (when enabled)
+        if: vars.ENABLE_FUNCTIONS_DEPLOY == 'true'
+        run: npm ci --prefix functions
+
       - name: Validate Firebase env
         run: npm run check:env
 
