@@ -12,8 +12,9 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "check:env": "node ./scripts/check-env.mjs",
+    "deploy:firebase:functions": "npx firebase-tools deploy --only functions",
     "deploy:firebase:hosting": "npm run build && npx firebase-tools deploy --only hosting",
-    "deploy:firebase": "npm run build && npx firebase-tools deploy --only hosting,firestore",
+    "deploy:firebase": "npm run build && npx firebase-tools deploy --only hosting,firestore,functions",
     "deploy:vercel": "npx vercel --prod",
     "deploy:vercel:build": "npm run build && npx vercel --prod --prebuilt"
   },

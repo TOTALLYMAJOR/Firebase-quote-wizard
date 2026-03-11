@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createDepositCheckout } from "../lib/commerceOps";
 import { currency } from "../lib/quoteCalculator";
 import {
   BOOKING_CONFIRMATION_STATUSES,
@@ -44,6 +45,7 @@ export default function QuoteHistoryModal({
   const [updatingPaymentId, setUpdatingPaymentId] = useState("");
   const [convertingId, setConvertingId] = useState("");
   const [updatingConfirmationId, setUpdatingConfirmationId] = useState("");
+  const [creatingCheckoutId, setCreatingCheckoutId] = useState("");
 
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "", feedback: "" }));
@@ -119,6 +121,18 @@ export default function QuoteHistoryModal({
         depositStatus: nextPaymentStatus,
         depositConfirmedAtISO:
           nextPaymentStatus === "paid" ? new Date().toISOString() : quote.payment?.depositConfirmedAtISO || ""
+      }
+    }));
+  };
+
+  const applyPaymentLinkLocally = (quoteId, paymentLink) => {
+    applyQuoteLocally(quoteId, (quote) => ({
+      ...quote,
+      payment: {
+        ...(quote.payment || {}),
+        depositLink: paymentLink,
+        depositStatus: "sent",
+        depositConfirmedAtISO: quote.payment?.depositConfirmedAtISO || ""
       }
     }));
   };
@@ -281,6 +295,42 @@ export default function QuoteHistoryModal({
     }
   };
 
+  const handleCreateCheckout = async (quote) => {
+    setCreatingCheckoutId(quote.id);
+    setState((prev) => ({ ...prev, error: "", feedback: "" }));
+    try {
+      if (state.source !== "firebase") {
+        throw new Error("Stripe checkout requires Firebase-backed quote storage.");
+      }
+
+      const base = basePortalUrl || `${window.location.origin}${window.location.pathname}`;
+      const successUrl = quote.portalKey
+        ? `${base}?portal=${encodeURIComponent(quote.portalKey)}&payment=success`
+        : `${base}?payment=success`;
+      const cancelUrl = quote.portalKey
+        ? `${base}?portal=${encodeURIComponent(quote.portalKey)}&payment=cancelled`
+        : `${base}?payment=cancelled`;
+
+      const result = await createDepositCheckout({
+        quoteId: quote.id,
+        successUrl,
+        cancelUrl
+      });
+      const paymentLink = String(result?.url || "").trim();
+      if (!paymentLink) {
+        throw new Error("Checkout URL was not returned.");
+      }
+
+      applyPaymentLinkLocally(quote.id, paymentLink);
+      setState((prev) => ({ ...prev, feedback: `Stripe checkout created for ${quote.quoteNumber}.` }));
+      window.open(paymentLink, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err?.message || "Failed to create Stripe checkout." }));
+    } finally {
+      setCreatingCheckoutId("");
+    }
+  };
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal-card history-card">
@@ -433,6 +483,14 @@ export default function QuoteHistoryModal({
                         <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>
+                        <button
+                          type="button"
+                          className="cta compact"
+                          onClick={() => handleCreateCheckout(quote)}
+                          disabled={creatingCheckoutId === quote.id}
+                        >
+                          {creatingCheckoutId === quote.id ? "Creating..." : "Create Stripe Link"}
+                        </button>
                       </div>
                     </td>
                   </tr>

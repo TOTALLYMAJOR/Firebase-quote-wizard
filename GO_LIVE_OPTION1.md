@@ -88,6 +88,32 @@ Best practice: subdomain (`quotes.yourdomain.com`) + direct link.
 5. Export one PDF proposal.
 6. Confirm mobile layout on iPhone + Android viewport.
 
+## 8) Optional: Stripe Deposit + Owner SMS
+
+1. Configure functions runtime values:
+
+```bash
+npx firebase-tools functions:config:set \
+  stripe.secret_key="sk_live_..." \
+  stripe.webhook_secret="whsec_..." \
+  twilio.account_sid="AC..." \
+  twilio.auth_token="..." \
+  twilio.from_number="+12055550100" \
+  notifications.owner_phone="+12055550123" \
+  app.base_url="https://tonicatering.web.app"
+```
+
+2. Deploy functions:
+
+```bash
+npm run deploy:firebase:functions
+```
+
+3. In Stripe Dashboard, add webhook endpoint:
+
+- `https://us-central1-tonicatering.cloudfunctions.net/stripeWebhook`
+- event: `checkout.session.completed`
+
 ## Security note
 
 Current `firestore.rules` are role-gated:

@@ -6,6 +6,7 @@ import { StepEvent, StepMenu, StepReview } from "./components/WizardSteps";
 import { STAFF_RULES } from "./data/mockCatalog";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
+import { notifyOwnerNewQuote } from "./lib/commerceOps";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
 import { checkEventAvailability, submitQuote } from "./lib/quoteStore";
@@ -309,9 +310,25 @@ export default function App() {
       });
       const basePath = `${window.location.origin}${window.location.pathname}`;
       const portalLink = result.portalKey ? `${basePath}?portal=${result.portalKey}` : "";
+      let smsSuffix = "";
+      if (result.storage === "firebase") {
+        try {
+          const smsResult = await notifyOwnerNewQuote({
+            quoteId: result.id,
+            portalLink
+          });
+          if (smsResult?.sms?.sent) {
+            smsSuffix = " Owner SMS sent.";
+          } else if (smsResult?.sms?.reason === "sms_not_configured") {
+            smsSuffix = " Owner SMS not configured yet.";
+          }
+        } catch (smsErr) {
+          smsSuffix = " Owner SMS failed to send.";
+        }
+      }
       setSubmitState({
         saving: false,
-        message: `Quote ${result.quoteNumber} saved to ${result.storage}.`,
+        message: `Quote ${result.quoteNumber} saved to ${result.storage}.${smsSuffix}`,
         portalLink
       });
       setHistoryOpen(true);

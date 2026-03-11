@@ -17,9 +17,10 @@
 ## Capability Backlog
 
 - [ ] Add a side-by-side quote comparison mode (multiple packages, guests, and staffing plans).
-- [ ] Build a recommendation layer for upsells based on guest count, event type, and selected menu.
+- [x] Build a recommendation layer for upsells based on guest count, event type, and selected menu.
 - [ ] Add lead and client workflow stages with reminders (follow-up dates, status prompts, conversion tracking).
-- [ ] Add payment/deposit link support and confirmation tracking.
+- [x] Add payment/deposit link support and confirmation tracking.
+- [ ] Add two-way owner/client SMS chat thread support (Twilio Conversations + portal UI).
 - [ ] Add basic analytics events for funnel drop-off by step and most-selected add-ons.
 - [ ] Add production reporting modules (prep sheets, labor plans, purchasing projections, and post-event actuals).
 - [ ] Add accounting integration for invoice, payment, deposit, and reconciliation sync (deferred for now).

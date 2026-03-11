@@ -144,6 +144,7 @@ npm run preview
 npm run test:unit
 npm run test:e2e
 npm run check:env
+npm run deploy:firebase:functions
 npm run deploy:firebase
 npm run deploy:vercel
 npm run deploy:vercel:build
@@ -157,7 +158,7 @@ npx playwright install chromium
 
 ## Deployment
 
-### Firebase Hosting
+### Firebase Hosting + Functions
 
 This repository already includes Firebase deployment scaffolding.
 
@@ -166,6 +167,38 @@ npx firebase-tools login
 npx firebase-tools use --add
 npm run deploy:firebase
 ```
+
+To deploy functions only:
+
+```bash
+npm run deploy:firebase:functions
+```
+
+### Payment + Owner SMS Setup (Stripe + Twilio)
+
+Set runtime config for Cloud Functions:
+
+```bash
+npx firebase-tools functions:config:set \
+  stripe.secret_key="sk_live_..." \
+  stripe.webhook_secret="whsec_..." \
+  twilio.account_sid="AC..." \
+  twilio.auth_token="..." \
+  twilio.from_number="+12055550100" \
+  notifications.owner_phone="+12055550123" \
+  app.base_url="https://tonicatering.web.app"
+```
+
+Deploy functions after setting config:
+
+```bash
+npm run deploy:firebase:functions
+```
+
+Add Stripe webhook endpoint:
+
+- `https://us-central1-tonicatering.cloudfunctions.net/stripeWebhook`
+- Event: `checkout.session.completed`
 
 Supporting files:
 
