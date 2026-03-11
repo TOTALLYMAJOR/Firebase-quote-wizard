@@ -231,6 +231,31 @@ function reasonLabel(reason) {
   return "Conflict";
 }
 
+function shortDateTimeLabel(iso) {
+  const dt = new Date(iso || "");
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function confirmationLabel(event) {
+  const status = String(event.confirmationStatus || "pending");
+  if (status === "confirmed") {
+    const stamp = shortDateTimeLabel(event.confirmedAtISO || event.confirmationSentAtISO);
+    return stamp ? `Confirmed ${stamp}` : "Confirmed";
+  }
+  if (status === "sent") {
+    const stamp = shortDateTimeLabel(event.confirmationSentAtISO);
+    return stamp ? `Confirmation sent ${stamp}` : "Confirmation sent";
+  }
+  if (status === "cancelled") return "Confirmation cancelled";
+  return "Confirmation pending";
+}
+
 function formatClock(minutesInDay) {
   const normalized = ((minutesInDay % 1440) + 1440) % 1440;
   const hours24 = Math.floor(normalized / 60);
@@ -330,7 +355,11 @@ export default function EventScheduleModal({
           customer: quote.customer?.name || quote.customer?.email || "-",
           guests: Number(quote.event?.guests || 0),
           total: Number(quote.totals?.total || 0),
-          staffLead: String(quote.booking?.staffLead || "").trim()
+          staffLead: String(quote.booking?.staffLead || "").trim(),
+          contractNumber: String(quote.booking?.contractNumber || "").trim(),
+          confirmationStatus: String(quote.booking?.confirmationStatus || "pending").trim(),
+          confirmationSentAtISO: String(quote.booking?.confirmationSentAtISO || ""),
+          confirmedAtISO: String(quote.booking?.confirmedAtISO || "")
         }))
         .filter((item) => parseIsoDate(item.date))
         .sort((a, b) => {
@@ -685,6 +714,18 @@ export default function EventScheduleModal({
                       <p>{item.time || "Time TBD"} • {item.venue}</p>
                       <p>{item.customer} • {item.guests || 0} guests</p>
                       <p>Total: {currency(item.total)}</p>
+                      <p>Contract: {item.contractNumber || "Pending conversion"}</p>
+                      <p
+                        className={[
+                          "schedule-confirmation-note",
+                          item.confirmationStatus === "confirmed" ? "confirmed" : "",
+                          item.confirmationStatus === "cancelled" ? "cancelled" : ""
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
+                        {confirmationLabel(item)}
+                      </p>
                       <label className="schedule-assignment-field">
                         <span>Staff lead</span>
                         <select

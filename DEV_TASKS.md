@@ -25,7 +25,7 @@
 - [ ] Add accounting integration for invoice, payment, deposit, and reconciliation sync (deferred for now).
 - [ ] Add CRM integrations (HubSpot/Salesforce or webhook adapters) for lead and client record sync.
 - [x] Add event scheduling with calendar views, staffing assignments, and kitchen timeline checkpoints.
-- [ ] Add booking workflows with availability checks, proposal-to-contract conversion, and confirmation tracking.
+- [x] Add booking workflows with availability checks, proposal-to-contract conversion, and confirmation tracking.
 - [ ] Add a more robust operations architecture (integration retries, sync logs, audit trails, and role-based workflow controls).
 
 ## Configurability Backlog

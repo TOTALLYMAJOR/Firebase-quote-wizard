@@ -999,6 +999,21 @@ hr {
   flex-wrap: wrap;
 }
 
+.history-meta-stack {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.history-meta-stack strong {
+  font-size: 0.78rem;
+  color: #3e2f1a;
+}
+
+.history-meta-stack small {
+  font-size: 0.67rem;
+  color: #6b5539;
+}
+
 .compact {
   padding: 0.32rem 0.62rem;
   font-size: 0.81rem;
@@ -1319,6 +1334,21 @@ hr {
   margin: 0.3rem 0 0;
   font-size: 0.72rem;
   color: #7a3f14;
+}
+
+.schedule-confirmation-note {
+  margin: 0.23rem 0 0;
+  font-size: 0.72rem;
+  color: #5c472a;
+}
+
+.schedule-confirmation-note.confirmed {
+  color: #23573f;
+  font-weight: 600;
+}
+
+.schedule-confirmation-note.cancelled {
+  color: #8b2e1f;
 }
 
 .schedule-checkpoints {

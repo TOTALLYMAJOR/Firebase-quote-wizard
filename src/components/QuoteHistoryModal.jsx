@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { currency } from "../lib/quoteCalculator";
 import {
+  BOOKING_CONFIRMATION_STATUSES,
   buildQuoteEmailTemplate,
+  convertQuoteToContract,
   getAllowedStatusTransitions,
   getQuoteHistory,
   PAYMENT_STATUSES,
+  updateQuoteBookingConfirmation,
   updateQuotePaymentStatus,
   updateQuoteStatus
 } from "../lib/quoteStore";
@@ -16,7 +19,18 @@ function fmtDate(iso) {
   return dt.toLocaleString();
 }
 
-export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" }) {
+function canConvertToContract(quote) {
+  const status = String(quote?.status || "");
+  const hasContract = Boolean(String(quote?.booking?.contractNumber || "").trim());
+  return status === "accepted" || (status === "booked" && !hasContract);
+}
+
+export default function QuoteHistoryModal({
+  open,
+  onClose,
+  basePortalUrl = "",
+  currentUserEmail = ""
+}) {
   const [state, setState] = useState({
     loading: false,
     source: "",
@@ -28,6 +42,8 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
   const [statusFilter, setStatusFilter] = useState("all");
   const [updatingId, setUpdatingId] = useState("");
   const [updatingPaymentId, setUpdatingPaymentId] = useState("");
+  const [convertingId, setConvertingId] = useState("");
+  const [updatingConfirmationId, setUpdatingConfirmationId] = useState("");
 
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "", feedback: "" }));
@@ -73,7 +89,9 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
       quote.event?.name,
       quote.event?.date,
       quote.event?.venue,
-      quote.payment?.depositStatus
+      quote.payment?.depositStatus,
+      quote.booking?.contractNumber,
+      quote.booking?.confirmationStatus
     ]
       .filter(Boolean)
       .join(" ")
@@ -82,31 +100,26 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
     return haystack.includes(q);
   });
 
-  const applyStatusLocally = (quoteId, nextStatus) => {
+  const applyQuoteLocally = (quoteId, updater) => {
     setState((prev) => ({
       ...prev,
-      quotes: prev.quotes.map((quote) =>
-        quote.id === quoteId ? { ...quote, status: nextStatus } : quote
-      )
+      quotes: prev.quotes.map((quote) => (quote.id === quoteId ? updater(quote) : quote))
     }));
   };
 
+  const applyStatusLocally = (quoteId, nextStatus) => {
+    applyQuoteLocally(quoteId, (quote) => ({ ...quote, status: nextStatus }));
+  };
+
   const applyPaymentLocally = (quoteId, nextPaymentStatus) => {
-    setState((prev) => ({
-      ...prev,
-      quotes: prev.quotes.map((quote) =>
-        quote.id === quoteId
-          ? {
-            ...quote,
-            payment: {
-              ...(quote.payment || {}),
-              depositStatus: nextPaymentStatus,
-              depositConfirmedAtISO:
-                nextPaymentStatus === "paid" ? new Date().toISOString() : quote.payment?.depositConfirmedAtISO || ""
-            }
-          }
-          : quote
-      )
+    applyQuoteLocally(quoteId, (quote) => ({
+      ...quote,
+      payment: {
+        ...(quote.payment || {}),
+        depositStatus: nextPaymentStatus,
+        depositConfirmedAtISO:
+          nextPaymentStatus === "paid" ? new Date().toISOString() : quote.payment?.depositConfirmedAtISO || ""
+      }
     }));
   };
 
@@ -141,6 +154,68 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
       }));
     } finally {
       setUpdatingPaymentId("");
+    }
+  };
+
+  const handleConvertToContract = async (quote) => {
+    setConvertingId(quote.id);
+    setState((prev) => ({ ...prev, error: "", feedback: "" }));
+    try {
+      const result = await convertQuoteToContract({
+        quoteId: quote.id,
+        actorEmail: currentUserEmail
+      });
+      applyQuoteLocally(quote.id, (existing) => ({
+        ...existing,
+        status: result.status,
+        booking: result.booking,
+        lifecycle: result.lifecycle
+      }));
+      const acceptedConflicts = result.availability.conflicts.filter((item) => item.status === "accepted").length;
+      const capacityNote = result.availability.capacityExceeded
+        ? ` Capacity note: projected load ${result.availability.sameVenueLoad}/${result.availability.capacityLimit}.`
+        : "";
+      const acceptedNote = acceptedConflicts
+        ? ` Soft conflict note: ${acceptedConflicts} accepted quote(s) share this venue/date.`
+        : "";
+      setState((prev) => ({
+        ...prev,
+        feedback: `Converted ${quote.quoteNumber} to contract ${result.contractNumber}.${acceptedNote}${capacityNote}`
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "Failed to convert quote to contract."
+      }));
+    } finally {
+      setConvertingId("");
+    }
+  };
+
+  const handleConfirmationUpdate = async (quoteId, nextConfirmationStatus) => {
+    setUpdatingConfirmationId(quoteId);
+    setState((prev) => ({ ...prev, error: "" }));
+    try {
+      const result = await updateQuoteBookingConfirmation({
+        quoteId,
+        confirmationStatus: nextConfirmationStatus,
+        actorEmail: currentUserEmail
+      });
+      applyQuoteLocally(quoteId, (quote) => ({
+        ...quote,
+        booking: result.booking
+      }));
+      setState((prev) => ({
+        ...prev,
+        feedback: `Confirmation marked ${nextConfirmationStatus}.`
+      }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "Failed to update booking confirmation."
+      }));
+    } finally {
+      setUpdatingConfirmationId("");
     }
   };
 
@@ -253,6 +328,8 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
                 <th>Deposit</th>
                 <th>Status</th>
                 <th>Payment</th>
+                <th>Contract</th>
+                <th>Confirm</th>
                 <th>Expires</th>
                 <th>Created</th>
                 <th>Actions</th>
@@ -261,61 +338,106 @@ export default function QuoteHistoryModal({ open, onClose, basePortalUrl = "" })
             <tbody>
               {!state.loading && filteredQuotes.length === 0 && (
                 <tr>
-                  <td colSpan="11">No quotes saved yet.</td>
+                  <td colSpan="13">No quotes saved yet.</td>
                 </tr>
               )}
-              {filteredQuotes.map((quote) => (
-                <tr key={quote.id}>
-                  <td>{quote.quoteNumber || "-"}</td>
-                  <td>{quote.customer?.name || quote.customer?.email || "-"}</td>
-                  <td>{quote.event?.date || "-"}</td>
-                  <td>{quote.event?.guests ?? "-"}</td>
-                  <td>{currency(quote.totals?.total || 0)}</td>
-                  <td>{currency(quote.totals?.deposit || 0)}</td>
-                  <td>
-                    <select
-                      value={quote.status || "draft"}
-                      onChange={(e) => handleStatusUpdate(quote.id, e.target.value)}
-                      disabled={updatingId === quote.id}
-                    >
-                      {getAllowedStatusTransitions(quote.status).map((status) => (
-                        <option key={status} value={status}>{status}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>
-                    <select
-                      value={quote.payment?.depositStatus || "unpaid"}
-                      onChange={(e) => handlePaymentUpdate(quote.id, e.target.value)}
-                      disabled={updatingPaymentId === quote.id}
-                    >
-                      {PAYMENT_STATUSES.map((paymentStatus) => (
-                        <option key={paymentStatus} value={paymentStatus}>{paymentStatus}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td>{fmtDate(quote.expiresAtISO)}</td>
-                  <td>{fmtDate(quote.createdAtISO)}</td>
-                  <td>
-                    <div className="row-actions">
-                      {quote.status === "accepted" && (
-                        <button
-                          type="button"
-                          className="cta compact"
-                          onClick={() => handleStatusUpdate(quote.id, "booked")}
-                          disabled={updatingId === quote.id}
-                        >
-                          Book
-                        </button>
+              {filteredQuotes.map((quote) => {
+                const statusTransitions = getAllowedStatusTransitions(quote.status).filter((status) => status !== "booked");
+                const statusOptions = statusTransitions.length
+                  ? statusTransitions
+                  : [String(quote.status || "draft")];
+                const booking = quote.booking || {};
+                const contractNumber = booking.contractNumber || "";
+                const confirmationStatus = booking.confirmationStatus || "pending";
+                const canConvert = canConvertToContract(quote);
+                const canTrackConfirmation = quote.status === "booked" && Boolean(contractNumber);
+                return (
+                  <tr key={quote.id}>
+                    <td>{quote.quoteNumber || "-"}</td>
+                    <td>{quote.customer?.name || quote.customer?.email || "-"}</td>
+                    <td>{quote.event?.date || "-"}</td>
+                    <td>{quote.event?.guests ?? "-"}</td>
+                    <td>{currency(quote.totals?.total || 0)}</td>
+                    <td>{currency(quote.totals?.deposit || 0)}</td>
+                    <td>
+                      <select
+                        value={quote.status || "draft"}
+                        onChange={(e) => handleStatusUpdate(quote.id, e.target.value)}
+                        disabled={updatingId === quote.id || statusTransitions.length === 0}
+                      >
+                        {statusOptions.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <select
+                        value={quote.payment?.depositStatus || "unpaid"}
+                        onChange={(e) => handlePaymentUpdate(quote.id, e.target.value)}
+                        disabled={updatingPaymentId === quote.id}
+                      >
+                        {PAYMENT_STATUSES.map((paymentStatus) => (
+                          <option key={paymentStatus} value={paymentStatus}>{paymentStatus}</option>
+                        ))}
+                      </select>
+                    </td>
+                    <td>
+                      <div className="history-meta-stack">
+                        <strong>{contractNumber || "-"}</strong>
+                        <small>{fmtDate(booking.contractConvertedAtISO)}</small>
+                      </div>
+                    </td>
+                    <td>
+                      {canTrackConfirmation ? (
+                        <div className="history-meta-stack">
+                          <select
+                            value={confirmationStatus}
+                            onChange={(e) => handleConfirmationUpdate(quote.id, e.target.value)}
+                            disabled={updatingConfirmationId === quote.id}
+                          >
+                            {BOOKING_CONFIRMATION_STATUSES.map((bookingStatus) => (
+                              <option key={bookingStatus} value={bookingStatus}>{bookingStatus}</option>
+                            ))}
+                          </select>
+                          <small>{fmtDate(booking.confirmedAtISO || booking.confirmationSentAtISO)}</small>
+                        </div>
+                      ) : (
+                        <span className="muted">-</span>
                       )}
-                      <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
-                      <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
-                      <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
-                      <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>{fmtDate(quote.expiresAtISO)}</td>
+                    <td>{fmtDate(quote.createdAtISO)}</td>
+                    <td>
+                      <div className="row-actions">
+                        {canConvert && (
+                          <button
+                            type="button"
+                            className="cta compact"
+                            onClick={() => handleConvertToContract(quote)}
+                            disabled={convertingId === quote.id}
+                          >
+                            {convertingId === quote.id ? "Converting..." : "Convert"}
+                          </button>
+                        )}
+                        {canTrackConfirmation && confirmationStatus !== "confirmed" && (
+                          <button
+                            type="button"
+                            className="ghost compact"
+                            onClick={() => handleConfirmationUpdate(quote.id, "confirmed")}
+                            disabled={updatingConfirmationId === quote.id}
+                          >
+                            Confirm
+                          </button>
+                        )}
+                        <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
+                        <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
+                        <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
+                        <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

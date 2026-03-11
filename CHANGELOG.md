@@ -6,7 +6,14 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ## [Unreleased]
 
-- No unreleased changes yet.
+### Added
+
+- Booking workflow upgrades: availability-aware proposal-to-contract conversion and confirmation tracking in quote history.
+- Unit tests for booking conversion and confirmation lifecycle in local fallback mode.
+
+### Changed
+
+- Event schedule cards now surface contract number and confirmation state for accepted/booked events.
 
 ## [2026-03-10]
 

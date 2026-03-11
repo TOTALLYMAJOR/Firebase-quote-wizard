@@ -19,6 +19,7 @@ const DEFAULT_VALIDITY_DAYS = 30;
 const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
 const AVAILABILITY_CONFLICT_STATUSES = new Set(["accepted", "booked"]);
 const PAYMENT_STATUSES = ["unpaid", "sent", "paid", "refunded"];
+const BOOKING_CONFIRMATION_STATUSES = ["pending", "sent", "confirmed", "cancelled"];
 const INTEGRATION_PROVIDER_SET = new Set(["crm"]);
 const INTEGRATION_STATE_SET = new Set(["queued", "success", "error", "retrying", "skipped"]);
 const STATUS_LIFECYCLE_FIELD = {
@@ -41,7 +42,7 @@ const STATUS_FLOW = {
 };
 
 export const QUOTE_STATUSES = Object.keys(STATUS_FLOW);
-export { PAYMENT_STATUSES };
+export { PAYMENT_STATUSES, BOOKING_CONFIRMATION_STATUSES };
 
 function isoNow() {
   return new Date().toISOString();
@@ -171,9 +172,7 @@ function buildPortalSnapshot(quoteId, quote) {
     status: normalizeStatus(quote.status),
     expiresAtISO: quote.expiresAtISO || addDaysISO(createdAtISO, DEFAULT_VALIDITY_DAYS),
     payment: hydratePayment(quote.payment),
-    booking: {
-      ...(quote.booking || {})
-    },
+    booking: hydrateBooking(quote.booking),
     lifecycle: {
       ...(quote.lifecycle || {})
     },
@@ -210,6 +209,15 @@ function buildQuoteNumber() {
   return `Q-${yy}${mm}${dd}-${hh}${min}-${suffix}`;
 }
 
+function buildContractNumber() {
+  const now = new Date();
+  const yy = String(now.getFullYear()).slice(-2);
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const serial = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
+  return `C-${yy}${mm}${dd}-${serial}`;
+}
+
 function sortQuotesDesc(items) {
   return [...items].sort((a, b) => {
     const aTs = new Date(a.createdAtISO || a.createdAt || 0).getTime();
@@ -226,6 +234,10 @@ function normalizePaymentStatus(status) {
   return PAYMENT_STATUSES.includes(status) ? status : "unpaid";
 }
 
+function normalizeBookingConfirmationStatus(status) {
+  return BOOKING_CONFIRMATION_STATUSES.includes(status) ? status : "pending";
+}
+
 function hydratePayment(payment) {
   const payload = payment || {};
   const depositLink = (payload.depositLink || "").trim();
@@ -235,6 +247,33 @@ function hydratePayment(payment) {
     depositLink,
     depositStatus: normalizePaymentStatus(payload.depositStatus || defaultStatus),
     depositConfirmedAtISO: payload.depositConfirmedAtISO || ""
+  };
+}
+
+function hydrateBooking(booking) {
+  const payload = booking || {};
+  const sentAtISO = payload.confirmationSentAtISO || "";
+  const confirmedAtISO = payload.confirmedAtISO || "";
+  const inferredStatus = confirmedAtISO ? "confirmed" : sentAtISO ? "sent" : "pending";
+  const confirmationStatus = normalizeBookingConfirmationStatus(payload.confirmationStatus || inferredStatus);
+  return {
+    ...payload,
+    bookedAtISO: payload.bookedAtISO || "",
+    bookedByEmail: normalizeEmail(payload.bookedByEmail),
+    staffLead: String(payload.staffLead || "").trim(),
+    staffAssignedAtISO: payload.staffAssignedAtISO || "",
+    contractNumber: String(payload.contractNumber || "").trim(),
+    contractConvertedAtISO: payload.contractConvertedAtISO || "",
+    contractConvertedByEmail: normalizeEmail(payload.contractConvertedByEmail),
+    confirmationStatus,
+    confirmationSentAtISO: sentAtISO,
+    confirmedAtISO,
+    confirmationUpdatedByEmail: normalizeEmail(payload.confirmationUpdatedByEmail),
+    availabilityCheckedAtISO: payload.availabilityCheckedAtISO || "",
+    availabilitySummary:
+      payload.availabilitySummary && typeof payload.availabilitySummary === "object"
+        ? { ...payload.availabilitySummary }
+        : {}
   };
 }
 
@@ -250,9 +289,7 @@ function hydrateQuote(item, nowISO = isoNow()) {
     createdAtISO,
     expiresAtISO,
     payment: hydratePayment(item.payment),
-    booking: {
-      ...(item.booking || {})
-    },
+    booking: hydrateBooking(item.booking),
     integrations: {
       ...integrationPayload,
       logs: integrationLogs
@@ -383,6 +420,235 @@ export async function checkEventAvailability({
   };
 }
 
+function buildAvailabilitySummary(availability) {
+  const conflicts = Array.isArray(availability?.conflicts) ? availability.conflicts : [];
+  const acceptedConflicts = conflicts.filter((item) => item.status === "accepted").length;
+  const bookedConflicts = conflicts.filter((item) => item.status === "booked").length;
+  return {
+    conflictCount: conflicts.length,
+    acceptedConflictCount: acceptedConflicts,
+    bookedConflictCount: bookedConflicts,
+    capacityExceeded: Boolean(availability?.capacityExceeded),
+    sameVenueLoad: Math.max(0, toNumber(availability?.sameVenueLoad, 0)),
+    capacityLimit: Math.max(1, toNumber(availability?.capacityLimit, 400))
+  };
+}
+
+function buildBlockingAvailabilityError(availability) {
+  const conflicts = Array.isArray(availability?.conflicts) ? availability.conflicts : [];
+  const refs = conflicts
+    .filter((item) => item.status === "booked")
+    .slice(0, 3)
+    .map((item) => item.quoteNumber || item.id)
+    .filter(Boolean);
+  const suffix = refs.length ? ` Existing booking(s): ${refs.join(", ")}.` : "";
+  return `Booking blocked: another contract is already booked for this date/venue.${suffix}`;
+}
+
+function ensureConvertibleQuote(quote) {
+  const status = normalizeStatus(quote?.status);
+  const hasContract = Boolean(String(quote?.booking?.contractNumber || "").trim());
+  if (status === "accepted") return;
+  if (status === "booked" && !hasContract) return;
+  if (status === "booked" && hasContract) {
+    throw new Error("This quote is already converted to a contract.");
+  }
+  throw new Error("Only accepted quotes can be converted to a contract.");
+}
+
+async function readQuoteById(quoteId) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  const nowISO = isoNow();
+  if (firebaseReady) {
+    const quoteSnap = await getDoc(doc(db, "quotes", id));
+    if (!quoteSnap.exists()) {
+      throw new Error("Quote not found.");
+    }
+    const data = quoteSnap.data();
+    const createdAtISO = timestampToISO(data.createdAtISO || data.createdAt, nowISO);
+    return hydrateQuote(
+      {
+        id,
+        ...data,
+        createdAtISO
+      },
+      nowISO
+    );
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const match = existing.find((quote) => quote.id === id);
+  if (!match) {
+    throw new Error("Quote not found.");
+  }
+  return hydrateQuote(match, nowISO);
+}
+
+export async function convertQuoteToContract({
+  quoteId,
+  actorEmail = "",
+  capacityLimit = 400
+} = {}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  const quote = await readQuoteById(id);
+  ensureConvertibleQuote(quote);
+
+  const availability = await checkEventAvailability({
+    eventDate: quote.event?.date,
+    venue: quote.event?.venue,
+    eventTime: quote.event?.time,
+    eventHours: quote.event?.hours,
+    eventGuests: quote.event?.guests,
+    capacityLimit,
+    excludeQuoteId: id
+  });
+  if (availability.hasBlockingConflict) {
+    throw new Error(buildBlockingAvailabilityError(availability));
+  }
+
+  const nowISO = isoNow();
+  const actor = normalizeEmail(actorEmail);
+  const currentBooking = hydrateBooking(quote.booking);
+  const contractNumber = currentBooking.contractNumber || buildContractNumber();
+  const nextLifecycle = lifecycleObject("booked", nowISO, quote.lifecycle);
+  const nextBooking = {
+    ...currentBooking,
+    bookedAtISO: currentBooking.bookedAtISO || nowISO,
+    bookedByEmail: currentBooking.bookedByEmail || actor,
+    contractNumber,
+    contractConvertedAtISO: currentBooking.contractConvertedAtISO || nowISO,
+    contractConvertedByEmail: actor || currentBooking.contractConvertedByEmail,
+    confirmationStatus: normalizeBookingConfirmationStatus(currentBooking.confirmationStatus || "pending"),
+    availabilityCheckedAtISO: nowISO,
+    availabilitySummary: buildAvailabilitySummary(availability)
+  };
+
+  if (firebaseReady) {
+    await updateDoc(doc(db, "quotes", id), {
+      status: "booked",
+      booking: nextBooking,
+      lifecycle: nextLifecycle,
+      updatedAtISO: nowISO
+    });
+    await syncPortalSnapshotFromQuoteDoc(id);
+    return {
+      ok: true,
+      storage: "firebase",
+      status: "booked",
+      booking: nextBooking,
+      lifecycle: nextLifecycle,
+      contractNumber,
+      availability
+    };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  let found = false;
+  const next = existing.map((item) => {
+    if (item.id !== id) return item;
+    found = true;
+    return {
+      ...item,
+      status: "booked",
+      booking: nextBooking,
+      lifecycle: nextLifecycle,
+      updatedAtISO: nowISO
+    };
+  });
+  if (!found) {
+    throw new Error("Quote not found.");
+  }
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return {
+    ok: true,
+    storage: "local",
+    status: "booked",
+    booking: nextBooking,
+    lifecycle: nextLifecycle,
+    contractNumber,
+    availability
+  };
+}
+
+export async function updateQuoteBookingConfirmation({
+  quoteId,
+  confirmationStatus = "pending",
+  actorEmail = ""
+} = {}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  const quote = await readQuoteById(id);
+  if (normalizeStatus(quote.status) !== "booked") {
+    throw new Error("Quote must be booked before confirmation can be tracked.");
+  }
+  const booking = hydrateBooking(quote.booking);
+  if (!booking.contractNumber) {
+    throw new Error("Convert this quote to a contract before tracking confirmation.");
+  }
+
+  const nowISO = isoNow();
+  const actor = normalizeEmail(actorEmail);
+  const nextStatus = normalizeBookingConfirmationStatus(confirmationStatus);
+  const nextBooking = {
+    ...booking,
+    confirmationStatus: nextStatus,
+    confirmationUpdatedByEmail: actor || booking.confirmationUpdatedByEmail
+  };
+
+  if (nextStatus === "pending") {
+    nextBooking.confirmationSentAtISO = "";
+    nextBooking.confirmedAtISO = "";
+  }
+  if (nextStatus === "sent") {
+    nextBooking.confirmationSentAtISO = nowISO;
+    nextBooking.confirmedAtISO = "";
+  }
+  if (nextStatus === "confirmed") {
+    nextBooking.confirmationSentAtISO = booking.confirmationSentAtISO || nowISO;
+    nextBooking.confirmedAtISO = nowISO;
+  }
+  if (nextStatus === "cancelled") {
+    nextBooking.confirmedAtISO = "";
+  }
+
+  if (firebaseReady) {
+    await updateDoc(doc(db, "quotes", id), {
+      booking: nextBooking,
+      updatedAtISO: nowISO
+    });
+    await syncPortalSnapshotFromQuoteDoc(id);
+    return { ok: true, storage: "firebase", booking: nextBooking };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  let found = false;
+  const next = existing.map((item) => {
+    if (item.id !== id) return item;
+    found = true;
+    return {
+      ...item,
+      booking: nextBooking,
+      updatedAtISO: nowISO
+    };
+  });
+  if (!found) {
+    throw new Error("Quote not found.");
+  }
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return { ok: true, storage: "local", booking: nextBooking };
+}
+
 export async function recordQuoteIntegrationSync({
   quoteId,
   provider = "crm",
@@ -509,18 +775,24 @@ export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } =
   }
 
   const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  let found = false;
   const next = existing.map((quote) => {
     if (quote.id !== id) return quote;
+    found = true;
+    const booking = hydrateBooking(quote.booking);
     return {
       ...quote,
       updatedAtISO: nowISO,
       booking: {
-        ...(quote.booking || {}),
+        ...booking,
         staffLead: nextLead,
         staffAssignedAtISO: nowISO
       }
     };
   });
+  if (!found) {
+    throw new Error("Quote not found.");
+  }
   localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
   return { ok: true, storage: "local" };
 }
@@ -579,7 +851,18 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
     },
     booking: {
       bookedAtISO: "",
-      bookedByEmail: ""
+      bookedByEmail: "",
+      staffLead: "",
+      staffAssignedAtISO: "",
+      contractNumber: "",
+      contractConvertedAtISO: "",
+      contractConvertedByEmail: "",
+      confirmationStatus: "pending",
+      confirmationSentAtISO: "",
+      confirmedAtISO: "",
+      confirmationUpdatedByEmail: "",
+      availabilityCheckedAtISO: "",
+      availabilitySummary: {}
     },
     integrations: {
       retryLimit: Math.max(1, Number(settings?.integrationRetryLimit || 3)),
@@ -752,6 +1035,7 @@ export async function updateQuoteStatus(quoteId, status) {
   const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
   const next = existing.map((quote) => {
     if (quote.id !== quoteId) return quote;
+    const booking = hydrateBooking(quote.booking);
     return {
       ...quote,
       status: nextStatus,
@@ -759,10 +1043,10 @@ export async function updateQuoteStatus(quoteId, status) {
       booking:
         nextStatus === "booked"
           ? {
-            ...(quote.booking || {}),
-            bookedAtISO: nowISO
+            ...booking,
+            bookedAtISO: booking.bookedAtISO || nowISO
           }
-          : { ...(quote.booking || {}) },
+          : booking,
       lifecycle: lifecycleObject(nextStatus, nowISO, quote.lifecycle)
     };
   });

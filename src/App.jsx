@@ -544,6 +544,7 @@ export default function App() {
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           basePortalUrl={`${window.location.origin}${window.location.pathname}`}
+          currentUserEmail={authSession.user?.email || ""}
         />
 
         <EventScheduleModal

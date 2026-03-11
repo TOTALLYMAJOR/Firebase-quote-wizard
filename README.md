@@ -63,6 +63,8 @@ The app supports:
 - admin-configurable integration settings (provider toggles, retry limits, and audit retention)
 - customer portal record sync in Firestore (`customerPortalQuotes`)
 - availability checks against existing accepted/booked events on submit (time + duration + capacity aware)
+- proposal-to-contract conversion with re-checks for booking conflicts before finalizing `booked` status
+- booking confirmation lifecycle tracking (`pending`, `sent`, `confirmed`, `cancelled`) for operations follow-through
 
 ## Tech Stack
 

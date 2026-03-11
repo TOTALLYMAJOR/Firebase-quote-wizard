@@ -1,10 +1,10 @@
 # Project Status
 
-Last updated: March 2, 2026
+Last updated: March 11, 2026
 
 ## Summary
 
-The Firebase Quote Wizard is now a working catering quote application with live Firebase hosting, GitHub source control, configurable pricing, menu item pricing, quote history, PDF exports, and a branded quote-sheet review layout.
+The Firebase Quote Wizard is a production-ready catering quote application with live Firebase hosting, configurable pricing/catalog controls, proposal PDF/email outputs, event scheduling, and booking workflows from proposal acceptance to contract confirmation.
 
 Current state:
 
@@ -12,6 +12,8 @@ Current state:
 - production build passes
 - Firebase Hosting is live
 - GitHub is up to date
+- automated unit tests and Playwright smoke coverage are in repo
+- booking conversion and confirmation tracking are implemented
 - Vercel is optional and not required for current operation
 
 ## Live Status
@@ -67,6 +69,8 @@ Current state:
 - quote history modal
 - quote status lifecycle tracking
 - payment/deposit status tracking
+- booking conversion flow with availability checks (proposal -> contract)
+- booking confirmation tracking (`pending`, `sent`, `confirmed`, `cancelled`)
 - reporting dashboard
 - scenario comparison modal
 - recommendation/upsell support
@@ -98,6 +102,8 @@ Current state:
 
 - `npm run dev`
 - `npm run build`
+- `npm run test:unit`
+- `npm run test:e2e`
 - Firebase env validation via `npm run check:env`
 - Firebase Hosting deployment via `npm run deploy:firebase`
 
@@ -106,8 +112,8 @@ Current state:
 - Vercel deployment not configured yet
 - custom domain connection not configured yet
 - production security hardening for Firestore rules not done yet
-- automated tests not added yet
-- visual regression or Playwright coverage not added yet
+- visual regression snapshot coverage not added yet
+- CI checks are configured but blocked by GitHub billing lock until account is restored
 
 ## Known Risks / Gaps
 
@@ -117,7 +123,7 @@ Current Firestore rules are permissive for speed of launch. This is acceptable f
 
 ### Testing
 
-There is no automated unit or end-to-end test coverage yet.
+Unit tests and Playwright smoke tests are now present, but visual regression coverage is still pending.
 
 ### Bundle Size
 
@@ -143,14 +149,14 @@ Vercel support files exist, but Vercel has not been completed because Firebase H
 2. connect a custom domain or business-site link to Firebase Hosting
 3. add a client-facing handoff/training document
 4. finalize sales proposal and pricing materials
-5. prioritize production reports, CRM integrations, event scheduling, and booking workflows
+5. prioritize production reporting depth, CRM integrations, and operational audit controls
 
 ### Engineering Next
 
-1. add unit tests for quote calculations
-2. add Playwright end-to-end tests
+1. add visual regression snapshots for major wizard and proposal states
+2. restore CI execution after GitHub billing lock is resolved
 3. split large production bundle if performance becomes a concern
-4. add CI checks for build and tests
+4. add error/session diagnostics for production troubleshooting
 
 ## Important Files
 
@@ -168,6 +174,5 @@ Vercel support files exist, but Vercel has not been completed because Firebase H
 
 ## Notes
 
-- Leave `README.md` alone for now; local edits exist there outside this status update.
 - Firebase Hosting is currently the primary deployment path.
 - Vercel can be added later if preview deploys or a separate deployment workflow are needed.
