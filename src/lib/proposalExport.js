@@ -1,53 +1,11 @@
 import { jsPDF } from "jspdf";
 import { currency } from "./quoteCalculator";
+import { buildProposalPayload } from "./proposalPayload";
 
-const DEFAULT_BRANDING = {
-  name: "Tasteful Touch Catering",
-  tagline: "Chef Toni and Grill Master Ervin",
-  logoPath: "/brand/logo.png",
-  crewMembers: [
-    { label: "Chef Toni", imagePath: "/brand/chef-toni.png" },
-    { label: "Grill Master Ervin", imagePath: "/brand/grillmaster-irvin.png" }
-  ]
-};
 const BRAND_ASSET_CACHE = new Map();
-
-function fmtDate(iso) {
-  if (!iso) return "-";
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return "-";
-  return dt.toLocaleDateString();
-}
 
 function text(v) {
   return String(v ?? "-");
-}
-
-function cleanText(v, fallback = "") {
-  const value = String(v ?? "").trim();
-  return value || fallback;
-}
-
-function normalizeCrewMembers(input) {
-  const source = Array.isArray(input) && input.length ? input : DEFAULT_BRANDING.crewMembers;
-  return source
-    .map((member, idx) => ({
-      label: cleanText(member?.label, `Team Member ${idx + 1}`),
-      imagePath: cleanText(member?.imagePath ?? member?.imageUrl ?? "", "")
-    }))
-    .filter((member) => Boolean(member.label))
-    .slice(0, 4);
-}
-
-function resolveBranding(meta) {
-  const brandName = cleanText(meta?.brandName, DEFAULT_BRANDING.name);
-  const brandTagline = cleanText(meta?.brandTagline, DEFAULT_BRANDING.tagline);
-  return {
-    title: `${brandName} Proposal`,
-    crew: brandTagline,
-    logoPath: cleanText(meta?.brandLogoUrl, DEFAULT_BRANDING.logoPath),
-    crewMembers: normalizeCrewMembers(meta?.brandCrew)
-  };
 }
 
 function hexToRgb(value, fallback) {
@@ -133,8 +91,8 @@ export async function exportQuoteProposal(quote) {
     throw new Error("Missing quote data for PDF export.");
   }
 
-  const meta = quote.quoteMeta || {};
-  const branding = resolveBranding(meta);
+  const proposal = buildProposalPayload(quote);
+  const { branding, meta } = proposal;
   const brandAssets = await loadBrandAssets(branding);
   const doc = new jsPDF({ unit: "pt", format: "letter" });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -145,7 +103,7 @@ export async function exportQuoteProposal(quote) {
   const lineGap = 17;
   const palette = resolvePalette(meta);
   const showDisposablesNote = meta.includeDisposables !== false;
-  const perPersonRate = Number(quote.event?.guests || 0) > 0 ? Number(quote.totals?.base || 0) / Number(quote.event?.guests) : 0;
+  const perPersonRate = proposal.event.guests > 0 ? proposal.totals.base / proposal.event.guests : 0;
   const headerHeight = 124;
   let y = headerHeight + 18;
 
@@ -216,10 +174,10 @@ export async function exportQuoteProposal(quote) {
   doc.text(branding.title, titleX, 42);
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
-  doc.text(branding.crew, titleX, 58);
-  doc.text(`Quote #${text(quote.quoteNumber)}`, titleX, 74);
-  doc.text(`Created: ${fmtDate(quote.createdAtISO)}`, right, 94, { align: "right" });
-  doc.text(`Valid Through: ${fmtDate(quote.expiresAtISO)}`, right, 110, { align: "right" });
+  doc.text(branding.brandTagline, titleX, 58);
+  doc.text(`Quote #${text(proposal.quoteNumber)}`, titleX, 74);
+  doc.text(`Created: ${proposal.createdOn}`, right, 94, { align: "right" });
+  doc.text(`Valid Through: ${proposal.expiresOn}`, right, 110, { align: "right" });
 
   doc.setFillColor(...palette.cream);
   doc.roundedRect(left, y - 14, maxWidth, 38, 10, 10, "F");
@@ -228,51 +186,54 @@ export async function exportQuoteProposal(quote) {
   doc.setTextColor(...palette.text);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
-  doc.text(`Status: ${text(quote.status || "draft")}`, left + 12, y + 4);
-  doc.text(`Deposit Status: ${text(quote.payment?.depositStatus || "unpaid")}`, left + 160, y + 4);
-  doc.text(`Template: ${text(quote.selection?.eventTemplateId || "custom")}`, left + 350, y + 4);
+  doc.text(`Status: ${text(proposal.status || "draft")}`, left + 12, y + 4);
+  doc.text(`Deposit Status: ${text(proposal.payment.depositStatus || "unpaid")}`, left + 160, y + 4);
+  doc.text(`Template: ${text(proposal.selection.eventTemplateId || "custom")}`, left + 350, y + 4);
   y += 56;
 
   section("Client and Event");
-  row("Responsible Party / Client", quote.customer?.name);
-  row("Organization", quote.customer?.organization || "-");
-  row("Phone", quote.customer?.phone || "-");
-  row("Email", quote.customer?.email);
-  row("Event Name", quote.event?.name || "-");
-  row("Event Date", quote.event?.date);
-  row("Start Time", quote.event?.time);
-  row("Venue", quote.event?.venue);
-  row("Venue Address", quote.event?.venueAddress || "-");
-  row("Guests", quote.event?.guests);
-  row("Service Style", quote.event?.style);
+  row("Responsible Party / Client", proposal.customer.name);
+  row("Organization", proposal.customer.organization || "-");
+  row("Phone", proposal.customer.phone || "-");
+  row("Email", proposal.customer.email);
+  row("Event Name", proposal.event.name || "-");
+  row("Event Date", proposal.event.date);
+  row("Start Time", proposal.event.time);
+  row("Venue", proposal.event.venue);
+  row("Venue Address", proposal.event.venueAddress || "-");
+  row("Guests", proposal.event.guests);
+  row("Service Style", proposal.event.style);
 
   section("Selections");
-  row("Package", quote.selection?.packageName || quote.selection?.packageId);
-  row("Menu Selections", (quote.selection?.menuItemNames || quote.selection?.menuItems || []).join(", ") || "-");
-  row("Add-ons", (quote.selection?.addons || []).join(", ") || "-");
-  row("Rentals", (quote.selection?.rentals || []).join(", ") || "-");
-  row("Travel (miles RT)", quote.selection?.milesRT);
-  row("Tax Region", quote.totals?.taxRegionName || quote.selection?.taxRegion);
-  row("Season Profile", quote.totals?.seasonProfileName || quote.selection?.seasonProfileId);
-  row("Payment Method", quote.selection?.payMethod);
-  row("Deposit Link", quote.payment?.depositLink || "-");
+  row("Package", proposal.selection.packageName || proposal.selection.packageId);
+  row(
+    "Menu Selections",
+    (proposal.selection.menuItemNames.length ? proposal.selection.menuItemNames : proposal.selection.menuItems).join(", ") || "-"
+  );
+  row("Add-ons", proposal.selection.addons.join(", ") || "-");
+  row("Rentals", proposal.selection.rentals.join(", ") || "-");
+  row("Travel (miles RT)", proposal.selection.milesRT);
+  row("Tax Region", proposal.totals.taxRegionName || proposal.selection.taxRegion);
+  row("Season Profile", proposal.totals.seasonProfileName || proposal.selection.seasonProfileId);
+  row("Payment Method", proposal.selection.payMethod);
+  row("Deposit Link", proposal.payment.depositLink || "-");
 
   section("Pricing");
-  row("Per Person", `${currency(perPersonRate)} x ${quote.event?.guests || 0} = ${currency(quote.totals?.base || 0)}`);
-  row("Base", currency(quote.totals?.base || 0));
-  row("Add-ons", currency(quote.totals?.addons || 0));
-  row("Rentals", currency(quote.totals?.rentals || 0));
-  row("Menu Selections", currency(quote.totals?.menu || 0));
-  row("Staffing", currency((quote.totals?.labor || 0) - (quote.totals?.bartenderLabor || 0)));
-  row("Bartender", currency(quote.totals?.bartenderLabor || 0));
-  row("Travel", currency(quote.totals?.travel || 0));
+  row("Per Person", `${currency(perPersonRate)} x ${proposal.event.guests || 0} = ${currency(proposal.totals.base || 0)}`);
+  row("Base", currency(proposal.totals.base || 0));
+  row("Add-ons", currency(proposal.totals.addons || 0));
+  row("Rentals", currency(proposal.totals.rentals || 0));
+  row("Menu Selections", currency(proposal.totals.menu || 0));
+  row("Staffing", currency((proposal.totals.labor || 0) - (proposal.totals.bartenderLabor || 0)));
+  row("Bartender", currency(proposal.totals.bartenderLabor || 0));
+  row("Travel", currency(proposal.totals.travel || 0));
   row(
-    `Gratuity / Service Fee (${Math.round(Number(quote.totals?.serviceFeePctApplied || 0) * 1000) / 10}%)`,
-    currency(quote.totals?.serviceFee || 0)
+    `Gratuity / Service Fee (${Math.round(Number(proposal.totals.serviceFeePctApplied || 0) * 1000) / 10}%)`,
+    currency(proposal.totals.serviceFee || 0)
   );
   row(
-    `Tax (${Math.round(Number(quote.totals?.taxRateApplied || 0) * 1000) / 10}%)`,
-    currency(quote.totals?.tax || 0)
+    `Tax (${Math.round(Number(proposal.totals.taxRateApplied || 0) * 1000) / 10}%)`,
+    currency(proposal.totals.tax || 0)
   );
 
   ensureSpace(56);
@@ -284,9 +245,9 @@ export async function exportQuoteProposal(quote) {
   doc.setTextColor(...palette.text);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(13);
-  doc.text(`Estimated Total: ${currency(quote.totals?.total || 0)}`, left + 12, y);
+  doc.text(`Estimated Total: ${currency(proposal.totals.total || 0)}`, left + 12, y);
   y += 18;
-  doc.text(`Deposit Due: ${currency(quote.totals?.deposit || 0)}`, left + 12, y);
+  doc.text(`Deposit Due: ${currency(proposal.totals.deposit || 0)}`, left + 12, y);
 
   y += 20;
   ensureSpace(84);
@@ -321,6 +282,6 @@ export async function exportQuoteProposal(quote) {
     y
   );
 
-  const filename = `${text(quote.quoteNumber || "quote")}-proposal.pdf`.replace(/[^\w.-]/g, "_");
+  const filename = `${text(proposal.quoteNumber || "quote")}-proposal.pdf`.replace(/[^\w.-]/g, "_");
   doc.save(filename);
 }

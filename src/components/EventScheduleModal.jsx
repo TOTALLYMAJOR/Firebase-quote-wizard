@@ -231,6 +231,46 @@ function reasonLabel(reason) {
   return "Conflict";
 }
 
+function formatClock(minutesInDay) {
+  const normalized = ((minutesInDay % 1440) + 1440) % 1440;
+  const hours24 = Math.floor(normalized / 60);
+  const mins = normalized % 60;
+  const suffix = hours24 >= 12 ? "PM" : "AM";
+  const hours12 = hours24 % 12 || 12;
+  return `${hours12}:${String(mins).padStart(2, "0")} ${suffix}`;
+}
+
+function formatCheckpointTime(totalMinutes) {
+  const dayOffset = Math.floor(totalMinutes / 1440);
+  const label = formatClock(totalMinutes);
+
+  if (dayOffset === -1) return `${label} (prev day)`;
+  if (dayOffset === 1) return `${label} (next day)`;
+  if (dayOffset < -1 || dayOffset > 1) return `${label} (${dayOffset > 0 ? `+${dayOffset}` : dayOffset} days)`;
+  return label;
+}
+
+function buildKitchenCheckpoints(event) {
+  const startMinutes = parseTimeToMinutes(event.time);
+  if (startMinutes === null) return [];
+
+  const durationMinutes = Math.max(60, Math.round(toNumber(event.hours, 0) * 60));
+  const checkpoints = [
+    { id: "prep-start", label: "Prep kickoff", minute: startMinutes - 180 },
+    { id: "line-check", label: "Line check", minute: startMinutes - 120 },
+    { id: "pack-out", label: "Pack and load-out", minute: startMinutes - 60 },
+    { id: "onsite-setup", label: "On-site setup", minute: startMinutes - 30 },
+    { id: "service-start", label: "Service start", minute: startMinutes },
+    { id: "service-end", label: "Service wrap", minute: startMinutes + durationMinutes },
+    { id: "reset", label: "Kitchen reset", minute: startMinutes + durationMinutes + 45 }
+  ];
+
+  return checkpoints.map((item) => ({
+    ...item,
+    timeLabel: formatCheckpointTime(item.minute)
+  }));
+}
+
 export default function EventScheduleModal({
   open,
   onClose,
@@ -322,7 +362,8 @@ export default function EventScheduleModal({
     () =>
       (eventsByDate.get(selectedIso) || []).map((item) => ({
         ...item,
-        conflictReasons: Array.from(reasonsById.get(item.id) || [])
+        conflictReasons: Array.from(reasonsById.get(item.id) || []),
+        kitchenCheckpoints: buildKitchenCheckpoints(item)
       })),
     [eventsByDate, selectedIso, reasonsById]
   );
@@ -660,6 +701,23 @@ export default function EventScheduleModal({
                       {item.conflictReasons.length > 0 && (
                         <p className="schedule-conflict-note">
                           {item.conflictReasons.map((reason) => reasonLabel(reason)).join(" • ")}
+                        </p>
+                      )}
+                      {item.kitchenCheckpoints.length > 0 ? (
+                        <div className="schedule-checkpoints">
+                          <strong>Kitchen checkpoints</strong>
+                          <div className="schedule-checkpoint-list">
+                            {item.kitchenCheckpoints.map((checkpoint) => (
+                              <div key={`${item.id}-${checkpoint.id}`} className="schedule-checkpoint-item">
+                                <span>{checkpoint.label}</span>
+                                <em>{checkpoint.timeLabel}</em>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="schedule-checkpoint-hint">
+                          Add an event start time to generate kitchen checkpoints.
                         </p>
                       )}
                     </article>

@@ -1,0 +1,114 @@
+import { describe, expect, test } from "vitest";
+import { buildProposalPayload, buildQuoteEmailPayload } from "../proposalPayload";
+import { proposalPayloadFixtureQuote } from "./fixtures/proposalPayloadFixture";
+
+describe("proposal payload snapshots", () => {
+  test("buildProposalPayload returns normalized branded payload", () => {
+    const payload = buildProposalPayload(proposalPayloadFixtureQuote);
+
+    expect({
+      quoteNumber: payload.quoteNumber,
+      createdOn: payload.createdOn,
+      expiresOn: payload.expiresOn,
+      branding: payload.branding,
+      customer: payload.customer,
+      event: payload.event,
+      totals: {
+        total: payload.totals.total,
+        deposit: payload.totals.deposit,
+        taxRateApplied: payload.totals.taxRateApplied,
+        taxRegionName: payload.totals.taxRegionName,
+        seasonProfileName: payload.totals.seasonProfileName
+      },
+      meta: {
+        acceptanceEmail: payload.meta.acceptanceEmail,
+        quotePreparedBy: payload.meta.quotePreparedBy,
+        includeDisposables: payload.meta.includeDisposables,
+        quoteValidityDays: payload.meta.quoteValidityDays
+      }
+    }).toMatchInlineSnapshot(`
+      {
+        "branding": {
+          "brandName": "Tony Catering Co.",
+          "brandTagline": "Bold Southern Flavor",
+          "crewMembers": [
+            {
+              "imagePath": "/brand/chef-toni.png",
+              "label": "Chef Toni",
+            },
+          ],
+          "logoPath": "/brand/custom-logo.png",
+          "title": "Tony Catering Co. Proposal",
+        },
+        "createdOn": "2026-03-10",
+        "customer": {
+          "email": "jordan@example.com",
+          "name": "Jordan Lee",
+          "organization": "Lee Family Foundation",
+          "phone": "205-555-0162",
+        },
+        "event": {
+          "date": "2026-04-20",
+          "guests": 120,
+          "hours": 5,
+          "name": "Spring Gala",
+          "style": "Plated",
+          "time": "18:00",
+          "venue": "Pine Hall",
+          "venueAddress": "123 Garden Ave, Birmingham, AL",
+        },
+        "expiresOn": "2026-04-09",
+        "meta": {
+          "acceptanceEmail": "events@tonycatering.com",
+          "includeDisposables": true,
+          "quotePreparedBy": "Chef Toni North",
+          "quoteValidityDays": 30,
+        },
+        "quoteNumber": "Q-2026-0042",
+        "totals": {
+          "deposit": 2513.76,
+          "seasonProfileName": "Summer Peak",
+          "taxRateApplied": 0.1,
+          "taxRegionName": "Local",
+          "total": 8379.21,
+        },
+      }
+    `);
+  });
+
+  test("buildQuoteEmailPayload keeps messaging aligned with proposal branding", () => {
+    const email = buildQuoteEmailPayload(proposalPayloadFixtureQuote);
+
+    expect({
+      subject: email.subject,
+      body: email.body
+    }).toMatchInlineSnapshot(`
+      {
+        "body": "Hi Jordan Lee,
+      Thank you for considering Tony Catering Co. for Spring Gala on 2026-04-20 at Pine Hall.
+      Your quote (Q-2026-0042) total is $8379.21.
+      To reserve your date, the deposit due is $2513.76.
+      Deposit payment link: https://pay.example.com/deposits/q-2026-0042
+      Deposit status: sent.
+      This quote is valid through 2026-04-09.
+      Please reply with any questions or requested adjustments.
+      Chef Toni North",
+        "subject": "Tony Catering Co. Quote Q-2026-0042 - 2026-04-20",
+      }
+    `);
+  });
+
+  test("falls back to defaults when branding data is missing", () => {
+    const email = buildQuoteEmailPayload({
+      quoteNumber: "Q-1",
+      customer: {},
+      event: { date: "2026-05-01" },
+      totals: { total: 0, deposit: 0 },
+      payment: {},
+      quoteMeta: {}
+    });
+
+    expect(email.subject).toBe("Tasteful Touch Catering Quote Q-1 - 2026-05-01");
+    expect(email.body).toContain("Tasteful Touch Catering");
+  });
+});

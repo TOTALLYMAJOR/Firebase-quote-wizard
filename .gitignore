@@ -7,3 +7,10 @@ dist/
 .DS_Store
 .firebase/
 *.log
+coverage/
+playwright-report/
+test-results/
+.vscode/
+.idea/
+*.tmp
+*.swp

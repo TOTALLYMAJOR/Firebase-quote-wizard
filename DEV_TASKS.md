@@ -2,9 +2,9 @@
 
 ## Priority Now
 
-- [ ] Add automated quote-calculation tests with fixtures covering package, addon, rental, labor, mileage, tax, and deposit scenarios.
-- [ ] Generate proposal PDFs and email payloads from quote data with consistent branding and verification snapshots.
-- [ ] Add Playwright end-to-end coverage for key quote-builder flows (new quote, edit quote, save quote, export/send actions).
+- [x] Add automated quote-calculation tests with fixtures covering package, addon, rental, labor, mileage, tax, and deposit scenarios.
+- [x] Generate proposal PDFs and email payloads from quote data with consistent branding and verification snapshots.
+- [x] Add Playwright end-to-end coverage for key quote-builder flows (new quote, edit quote, save quote, export/send actions).
 
 ## Beauty Backlog
 
@@ -24,7 +24,7 @@
 - [ ] Add production reporting modules (prep sheets, labor plans, purchasing projections, and post-event actuals).
 - [ ] Add accounting integration for invoice, payment, deposit, and reconciliation sync (deferred for now).
 - [ ] Add CRM integrations (HubSpot/Salesforce or webhook adapters) for lead and client record sync.
-- [ ] Add event scheduling with calendar views, staffing assignments, and kitchen timeline checkpoints.
+- [x] Add event scheduling with calendar views, staffing assignments, and kitchen timeline checkpoints.
 - [ ] Add booking workflows with availability checks, proposal-to-contract conversion, and confirmation tracking.
 - [ ] Add a more robust operations architecture (integration retries, sync logs, audit trails, and role-based workflow controls).
 

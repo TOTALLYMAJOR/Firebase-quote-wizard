@@ -137,10 +137,18 @@ VITE_BOOTSTRAP_ADMIN_EMAILS=owner@yourdomain.com,manager@yourdomain.com
 npm run dev
 npm run build
 npm run preview
+npm run test:unit
+npm run test:e2e
 npm run check:env
 npm run deploy:firebase
 npm run deploy:vercel
 npm run deploy:vercel:build
+```
+
+For Playwright runs, install browser binaries once:
+
+```bash
+npx playwright install chromium
 ```
 
 ## Deployment
@@ -235,6 +243,16 @@ src/
 - `.env` is ignored and should never be committed
 - `.firebase/` is ignored as local CLI state
 - Firestore rules enforce authentication, role-gated admin writes, and controlled customer portal status updates
+
+## Engineering Governance
+
+The repository now includes a contributor and agent governance layer:
+
+- `AGENTS.md` for AI-agent execution standards
+- `CONTRIBUTING.md` for branch, commit, and PR policy
+- `docs/VERSION_CONTROL.md` for release/tag workflow
+- `docs/SKILLS.md` for local Codex skill inventory
+- `.codex/skills/` for reusable maintenance and release skills
 
 ## Roadmap
 
