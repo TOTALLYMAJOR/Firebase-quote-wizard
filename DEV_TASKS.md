@@ -39,5 +39,5 @@
 ## Platform and Quality
 
 - [ ] Add CI checks for lint, unit tests, and Playwright smoke suite.
-- [ ] Add visual regression snapshots for major wizard states and proposal output.
+- [x] Add visual regression snapshots for major wizard states and proposal output.
 - [ ] Add error tracking and user-session diagnostics for production troubleshooting.

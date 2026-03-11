@@ -55,6 +55,7 @@ The app supports:
 - quote save flow with local fallback or Firebase persistence
 - quote lifecycle tracking: `draft`, `sent`, `viewed`, `accepted`, `booked`, `declined`, `expired`
 - deposit payment status tracking
+- visual snapshot tests for Event/Menu/Review wizard states and proposal sheet output
 - reporting dashboard with pipeline and conversion metrics
 - schedule calendar modal with month/week views and booked/accepted date visibility
 - schedule conflict flags for time overlap, unknown timing, and capacity risk

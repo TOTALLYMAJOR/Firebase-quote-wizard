@@ -112,7 +112,6 @@ Current state:
 - Vercel deployment not configured yet
 - custom domain connection not configured yet
 - production security hardening for Firestore rules not done yet
-- visual regression snapshot coverage not added yet
 - CI checks are configured but blocked by GitHub billing lock until account is restored
 
 ## Known Risks / Gaps
@@ -123,7 +122,7 @@ Current Firestore rules are permissive for speed of launch. This is acceptable f
 
 ### Testing
 
-Unit tests and Playwright smoke tests are now present, but visual regression coverage is still pending.
+Unit tests, wizard/proposal visual snapshots, and Playwright smoke tests are now present.
 
 ### Bundle Size
 
@@ -153,10 +152,10 @@ Vercel support files exist, but Vercel has not been completed because Firebase H
 
 ### Engineering Next
 
-1. add visual regression snapshots for major wizard and proposal states
-2. restore CI execution after GitHub billing lock is resolved
+1. restore CI execution after GitHub billing lock is resolved
+2. add error/session diagnostics for production troubleshooting
 3. split large production bundle if performance becomes a concern
-4. add error/session diagnostics for production troubleshooting
+4. extend end-to-end coverage for scheduling and booking confirmation paths
 
 ## Important Files
 
