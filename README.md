@@ -168,6 +168,9 @@ npx firebase-tools use --add
 npm run deploy:firebase
 ```
 
+GitHub Actions auto-deploys Hosting on every push to `main`.
+Functions deploy is optional and controlled by repository variable `ENABLE_FUNCTIONS_DEPLOY=true` because Firebase Functions requires the project on Blaze billing.
+
 To deploy functions only:
 
 ```bash

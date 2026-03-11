@@ -1,4 +1,4 @@
-name: Deploy Firebase Hosting + Functions
+name: Deploy Firebase Hosting (+ Optional Functions)
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   deploy_hosting:
-    name: Build + Deploy Hosting/Functions
+    name: Build + Deploy Firebase
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,7 +31,14 @@ jobs:
       - name: Build app
         run: npm run build
 
-      - name: Deploy to Firebase Hosting + Functions
-        run: npx firebase-tools deploy --only hosting,functions --project tonicatering --non-interactive
+      - name: Deploy to Firebase (hosting always, functions optional)
+        run: |
+          if [ "${{ vars.ENABLE_FUNCTIONS_DEPLOY }}" = "true" ]; then
+            echo "ENABLE_FUNCTIONS_DEPLOY=true -> deploying hosting + functions."
+            npx firebase-tools deploy --only hosting,functions --project tonicatering --non-interactive
+          else
+            echo "Deploying hosting only. Set repo variable ENABLE_FUNCTIONS_DEPLOY=true after upgrading the Firebase project to Blaze."
+            npx firebase-tools deploy --only hosting --project tonicatering --non-interactive
+          fi
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}

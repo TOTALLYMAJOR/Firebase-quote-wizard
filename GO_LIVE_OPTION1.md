@@ -90,6 +90,8 @@ Best practice: subdomain (`quotes.yourdomain.com`) + direct link.
 
 ## 8) Optional: Stripe Deposit + Owner SMS
 
+Prerequisite: upgrade Firebase project `tonicatering` to Blaze (pay-as-you-go), or Functions deploy will fail.
+
 1. Configure functions runtime values:
 
 ```bash
@@ -113,6 +115,10 @@ npm run deploy:firebase:functions
 
 - `https://us-central1-tonicatering.cloudfunctions.net/stripeWebhook`
 - event: `checkout.session.completed`
+
+4. Enable CI functions deploy by setting GitHub repository variable:
+
+- `ENABLE_FUNCTIONS_DEPLOY=true`
 
 ## Security note
 
