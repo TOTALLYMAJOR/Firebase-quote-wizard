@@ -170,6 +170,15 @@ npm run deploy:firebase
 
 GitHub Actions auto-deploys Hosting on every push to `main`.
 Functions deploy is optional and controlled by repository variable `ENABLE_FUNCTIONS_DEPLOY=true` because Firebase Functions requires the project on Blaze billing.
+Set these GitHub repository Actions Variables (or Secrets) so CI builds include Firebase Auth config:
+
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- optional: `VITE_FIREBASE_FUNCTIONS_REGION` (defaults to `us-central1`)
 
 To deploy functions only:
 

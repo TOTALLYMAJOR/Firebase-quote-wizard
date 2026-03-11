@@ -37,7 +37,7 @@ const missing = REQUIRED.filter((key) => !(process.env[key] || dotEnv[key]));
 if (missing.length) {
   console.error("Missing required Firebase env vars:");
   missing.forEach((key) => console.error(`- ${key}`));
-  console.error("\nAdd them to .env (local) or host environment settings (Vercel).");
+  console.error("\nAdd them to .env (local) or host environment settings (Vercel/GitHub Actions).");
   process.exit(1);
 }
 

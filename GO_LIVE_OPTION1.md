@@ -47,6 +47,16 @@ npx firebase-tools use --add
 npm run deploy:firebase
 ```
 
+If using GitHub Actions auto-deploy on `main`, also set repository Actions Variables (or Secrets):
+
+- `VITE_FIREBASE_API_KEY`
+- `VITE_FIREBASE_AUTH_DOMAIN`
+- `VITE_FIREBASE_PROJECT_ID`
+- `VITE_FIREBASE_STORAGE_BUCKET`
+- `VITE_FIREBASE_MESSAGING_SENDER_ID`
+- `VITE_FIREBASE_APP_ID`
+- optional: `VITE_FIREBASE_FUNCTIONS_REGION=us-central1`
+
 ## 4) Deploy on Vercel (recommended app URL)
 
 1. Push repo to GitHub.
