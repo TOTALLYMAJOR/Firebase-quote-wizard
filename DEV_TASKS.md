@@ -40,4 +40,4 @@
 
 - [ ] Add CI checks for lint, unit tests, and Playwright smoke suite.
 - [x] Add visual regression snapshots for major wizard states and proposal output.
-- [ ] Add error tracking and user-session diagnostics for production troubleshooting.
+- [x] Add error tracking and user-session diagnostics for production troubleshooting.

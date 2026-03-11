@@ -1027,6 +1027,10 @@ hr {
   width: min(1320px, 100%);
 }
 
+.diagnostics-card {
+  width: min(1320px, 100%);
+}
+
 .integration-form-grid {
   align-items: end;
 }
@@ -1040,6 +1044,27 @@ hr {
   display: grid;
   grid-template-columns: 1fr 180px 180px;
   gap: 0.5rem;
+}
+
+.diagnostics-session-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.75rem;
+  font-size: 0.82rem;
+  color: #4f3c23;
+}
+
+.diagnostics-controls {
+  margin-top: 0.6rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+
+.diagnostics-context {
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.73rem;
+  color: #5f4b2f;
 }
 
 .schedule-card {
@@ -1636,6 +1661,14 @@ hr {
   }
 
   .history-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostics-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .diagnostics-session-grid {
     grid-template-columns: 1fr;
   }
 

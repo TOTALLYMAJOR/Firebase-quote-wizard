@@ -9,6 +9,7 @@ import {
   toStorageCatalog
 } from "../data/mockCatalog";
 import { db, firebaseReady } from "../lib/firebase";
+import { recordDiagnosticError } from "../lib/sessionDiagnostics";
 
 const LOCAL_KEY = "quoteWizard.catalog";
 
@@ -152,6 +153,10 @@ export function useCatalogData({ enabled = true } = {}) {
         }));
       } catch (err) {
         if (!alive) return;
+        recordDiagnosticError(err, {
+          surface: "catalog",
+          action: "load"
+        });
         const fallback = defaultCatalog();
         setState((prev) => ({
           ...prev,
@@ -190,6 +195,10 @@ export function useCatalogData({ enabled = true } = {}) {
       }));
       return { ok: true };
     } catch (err) {
+      recordDiagnosticError(err, {
+        surface: "catalog",
+        action: "save"
+      });
       setState((prev) => ({
         ...prev,
         saving: false,

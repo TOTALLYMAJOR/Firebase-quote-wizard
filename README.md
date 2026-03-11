@@ -56,6 +56,7 @@ The app supports:
 - quote lifecycle tracking: `draft`, `sent`, `viewed`, `accepted`, `booked`, `declined`, `expired`
 - deposit payment status tracking
 - visual snapshot tests for Event/Menu/Review wizard states and proposal sheet output
+- in-app session diagnostics modal for runtime error logs, context breadcrumbs, and JSON export
 - reporting dashboard with pipeline and conversion metrics
 - schedule calendar modal with month/week views and booked/accepted date visibility
 - schedule conflict flags for time overlap, unknown timing, and capacity risk

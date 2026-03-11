@@ -9,10 +9,12 @@ import { useCatalogData } from "./hooks/useCatalogData";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
 import { checkEventAvailability, submitQuote } from "./lib/quoteStore";
+import { recordDiagnosticError, setDiagnosticsUserContext } from "./lib/sessionDiagnostics";
 
 const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
 const EventScheduleModal = lazy(() => import("./components/EventScheduleModal"));
 const IntegrationOpsModal = lazy(() => import("./components/IntegrationOpsModal"));
+const DiagnosticsModal = lazy(() => import("./components/DiagnosticsModal"));
 const QuoteCompareModal = lazy(() => import("./components/QuoteCompareModal"));
 const QuoteHistoryModal = lazy(() => import("./components/QuoteHistoryModal"));
 const ReportingDashboardModal = lazy(() => import("./components/ReportingDashboardModal"));
@@ -42,6 +44,7 @@ export default function App() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
@@ -139,6 +142,31 @@ export default function App() {
   useEffect(() => {
     setAvailabilityNotice("");
   }, [form.date, form.venue]);
+
+  useEffect(() => {
+    setDiagnosticsUserContext({
+      uid: authSession.user?.uid || "",
+      email: authSession.user?.email || "",
+      role: authSession.role || "customer",
+      authenticated: Boolean(authSession.user)
+    });
+  }, [authSession.user?.uid, authSession.user?.email, authSession.role]);
+
+  useEffect(() => {
+    if (!authSession.error) return;
+    recordDiagnosticError(new Error(authSession.error), {
+      surface: "auth-session",
+      action: "load-user-role"
+    });
+  }, [authSession.error]);
+
+  useEffect(() => {
+    if (!catalog.error) return;
+    recordDiagnosticError(new Error(catalog.error), {
+      surface: "catalog",
+      action: "load-catalog"
+    });
+  }, [catalog.error]);
 
   const applyEventTemplate = (templateId) => {
     if (templateId === "custom") {
@@ -288,6 +316,13 @@ export default function App() {
       });
       setHistoryOpen(true);
     } catch (err) {
+      recordDiagnosticError(err, {
+        surface: "app",
+        action: "submit-quote",
+        eventDate: form.date,
+        venue: form.venue,
+        guests: totals.guests
+      });
       setSubmitState({ saving: false, message: err?.message || "Failed to save quote.", portalLink: "" });
     }
   };
@@ -298,6 +333,10 @@ export default function App() {
       await copyText(submitState.portalLink);
       setSubmitState((prev) => ({ ...prev, message: "Customer portal link copied." }));
     } catch (err) {
+      recordDiagnosticError(err, {
+        surface: "app",
+        action: "copy-portal-link"
+      });
       setSubmitState((prev) => ({
         ...prev,
         message: err?.message || "Failed to copy customer portal link."
@@ -314,6 +353,10 @@ export default function App() {
     try {
       await authSession.signOut();
     } catch (err) {
+      recordDiagnosticError(err, {
+        surface: "app",
+        action: "sign-out"
+      });
       setSubmitState((prev) => ({ ...prev, message: err?.message || "Failed to sign out." }));
     }
   };
@@ -405,6 +448,7 @@ export default function App() {
           <div className="right-actions header-actions">
             <button className="ghost" onClick={() => setScheduleOpen(true)}>Schedule</button>
             <button className="ghost" onClick={() => setIntegrationsOpen(true)}>Integrations</button>
+            <button className="ghost" onClick={() => setDiagnosticsOpen(true)}>Diagnostics</button>
             <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
             {authSession.isAdmin && <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>}
@@ -559,6 +603,11 @@ export default function App() {
           onClose={() => setIntegrationsOpen(false)}
           settings={catalog.settings}
           currentUserEmail={authSession.user?.email || ""}
+        />
+
+        <DiagnosticsModal
+          open={diagnosticsOpen}
+          onClose={() => setDiagnosticsOpen(false)}
         />
 
         <QuoteCompareModal

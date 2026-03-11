@@ -14,6 +14,7 @@ Current state:
 - GitHub is up to date
 - automated unit tests and Playwright smoke coverage are in repo
 - booking conversion and confirmation tracking are implemented
+- in-app session diagnostics and runtime error logging are implemented
 - Vercel is optional and not required for current operation
 
 ## Live Status
@@ -71,6 +72,7 @@ Current state:
 - payment/deposit status tracking
 - booking conversion flow with availability checks (proposal -> contract)
 - booking confirmation tracking (`pending`, `sent`, `confirmed`, `cancelled`)
+- diagnostics modal with recent runtime errors, session context, and JSON export
 - reporting dashboard
 - scenario comparison modal
 - recommendation/upsell support
@@ -153,9 +155,9 @@ Vercel support files exist, but Vercel has not been completed because Firebase H
 ### Engineering Next
 
 1. restore CI execution after GitHub billing lock is resolved
-2. add error/session diagnostics for production troubleshooting
-3. split large production bundle if performance becomes a concern
-4. extend end-to-end coverage for scheduling and booking confirmation paths
+2. extend end-to-end coverage for scheduling and booking confirmation paths
+3. build deeper operations audit controls (retry dashboards, sync health trends, role-based action logs)
+4. split large production bundle if performance becomes a concern
 
 ## Important Files
 

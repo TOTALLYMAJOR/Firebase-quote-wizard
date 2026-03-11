@@ -11,6 +11,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Booking workflow upgrades: availability-aware proposal-to-contract conversion and confirmation tracking in quote history.
 - Unit tests for booking conversion and confirmation lifecycle in local fallback mode.
 - Visual snapshot tests covering Event/Menu/Review wizard states and the proposal sheet output.
+- Session diagnostics module with runtime error capture (`window.error` and `unhandledrejection`) and a staff diagnostics modal with export/clear tools.
 
 ### Changed
 

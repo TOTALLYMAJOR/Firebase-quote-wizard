@@ -3,6 +3,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { signOutCurrentUser } from "../lib/authClient";
 import { auth, db, firebaseReady } from "../lib/firebase";
+import { recordDiagnosticError, recordDiagnosticEvent } from "../lib/sessionDiagnostics";
 
 const ROLE_VALUES = new Set(["admin", "sales", "customer"]);
 const E2E_AUTH_BYPASS = ["1", "true", "yes", "on"].includes(
@@ -79,6 +80,11 @@ export function useAuthSession() {
     }
 
     if (!firebaseReady || !auth || !db) {
+      recordDiagnosticEvent({
+        level: "warning",
+        type: "auth.unavailable",
+        message: "Firebase auth unavailable in current session."
+      });
       setState({
         loading: false,
         user: null,
@@ -112,6 +118,11 @@ export function useAuthSession() {
         });
       } catch (err) {
         if (!active) return;
+        recordDiagnosticError(err, {
+          surface: "auth-session",
+          action: "resolve-role",
+          uid: nextUser?.uid || ""
+        });
         setState({
           loading: false,
           user: nextUser,
