@@ -11,6 +11,7 @@ import {
   updateDoc
 } from "firebase/firestore";
 import { db, firebaseReady } from "./firebase";
+import { buildQuoteEmailPayload } from "./proposalPayload";
 
 const LOCAL_QUOTES_KEY = "quoteWizard.quotes";
 const PORTAL_COLLECTION = "customerPortalQuotes";
@@ -41,10 +42,6 @@ const STATUS_FLOW = {
 
 export const QUOTE_STATUSES = Object.keys(STATUS_FLOW);
 export { PAYMENT_STATUSES };
-
-function toCurrency(value) {
-  return `$${(Math.round(Number(value || 0) * 100) / 100).toFixed(2)}`;
-}
 
 function isoNow() {
   return new Date().toISOString();
@@ -906,35 +903,9 @@ export async function updatePortalQuoteStatus(portalKey, status) {
 }
 
 export function buildQuoteEmailTemplate(quote) {
-  const customerName = quote.customer?.name || "there";
-  const eventDate = quote.event?.date || "your event date";
-  const eventName = quote.event?.name || "your event";
-  const venue = quote.event?.venue || "your venue";
-  const quoteNumber = quote.quoteNumber || "your quote";
-  const total = toCurrency(quote.totals?.total || 0);
-  const deposit = toCurrency(quote.totals?.deposit || 0);
-  const paymentLink = quote.payment?.depositLink || "";
-  const expiresOn = quote.expiresAtISO ? new Date(quote.expiresAtISO).toLocaleDateString() : "";
-  const paymentStatus = quote.payment?.depositStatus || "unpaid";
-
-  const subject = `Catering Quote ${quoteNumber} - ${eventDate}`;
-  const bodyLines = [
-    `Hi ${customerName},`,
-    "",
-    `Thank you for considering us for ${eventName} on ${eventDate} at ${venue}.`,
-    `Your quote (${quoteNumber}) total is ${total}.`,
-    `To reserve your date, the deposit due is ${deposit}.`,
-    paymentLink ? `Deposit payment link: ${paymentLink}` : "Reply to this email if you need a payment link.",
-    `Deposit status: ${paymentStatus}.`,
-    expiresOn ? `This quote is valid through ${expiresOn}.` : "",
-    "",
-    "Please reply with any questions or requested adjustments.",
-    "",
-    "Tony Catering"
-  ].filter(Boolean);
-
+  const emailPayload = buildQuoteEmailPayload(quote);
   return {
-    subject,
-    body: bodyLines.join("\n")
+    subject: emailPayload.subject,
+    body: emailPayload.body
   };
 }

@@ -5,6 +5,14 @@ import { signOutCurrentUser } from "../lib/authClient";
 import { auth, db, firebaseReady } from "../lib/firebase";
 
 const ROLE_VALUES = new Set(["admin", "sales", "customer"]);
+const E2E_AUTH_BYPASS = ["1", "true", "yes", "on"].includes(
+  String(import.meta.env.VITE_E2E_BYPASS_AUTH || "").trim().toLowerCase()
+);
+const E2E_ROLE = ROLE_VALUES.has(String(import.meta.env.VITE_E2E_ROLE || "").trim().toLowerCase())
+  ? String(import.meta.env.VITE_E2E_ROLE || "").trim().toLowerCase()
+  : "admin";
+const E2E_EMAIL = String(import.meta.env.VITE_E2E_EMAIL || "e2e-admin@local.test").trim().toLowerCase();
+const E2E_UID = String(import.meta.env.VITE_E2E_UID || "e2e-admin").trim() || "e2e-admin";
 const BOOTSTRAP_ADMINS = new Set(
   [
     "tonitastefultouch@yahoo.com",
@@ -54,6 +62,21 @@ export function useAuthSession() {
 
   useEffect(() => {
     let active = true;
+
+    if (E2E_AUTH_BYPASS) {
+      setState({
+        loading: false,
+        user: {
+          uid: E2E_UID,
+          email: E2E_EMAIL
+        },
+        role: E2E_ROLE,
+        error: ""
+      });
+      return () => {
+        active = false;
+      };
+    }
 
     if (!firebaseReady || !auth || !db) {
       setState({
@@ -113,6 +136,15 @@ export function useAuthSession() {
   return {
     ...state,
     ...roleFlags,
-    signOut: signOutCurrentUser
+    signOut: E2E_AUTH_BYPASS
+      ? async () => {
+        setState({
+          loading: false,
+          user: null,
+          role: "customer",
+          error: ""
+        });
+      }
+      : signOutCurrentUser
   };
 }

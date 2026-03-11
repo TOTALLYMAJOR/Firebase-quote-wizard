@@ -1,0 +1,179 @@
+import { currency } from "./quoteCalculator";
+
+const DEFAULT_BRANDING = {
+  name: "Tasteful Touch Catering",
+  tagline: "Chef Toni and Grill Master Ervin",
+  logoPath: "/brand/logo.png",
+  crewMembers: [
+    { label: "Chef Toni", imagePath: "/brand/chef-toni.png" },
+    { label: "Grill Master Ervin", imagePath: "/brand/grillmaster-irvin.png" }
+  ]
+};
+
+function cleanText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toDateLabel(iso) {
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toISOString().slice(0, 10);
+}
+
+function toList(input) {
+  return Array.isArray(input) ? input.map((item) => String(item ?? "").trim()).filter(Boolean) : [];
+}
+
+export function normalizeCrewMembers(input) {
+  const source = Array.isArray(input) && input.length ? input : DEFAULT_BRANDING.crewMembers;
+  return source
+    .map((member, idx) => ({
+      label: cleanText(member?.label, `Team Member ${idx + 1}`),
+      imagePath: cleanText(member?.imagePath ?? member?.imageUrl ?? "", "")
+    }))
+    .filter((member) => Boolean(member.label))
+    .slice(0, 4);
+}
+
+export function resolveBranding(meta = {}) {
+  const brandName = cleanText(meta.brandName, DEFAULT_BRANDING.name);
+  const brandTagline = cleanText(meta.brandTagline, DEFAULT_BRANDING.tagline);
+  return {
+    brandName,
+    brandTagline,
+    title: `${brandName} Proposal`,
+    logoPath: cleanText(meta.brandLogoUrl, DEFAULT_BRANDING.logoPath),
+    crewMembers: normalizeCrewMembers(meta.brandCrew)
+  };
+}
+
+export function buildProposalPayload(quote) {
+  if (!quote) {
+    throw new Error("Missing quote data for proposal payload.");
+  }
+
+  const meta = quote.quoteMeta || {};
+  const branding = resolveBranding(meta);
+  const validityDays = Math.max(1, Math.round(toNumber(meta.quoteValidityDays, 30)));
+
+  return {
+    quoteId: cleanText(quote.id),
+    quoteNumber: cleanText(quote.quoteNumber, "your quote"),
+    status: cleanText(quote.status, "draft"),
+    createdAtISO: cleanText(quote.createdAtISO),
+    expiresAtISO: cleanText(quote.expiresAtISO),
+    createdOn: toDateLabel(quote.createdAtISO) || "-",
+    expiresOn: toDateLabel(quote.expiresAtISO) || "-",
+    customer: {
+      name: cleanText(quote.customer?.name),
+      email: cleanText(quote.customer?.email),
+      phone: cleanText(quote.customer?.phone),
+      organization: cleanText(quote.customer?.organization)
+    },
+    event: {
+      name: cleanText(quote.event?.name),
+      date: cleanText(quote.event?.date, "your event date"),
+      time: cleanText(quote.event?.time),
+      venue: cleanText(quote.event?.venue, "your venue"),
+      venueAddress: cleanText(quote.event?.venueAddress),
+      guests: toNumber(quote.event?.guests, 0),
+      hours: toNumber(quote.event?.hours, 0),
+      style: cleanText(quote.event?.style)
+    },
+    selection: {
+      packageId: cleanText(quote.selection?.packageId),
+      packageName: cleanText(quote.selection?.packageName),
+      addons: toList(quote.selection?.addons),
+      rentals: toList(quote.selection?.rentals),
+      menuItems: toList(quote.selection?.menuItems),
+      menuItemNames: toList(quote.selection?.menuItemNames),
+      milesRT: toNumber(quote.selection?.milesRT, 0),
+      payMethod: cleanText(quote.selection?.payMethod),
+      taxRegion: cleanText(quote.selection?.taxRegion),
+      seasonProfileId: cleanText(quote.selection?.seasonProfileId),
+      eventTemplateId: cleanText(quote.selection?.eventTemplateId, "custom")
+    },
+    payment: {
+      depositLink: cleanText(quote.payment?.depositLink),
+      depositStatus: cleanText(quote.payment?.depositStatus, "unpaid")
+    },
+    totals: {
+      base: toNumber(quote.totals?.base, 0),
+      addons: toNumber(quote.totals?.addons, 0),
+      rentals: toNumber(quote.totals?.rentals, 0),
+      menu: toNumber(quote.totals?.menu, 0),
+      labor: toNumber(quote.totals?.labor, 0),
+      bartenderLabor: toNumber(quote.totals?.bartenderLabor, 0),
+      travel: toNumber(quote.totals?.travel, 0),
+      serviceFee: toNumber(quote.totals?.serviceFee, 0),
+      tax: toNumber(quote.totals?.tax, 0),
+      total: toNumber(quote.totals?.total, 0),
+      deposit: toNumber(quote.totals?.deposit, 0),
+      serviceFeePctApplied: toNumber(quote.totals?.serviceFeePctApplied, 0),
+      taxRateApplied: toNumber(quote.totals?.taxRateApplied, 0),
+      taxRegionId: cleanText(quote.totals?.taxRegionId),
+      taxRegionName: cleanText(quote.totals?.taxRegionName),
+      seasonProfileId: cleanText(quote.totals?.seasonProfileId),
+      seasonProfileName: cleanText(quote.totals?.seasonProfileName),
+      packageMultiplier: toNumber(quote.totals?.packageMultiplier, 1),
+      addonMultiplier: toNumber(quote.totals?.addonMultiplier, 1),
+      rentalMultiplier: toNumber(quote.totals?.rentalMultiplier, 1)
+    },
+    meta: {
+      quotePreparedBy: cleanText(meta.quotePreparedBy),
+      acceptanceEmail: cleanText(meta.acceptanceEmail, cleanText(meta.businessEmail)),
+      businessEmail: cleanText(meta.businessEmail),
+      businessPhone: cleanText(meta.businessPhone),
+      businessAddress: cleanText(meta.businessAddress),
+      includeDisposables: meta.includeDisposables !== false,
+      disposablesNote: cleanText(meta.disposablesNote),
+      depositNotice: cleanText(meta.depositNotice),
+      quoteValidityDays: validityDays,
+      brandPrimaryColor: cleanText(meta.brandPrimaryColor),
+      brandAccentColor: cleanText(meta.brandAccentColor),
+      brandDarkAccentColor: cleanText(meta.brandDarkAccentColor)
+    },
+    branding
+  };
+}
+
+export function buildQuoteEmailPayload(quote) {
+  const proposal = buildProposalPayload(quote);
+  const customerName = proposal.customer.name || "there";
+  const eventDate = proposal.event.date || "your event date";
+  const eventName = proposal.event.name || "your event";
+  const venue = proposal.event.venue || "your venue";
+  const signature = proposal.meta.quotePreparedBy || proposal.branding.brandName;
+  const total = currency(proposal.totals.total);
+  const deposit = currency(proposal.totals.deposit);
+  const subject = `${proposal.branding.brandName} Quote ${proposal.quoteNumber} - ${eventDate}`;
+  const lines = [
+    `Hi ${customerName},`,
+    "",
+    `Thank you for considering ${proposal.branding.brandName} for ${eventName} on ${eventDate} at ${venue}.`,
+    `Your quote (${proposal.quoteNumber}) total is ${total}.`,
+    `To reserve your date, the deposit due is ${deposit}.`,
+    proposal.payment.depositLink
+      ? `Deposit payment link: ${proposal.payment.depositLink}`
+      : "Reply to this email if you need a payment link.",
+    `Deposit status: ${proposal.payment.depositStatus}.`,
+    proposal.expiresOn !== "-" ? `This quote is valid through ${proposal.expiresOn}.` : "",
+    "",
+    "Please reply with any questions or requested adjustments.",
+    "",
+    signature
+  ].filter(Boolean);
+
+  return {
+    subject,
+    body: lines.join("\n"),
+    lines,
+    proposal
+  };
+}

@@ -1321,6 +1321,51 @@ hr {
   color: #7a3f14;
 }
 
+.schedule-checkpoints {
+  margin-top: 0.42rem;
+  border-top: 1px solid #e9d4ad;
+  padding-top: 0.36rem;
+  display: grid;
+  gap: 0.26rem;
+}
+
+.schedule-checkpoints strong {
+  font-size: 0.67rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5f4624;
+}
+
+.schedule-checkpoint-list {
+  display: grid;
+  gap: 0.17rem;
+}
+
+.schedule-checkpoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.34rem;
+  font-size: 0.7rem;
+  color: #5e4728;
+}
+
+.schedule-checkpoint-item span {
+  color: #594426;
+}
+
+.schedule-checkpoint-item em {
+  font-style: normal;
+  color: #3e2f18;
+  font-weight: 600;
+}
+
+.schedule-checkpoint-hint {
+  margin: 0.36rem 0 0;
+  font-size: 0.69rem;
+  color: #80603a;
+}
+
 .schedule-day-risk-note {
   margin: 0;
   font-size: 0.69rem;
