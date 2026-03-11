@@ -50,7 +50,7 @@ jobs:
         run: |
           if [ "${{ vars.ENABLE_FUNCTIONS_DEPLOY }}" = "true" ]; then
             echo "ENABLE_FUNCTIONS_DEPLOY=true -> deploying hosting + functions."
-            npx firebase-tools deploy --only hosting,functions --project tonicatering --non-interactive
+            npx firebase-tools deploy --only hosting,functions --project tonicatering --non-interactive --force
           else
             echo "Deploying hosting only. Set repo variable ENABLE_FUNCTIONS_DEPLOY=true after upgrading the Firebase project to Blaze."
             npx firebase-tools deploy --only hosting --project tonicatering --non-interactive
