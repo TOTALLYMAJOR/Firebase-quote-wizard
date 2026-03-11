@@ -30,6 +30,18 @@ const JSON_FIELD_META = [
   }
 ];
 
+const RULE_KIND_META = [
+  { value: "addon", label: "Add-on" },
+  { value: "rental", label: "Rental" },
+  { value: "package", label: "Package" }
+];
+
+function defaultRuleName(kind) {
+  if (kind === "rental") return "Rental recommendation";
+  if (kind === "package") return "Package recommendation";
+  return "Add-on recommendation";
+}
+
 function buildJsonDrafts(catalog) {
   const settings = catalog?.settings || {};
   return {
@@ -207,6 +219,81 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
         [field]: Boolean(checked)
       }
     }));
+  };
+
+  const patchUpsellRule = (index, field, value) => {
+    setDraft((prev) => {
+      const rules = [...(prev.settings?.upsellRules || [])];
+      const current = { ...(rules[index] || {}) };
+
+      if (field === "enabled") {
+        current.enabled = Boolean(value);
+      } else if (field === "minGuests" || field === "minHours") {
+        current[field] = Math.max(0, Number(value || 0));
+      } else if (field === "kind") {
+        current.kind = value;
+        current.targetId =
+          value === "rental"
+            ? prev.rentals?.[0]?.id || ""
+            : value === "package"
+              ? ""
+              : prev.addons?.[0]?.id || "";
+        current.name = current.name || defaultRuleName(value);
+      } else {
+        current[field] = value;
+      }
+
+      rules[index] = current;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          upsellRules: rules
+        }
+      };
+    });
+  };
+
+  const addUpsellRule = () => {
+    const fallbackAddon = draft.addons?.[0]?.id || "";
+    const nextRule = {
+      id: `upsell-rule-${Date.now()}`,
+      name: "New recommendation rule",
+      kind: "addon",
+      targetId: fallbackAddon,
+      enabled: true,
+      minGuests: 0,
+      minHours: 0,
+      reason: "Upsell rule matched this quote."
+    };
+
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        upsellRules: [...(prev.settings?.upsellRules || []), nextRule]
+      }
+    }));
+  };
+
+  const removeUpsellRule = (index) => {
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        upsellRules: (prev.settings?.upsellRules || []).filter((_, idx) => idx !== index)
+      }
+    }));
+  };
+
+  const getUpsellTargetOptions = (kind) => {
+    if (kind === "rental") {
+      return (draft.rentals || []).map((item) => ({ value: item.id, label: item.name }));
+    }
+    if (kind === "package") {
+      return (draft.packages || []).map((item) => ({ value: item.id, label: `${item.name} (${item.ppp}/person)` }));
+    }
+    return (draft.addons || []).map((item) => ({ value: item.id, label: item.name }));
   };
 
   const patchJsonDraft = (field, value) => {
@@ -392,6 +479,121 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             <label>Chef rate<input type="number" step="0.01" value={draft.settings.chefRate} onChange={(e) => patchNumericSetting("chefRate", e.target.value)} /></label>
             <label>Integration retry limit<input type="number" step="1" min="1" max="10" value={draft.settings.integrationRetryLimit || 3} onChange={(e) => patchNumericSetting("integrationRetryLimit", e.target.value)} /></label>
             <label>Integration audit retention<input type="number" step="1" min="10" max="200" value={draft.settings.integrationAuditRetention || 50} onChange={(e) => patchNumericSetting("integrationAuditRetention", e.target.value)} /></label>
+          </div>
+        </section>
+
+        <section className="admin-section">
+          <div className="admin-section-head">
+            <h3>Guided Selling & Staffing Controls</h3>
+            <button type="button" className="ghost" onClick={addUpsellRule}>Add Rule</button>
+          </div>
+          <div className="admin-grid-settings">
+            <label>
+              <span>Enable guided selling recommendations</span>
+              <input
+                type="checkbox"
+                checked={draft.settings.guidedSellingEnabled !== false}
+                onChange={(e) => patchToggleSetting("guidedSellingEnabled", e.target.checked)}
+              />
+            </label>
+            <label>
+              <span>Include staffing labor automation in totals</span>
+              <input
+                type="checkbox"
+                checked={draft.settings.staffingLaborEnabled !== false}
+                onChange={(e) => patchToggleSetting("staffingLaborEnabled", e.target.checked)}
+              />
+            </label>
+          </div>
+          <div className="rule-config-list">
+            {(draft.settings?.upsellRules || []).map((rule, ruleIndex) => {
+              const kind = String(rule.kind || "addon");
+              const targets = getUpsellTargetOptions(kind);
+              return (
+                <article className="rule-config-card" key={rule.id || `rule-${ruleIndex}`}>
+                  <div className="rule-config-head">
+                    <strong>{rule.name || `Rule ${ruleIndex + 1}`}</strong>
+                    <label className="rule-toggle">
+                      <span>Enabled</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(rule.enabled)}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "enabled", e.target.checked)}
+                      />
+                    </label>
+                  </div>
+                  <div className="rule-config-grid">
+                    <label>
+                      Rule name
+                      <input
+                        type="text"
+                        value={rule.name || ""}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "name", e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Rule type
+                      <select
+                        value={kind}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "kind", e.target.value)}
+                      >
+                        {RULE_KIND_META.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Target item
+                      <select
+                        value={rule.targetId || ""}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "targetId", e.target.value)}
+                      >
+                        {kind === "package" && <option value="">Auto next higher package</option>}
+                        {kind !== "package" && <option value="">Choose target</option>}
+                        {targets.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Min guests
+                      <input
+                        type="number"
+                        min="0"
+                        max="400"
+                        value={Number(rule.minGuests || 0)}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "minGuests", e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Min hours
+                      <input
+                        type="number"
+                        min="0"
+                        max="24"
+                        step="0.5"
+                        value={Number(rule.minHours || 0)}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "minHours", e.target.value)}
+                      />
+                    </label>
+                    <label className="rule-reason-field">
+                      Reason shown in quote wizard
+                      <input
+                        type="text"
+                        value={rule.reason || ""}
+                        onChange={(e) => patchUpsellRule(ruleIndex, "reason", e.target.value)}
+                      />
+                    </label>
+                  </div>
+                  <div className="rule-config-actions">
+                    <button type="button" className="ghost compact" onClick={() => removeUpsellRule(ruleIndex)}>Delete Rule</button>
+                  </div>
+                </article>
+              );
+            })}
+            {(draft.settings?.upsellRules || []).length === 0 && (
+              <p className="source-note">No upsell rules are configured yet. Add at least one to power guided selling.</p>
+            )}
           </div>
         </section>
 

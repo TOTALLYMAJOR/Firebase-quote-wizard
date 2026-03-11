@@ -3,6 +3,7 @@ import { currency } from "../lib/quoteCalculator";
 export default function LiveBreakdown({ form, totals, settings, catalog }) {
   const selectedAddonNames = catalog.addons.filter((a) => form.addons.includes(a.id)).map((a) => a.name);
   const selectedRentalNames = catalog.rentals.filter((r) => form.rentals.includes(r.id)).map((r) => r.name);
+  const staffingLaborEnabled = totals.staffingLaborEnabled !== false;
 
   return (
     <aside className="panel breakdown-panel">
@@ -16,6 +17,7 @@ export default function LiveBreakdown({ form, totals, settings, catalog }) {
         <div><dt>Rentals</dt><dd>{selectedRentalNames.join(", ") || "-"}</dd></div>
         <div><dt>Menu Picks</dt><dd>{(form.menuItems || []).length}</dd></div>
         <div><dt>Bartenders</dt><dd>{totals.bartenders}</dd></div>
+        <div><dt>Staffing Labor</dt><dd>{staffingLaborEnabled ? "Enabled" : "Disabled"}</dd></div>
         <div><dt>Travel</dt><dd>{form.milesRT} mi</dd></div>
         <div><dt>Tax Region</dt><dd>{totals.taxRegionName || "-"}</dd></div>
         <div><dt>Season</dt><dd>{totals.seasonProfileName || "Standard"}</dd></div>

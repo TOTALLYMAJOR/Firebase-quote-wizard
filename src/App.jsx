@@ -84,7 +84,7 @@ export default function App() {
   );
 
   const recommendations = useMemo(
-    () => buildUpsellRecommendations({ form, catalog, totals }),
+    () => buildUpsellRecommendations({ form, catalog, totals, settings: catalog.settings }),
     [form, catalog, totals]
   );
   const brandName = catalog.settings?.brandName || "Tasteful Touch Catering";

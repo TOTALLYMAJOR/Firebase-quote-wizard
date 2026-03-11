@@ -31,4 +31,21 @@ describe("calculateQuote fixtures", () => {
 
     expect(totals.deposit).toBeCloseTo(totals.total * quoteCalculationSettings.depositPct, 6);
   });
+
+  test("supports disabling staffing labor automation", () => {
+    const laborFixture = quoteCalculationFixtures.find((fixture) => fixture.id === "labor-pricing");
+    const enabledTotals = calculateQuote(laborFixture.form, quoteCalculationCatalog, quoteCalculationSettings);
+    const disabledTotals = calculateQuote(laborFixture.form, quoteCalculationCatalog, {
+      ...quoteCalculationSettings,
+      staffingLaborEnabled: false
+    });
+
+    expect(enabledTotals.labor).toBeGreaterThan(0);
+    expect(disabledTotals.staffingLaborEnabled).toBe(false);
+    expect(disabledTotals.servers).toBe(0);
+    expect(disabledTotals.chefs).toBe(0);
+    expect(disabledTotals.bartenderLabor).toBe(0);
+    expect(disabledTotals.labor).toBe(0);
+    expect(disabledTotals.total).toBeLessThan(enabledTotals.total);
+  });
 });

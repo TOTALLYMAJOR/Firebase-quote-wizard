@@ -72,6 +72,7 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
 
 export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecommendation }) {
   const menuSections = Array.isArray(catalog.settings?.menuSections) ? catalog.settings.menuSections : [];
+  const guidedSellingEnabled = catalog.settings?.guidedSellingEnabled !== false;
 
   const toggle = (key, id, checked) => {
     setForm((f) => {
@@ -125,9 +126,15 @@ export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecom
         </div>
       </div>
 
-      {recommendations.length > 0 && (
-        <div className="recommendation-panel">
-          <h4>Recommended Upgrades</h4>
+      <div className="recommendation-panel">
+        <h4>Recommended Upgrades</h4>
+        {!guidedSellingEnabled && (
+          <p className="source-note">Guided selling is currently disabled in Catalog Admin.</p>
+        )}
+        {guidedSellingEnabled && recommendations.length === 0 && (
+          <p className="source-note">No rule matches this quote yet. Increase guests/hours or adjust rule triggers.</p>
+        )}
+        {guidedSellingEnabled && recommendations.length > 0 && (
           <div className="recommendation-list">
             {recommendations.map((item) => (
               <article className="recommendation-card" key={item.key}>
@@ -142,8 +149,8 @@ export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecom
               </article>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {menuSections.length > 0 && (
         <div className="menu-library">
@@ -194,6 +201,7 @@ export function StepReview({ form, totals, settings }) {
   const menuNames = (form.menuItems || []).map((id) => menuLookup.get(id)).filter(Boolean);
   const effectivePerPerson = totals.guests > 0 ? totals.base / totals.guests : 0;
   const staffingOnly = Math.max(0, totals.labor - totals.bartenderLabor);
+  const staffingLaborEnabled = totals.staffingLaborEnabled !== false;
   const validityDays = Math.max(1, Number(settings.quoteValidityDays || 30));
   const businessContact = [
     settings.businessAddress,
@@ -230,9 +238,15 @@ export function StepReview({ form, totals, settings }) {
         <section className="quote-sheet-charges">
           <div className="quote-charge"><span>Per Person: {currency(effectivePerPerson)} x ({totals.guests})</span><strong>{currency(totals.base)}</strong></div>
           <div className="quote-charge"><span>Tax: ({Math.round(totals.taxRateApplied * 1000) / 10}%)</span><strong>{currency(totals.tax)}</strong></div>
-          <div className="quote-charge"><span>Staffing</span><strong>{currency(staffingOnly)}</strong></div>
+          {staffingLaborEnabled && <div className="quote-charge"><span>Staffing</span><strong>{currency(staffingOnly)}</strong></div>}
           <div className="quote-charge"><span>Travel Fee</span><strong>{currency(totals.travel)}</strong></div>
-          <div className="quote-charge"><span>Bartender</span><strong>{currency(totals.bartenderLabor)}</strong></div>
+          {staffingLaborEnabled && <div className="quote-charge"><span>Bartender</span><strong>{currency(totals.bartenderLabor)}</strong></div>}
+          {!staffingLaborEnabled && (
+            <div className="quote-charge quote-charge-wide">
+              <span>Staffing labor automation</span>
+              <strong>Disabled</strong>
+            </div>
+          )}
           <div className="quote-charge"><span>Gratuity</span><strong>{currency(totals.serviceFee)}</strong></div>
           {(totals.addons > 0 || totals.rentals > 0 || totals.menu > 0) && (
             <div className="quote-charge quote-charge-wide">

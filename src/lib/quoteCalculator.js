@@ -91,6 +91,7 @@ export function calculateQuote(form, catalog, settings) {
   const guests = Math.min(400, Number(form.guests || 0));
   const hours = Number(form.hours || 0);
   const bartenders = Math.max(0, Number(form.bartenders || 0));
+  const staffingLaborEnabled = settings?.staffingLaborEnabled !== false;
   const selectedPkg = catalog.packages.find((p) => p.id === form.pkg) || catalog.packages[0];
   const taxRegion = resolveTaxRegion(form, settings);
   const seasonProfile = resolveSeasonProfile(form, settings);
@@ -134,6 +135,7 @@ export function calculateQuote(form, catalog, settings) {
       taxRegionName: taxRegion.name,
       seasonProfileId: seasonProfile.id,
       seasonProfileName: seasonProfile.name,
+      staffingLaborEnabled,
       packageMultiplier,
       addonMultiplier,
       rentalMultiplier,
@@ -166,14 +168,16 @@ export function calculateQuote(form, catalog, settings) {
     }, 0);
 
   const styleRules = STAFF_RULES[form.style] || STAFF_RULES.Buffet;
-  const servers =
+  const computedServers =
     styleRules.serverRatio === Number.POSITIVE_INFINITY
       ? 0
       : Math.max(styleRules.minServers, Math.ceil(guests / styleRules.serverRatio));
-  const chefs =
+  const computedChefs =
     styleRules.chefRatio === Number.POSITIVE_INFINITY ? 0 : Math.ceil(guests / styleRules.chefRatio);
-  const bartenderLabor = settings.bartenderRate * bartenders * hours;
-  const labor = settings.serverRate * servers * hours + settings.chefRate * chefs * hours + bartenderLabor;
+  const servers = staffingLaborEnabled ? computedServers : 0;
+  const chefs = staffingLaborEnabled ? computedChefs : 0;
+  const bartenderLabor = staffingLaborEnabled ? settings.bartenderRate * bartenders * hours : 0;
+  const labor = staffingLaborEnabled ? settings.serverRate * servers * hours + settings.chefRate * chefs * hours + bartenderLabor : 0;
   const travel = baseMiles * standardTravelRate + longDistanceMiles * longDistanceRate;
   const preFee = base + addons + rentals + menu + labor + travel;
   const serviceFee = preFee * serviceFeePctApplied;
@@ -205,6 +209,7 @@ export function calculateQuote(form, catalog, settings) {
     taxRegionName: taxRegion.name,
     seasonProfileId: seasonProfile.id,
     seasonProfileName: seasonProfile.name,
+    staffingLaborEnabled,
     packageMultiplier,
     addonMultiplier,
     rentalMultiplier,

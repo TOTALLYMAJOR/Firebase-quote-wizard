@@ -949,6 +949,63 @@ hr {
   color: var(--tone-ink-3);
 }
 
+.rule-config-list {
+  margin-top: 0.6rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.rule-config-card {
+  border: 1px solid #e2c995;
+  border-radius: 12px;
+  background: rgba(255, 252, 245, 0.9);
+  padding: 0.65rem;
+}
+
+.rule-config-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rule-config-head strong {
+  color: #3e2f1a;
+  font-size: 0.9rem;
+}
+
+.rule-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: #5e4a2f;
+}
+
+.rule-config-grid {
+  margin-top: 0.55rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.rule-config-grid label {
+  display: grid;
+  gap: 0.28rem;
+  font-size: 0.78rem;
+  color: #5e4a2f;
+}
+
+.rule-reason-field {
+  grid-column: 1 / -1;
+}
+
+.rule-config-actions {
+  margin-top: 0.55rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .json-label {
   display: grid;
   gap: 0.35rem;
@@ -1639,6 +1696,7 @@ hr {
 
   .grid.two-col,
   .admin-grid-settings,
+  .rule-config-grid,
   .compare-grid,
   .menu-grid,
   .schedule-layout,

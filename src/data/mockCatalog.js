@@ -279,6 +279,49 @@ export const DEFAULT_BRAND_CREW = [
   { label: "Grill Master Ervin", imageUrl: "/brand/grillmaster-irvin.png" }
 ];
 
+export const DEFAULT_UPSELL_RULES = [
+  {
+    id: "upsell-dessert",
+    name: "Dessert add-on",
+    kind: "addon",
+    targetId: "dessert",
+    enabled: true,
+    minGuests: 40,
+    minHours: 0,
+    reason: "Large guest counts convert better with dessert included."
+  },
+  {
+    id: "upsell-beverage",
+    name: "Beverage station",
+    kind: "addon",
+    targetId: "coffee",
+    enabled: true,
+    minGuests: 0,
+    minHours: 4,
+    reason: "Longer events usually need a beverage station or coffee closeout."
+  },
+  {
+    id: "upsell-linens",
+    name: "Linen rental",
+    kind: "rental",
+    targetId: "linens",
+    enabled: true,
+    minGuests: 80,
+    minHours: 0,
+    reason: "Linen coverage improves setup polish for larger guest counts."
+  },
+  {
+    id: "upsell-package-upgrade",
+    name: "Package upgrade",
+    kind: "package",
+    targetId: "",
+    enabled: true,
+    minGuests: 130,
+    minHours: 0,
+    reason: "High-capacity events often benefit from premium menu throughput."
+  }
+];
+
 export const DEFAULT_SETTINGS = {
   perMileRate: 0.7,
   longDistancePerMileRate: 1.1,
@@ -323,6 +366,9 @@ export const DEFAULT_SETTINGS = {
   crmAutoSyncOnBooked: true,
   integrationRetryLimit: 3,
   integrationAuditRetention: 50,
+  guidedSellingEnabled: true,
+  staffingLaborEnabled: true,
+  upsellRules: DEFAULT_UPSELL_RULES,
   eventTemplates: DEFAULT_EVENT_TEMPLATES,
   seasonalProfiles: DEFAULT_SEASONAL_PROFILES,
   defaultSeasonProfile: "auto"
@@ -457,6 +503,65 @@ function normalizeBrandCrew(input) {
     .slice(0, 4);
 }
 
+function normalizeUpsellRuleKind(value, fallback = "addon") {
+  const kind = String(value || fallback).trim().toLowerCase();
+  if (kind === "addon" || kind === "rental" || kind === "package") return kind;
+  return fallback;
+}
+
+function defaultUpsellReason(kind) {
+  if (kind === "addon") return "Promote add-ons when quote conditions match.";
+  if (kind === "rental") return "Promote rental upgrades when quote conditions match.";
+  return "Recommend moving to a higher package for larger events.";
+}
+
+function defaultUpsellName(kind) {
+  if (kind === "addon") return "Add-on recommendation";
+  if (kind === "rental") return "Rental recommendation";
+  return "Package recommendation";
+}
+
+function normalizeUpsellRules(input, { packages = [], addons = [], rentals = [] } = {}) {
+  const source = Array.isArray(input) && input.length ? input : DEFAULT_UPSELL_RULES;
+  const addonIds = new Set(addons.map((item) => String(item.id)));
+  const rentalIds = new Set(rentals.map((item) => String(item.id)));
+  const packageIds = new Set(packages.map((item) => String(item.id)));
+  const fallbackAddonId = addons[0]?.id ? String(addons[0].id) : "";
+  const fallbackRentalId = rentals[0]?.id ? String(rentals[0].id) : "";
+  const fallbackPackageId = packages[0]?.id ? String(packages[0].id) : "";
+
+  return source
+    .map((item, idx) => {
+      const kind = normalizeUpsellRuleKind(item?.kind, "addon");
+      const rawTargetId = String(item?.targetId || "").trim();
+
+      let targetId = "";
+      if (kind === "addon") {
+        targetId = addonIds.has(rawTargetId) ? rawTargetId : fallbackAddonId;
+      } else if (kind === "rental") {
+        targetId = rentalIds.has(rawTargetId) ? rawTargetId : fallbackRentalId;
+      } else {
+        targetId = packageIds.has(rawTargetId) ? rawTargetId : "";
+      }
+
+      if (kind === "package" && targetId === fallbackPackageId) {
+        targetId = "";
+      }
+
+      return {
+        id: normalizeId(item?.id, `upsell-rule-${idx + 1}`),
+        name: toText(item?.name, defaultUpsellName(kind)),
+        kind,
+        targetId,
+        enabled: toBoolean(item?.enabled, true),
+        minGuests: toNumber(item?.minGuests, 0, 0, 400),
+        minHours: toNumber(item?.minHours, 0, 0, 24),
+        reason: toText(item?.reason, defaultUpsellReason(kind))
+      };
+    })
+    .slice(0, 12);
+}
+
 function toText(value, fallback = "") {
   const text = String(value ?? "").trim();
   return text || fallback;
@@ -499,12 +604,32 @@ export function normalizeCatalog(raw) {
     ...DEFAULT_SETTINGS,
     ...(raw.settings || {})
   };
+  const packages = (raw.packages || DEFAULT_PACKAGES).map((p) => ({
+    id: p.id,
+    name: p.name,
+    ppp: Number(p.ppp || 0)
+  }));
+  const addons = (raw.addons || DEFAULT_ADDONS).map((a) => ({
+    id: a.id,
+    name: a.name,
+    type: a.type === "per_event" ? "per_event" : "per_person",
+    price: Number(a.price || 0)
+  }));
+  const rentals = (raw.rentals || DEFAULT_RENTALS).map((r) =>
+    normalizeRental({
+      id: r.id,
+      name: r.name,
+      price: Number(r.price || 0),
+      qtyPerGuests: Number(r.qtyPerGuests || 1)
+    })
+  );
   const serviceFeeTiers = normalizeServiceFeeTiers(rawSettings.serviceFeeTiers);
   const taxRegions = normalizeTaxRegions(rawSettings.taxRegions);
   const eventTemplates = normalizeEventTemplates(rawSettings.eventTemplates);
   const menuSections = normalizeMenuSections(rawSettings.menuSections);
   const seasonalProfiles = normalizeSeasonalProfiles(rawSettings.seasonalProfiles);
   const brandCrew = normalizeBrandCrew(rawSettings.brandCrew);
+  const upsellRules = normalizeUpsellRules(rawSettings.upsellRules, { packages, addons, rentals });
   const defaultTaxRegion = taxRegions.some((region) => region.id === rawSettings.defaultTaxRegion)
     ? rawSettings.defaultTaxRegion
     : taxRegions[0]?.id || DEFAULT_SETTINGS.defaultTaxRegion;
@@ -516,25 +641,9 @@ export function normalizeCatalog(raw) {
   const fallbackTaxRate = taxRegions.find((region) => region.id === defaultTaxRegion)?.rate;
 
   return {
-    packages: (raw.packages || DEFAULT_PACKAGES).map((p) => ({
-      id: p.id,
-      name: p.name,
-      ppp: Number(p.ppp || 0)
-    })),
-    addons: (raw.addons || DEFAULT_ADDONS).map((a) => ({
-      id: a.id,
-      name: a.name,
-      type: a.type === "per_event" ? "per_event" : "per_person",
-      price: Number(a.price || 0)
-    })),
-    rentals: (raw.rentals || DEFAULT_RENTALS).map((r) =>
-      normalizeRental({
-        id: r.id,
-        name: r.name,
-        price: Number(r.price || 0),
-        qtyPerGuests: Number(r.qtyPerGuests || 1)
-      })
-    ),
+    packages,
+    addons,
+    rentals,
     settings: {
       ...rawSettings,
       perMileRate: toNumber(rawSettings.perMileRate, DEFAULT_SETTINGS.perMileRate, 0),
@@ -592,6 +701,9 @@ export function normalizeCatalog(raw) {
         10,
         200
       ),
+      guidedSellingEnabled: toBoolean(rawSettings.guidedSellingEnabled, DEFAULT_SETTINGS.guidedSellingEnabled),
+      staffingLaborEnabled: toBoolean(rawSettings.staffingLaborEnabled, DEFAULT_SETTINGS.staffingLaborEnabled),
+      upsellRules,
       eventTemplates,
       seasonalProfiles,
       defaultSeasonProfile
