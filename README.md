@@ -1,347 +1,84 @@
 # Firebase Quote Wizard
 
-A production-ready catering quote application built with React, Vite, Firebase, and jsPDF.
+Production-ready catering quote application built with React, Vite, Firebase, and jsPDF.
 
-This project helps catering businesses create polished quotes, manage pricing, update menu items, track quote history, and export client-ready proposal PDFs from a single workflow.
+## Quick Links
+- Live app: https://tonicatering.web.app
+- Repository: https://github.com/TOTALLYMAJOR/Firebase-quote-wizard
+- Launch runbook: [docs/LAUNCH_RUNBOOK.md](docs/LAUNCH_RUNBOOK.md)
+- Canonical doc system: [docs/DOC_SYSTEM.md](docs/DOC_SYSTEM.md)
 
-## Live App
+## Product Scope
+The app supports quote intake, pricing configuration, proposal export, customer portal updates, and operations workflows (history, scheduling, reporting, diagnostics).
 
-- Firebase Hosting: https://tonicatering.web.app
-- GitHub Repository: https://github.com/TOTALLYMAJOR/Firebase-quote-wizard
-- Changelog: `CHANGELOG.md`
+## Architecture Snapshot
+- Frontend: React 18 + Vite 7
+- Data/Auth: Firebase Firestore + Firebase Auth
+- Deploy target: Firebase Hosting (primary), Vercel (optional)
+- Local runtime options: Node (`npm run dev`) or Docker Compose (`web-dev` / `web`)
 
-## Overview
-
-Firebase Quote Wizard is designed for service-based food businesses that need a fast and configurable quoting workflow.
-
-The app supports:
-
-- event intake and client details
-- package, addon, rental, and menu-item pricing
-- staffing, bartender, travel, service fee, tax, and deposit calculations
-- client-facing quote sheet presentation
-- proposal PDF export
-- quote history and status tracking
-- admin-controlled catalog and pricing updates
-- Firebase-backed persistence for live use
-- email/Google staff authentication with role-gated admin controls
-- customer quote portal links for view/accept/decline updates
-
-## Core Features
-
-### Quote Builder
-
-- multi-step event and menu workflow
-- live pricing breakdown as selections change
-- configurable service styles, tax regions, and seasonal pricing profiles
-- support for per-person and per-event menu pricing
-
-### Catalog Management
-
-- editable packages, add-ons, rentals, and menu items
-- admin-controlled pricing settings
-- configurable quote metadata such as prepared-by, deposit notice, and business contact info
-- configurable branding settings (brand name, tagline, logo upload/path, hero copy, crew display, and brand colors)
-- advanced JSON-backed settings for pricing tiers, templates, and seasonal rules
-
-### Proposal Output
-
-- polished on-screen quote layout
-- PDF export using `jsPDF`
-- client/event details, menu selections, and pricing summary included in output
-
-### Operations and Reporting
-
-- quote save flow with local fallback or Firebase persistence
-- quote lifecycle tracking: `draft`, `sent`, `viewed`, `accepted`, `booked`, `declined`, `expired`
-- deposit payment status tracking
-- visual snapshot tests for Event/Menu/Review wizard states and proposal sheet output
-- in-app session diagnostics modal for runtime error logs, context breadcrumbs, and JSON export
-- reporting dashboard with pipeline and conversion metrics
-- schedule calendar modal with month/week views and booked/accepted date visibility
-- schedule conflict flags for time overlap, unknown timing, and capacity risk
-- drag/drop staff lead assignment lanes with persistent booking assignment updates
-- integration ops modal for CRM sync event logging and audit review
-- admin-configurable integration settings (provider toggles, retry limits, and audit retention)
-- customer portal record sync in Firestore (`customerPortalQuotes`)
-- availability checks against existing accepted/booked events on submit (time + duration + capacity aware)
-- proposal-to-contract conversion with re-checks for booking conflicts before finalizing `booked` status
-- booking confirmation lifecycle tracking (`pending`, `sent`, `confirmed`, `cancelled`) for operations follow-through
-
-## Tech Stack
-
-- React 18
-- Vite 7
-- Firebase 11
-- jsPDF
-- Plain CSS
-
-## Getting Started
-
+## Local Setup
 ### Prerequisites
-
-- Node.js 18+
+- Node.js 20+
 - npm
-- Firebase project for live deployment
 
-### Local Development
-
+### Install + Validate
 ```bash
-cd react-firebase-quote-wizard
 npm install
+npm run check:env
+```
+
+### Run (Node)
+```bash
 npm run dev
 ```
 
-Vite will start the local development server and print the local URL in the terminal.
-
-### Production Build
-
-```bash
-npm run build
-```
-
-### Preview Production Build
-
-```bash
-npm run preview
-```
-
-### Docker (Dev + Production)
-
-Restore and run the app with Docker Compose:
-
+### Run (Docker)
+Dev server:
 ```bash
 docker compose up --build web-dev
 ```
 
-- serves Vite dev server on `http://localhost:5173`
-- reads `.env` if present (fallback/local defaults still apply when env keys are missing)
-
-Run the production image (Vite build + nginx SPA serving):
-
+Production-like image:
 ```bash
 docker compose up --build web
 ```
 
-- serves built app on `http://localhost:8080`
-- uses SPA-safe routing with `index.html` fallback
-- forwards `VITE_*` values as Docker build args (Compose reads project `.env` automatically)
-
-## Environment Variables
-
-Create a `.env` file in the project root using `.env.example`.
-
-Required Firebase variables:
-
-```env
-VITE_FIREBASE_API_KEY=...
-VITE_FIREBASE_AUTH_DOMAIN=...
-VITE_FIREBASE_PROJECT_ID=...
-VITE_FIREBASE_STORAGE_BUCKET=...
-VITE_FIREBASE_MESSAGING_SENDER_ID=...
-VITE_FIREBASE_APP_ID=...
-```
-
-Validate environment configuration with:
-
-```bash
-npm run check:env
-```
-
-If Firebase variables are not present, the app falls back to local defaults and local cache where supported.
-
-Optional role bootstrap:
-
-```env
-VITE_BOOTSTRAP_ADMIN_EMAILS=owner@yourdomain.com,manager@yourdomain.com
-```
-
-## Available Scripts
-
-```bash
-npm run dev
-npm run build
-npm run preview
-npm run test:unit
-npm run test:e2e
-npm run check:env
-npm run deploy:firebase:functions
-npm run deploy:firebase
-npm run deploy:vercel
-npm run deploy:vercel:build
-```
-
-For Playwright runs, install browser binaries once:
-
-```bash
-npx playwright install chromium
-```
-
-## Deployment
-
-### Firebase Hosting + Functions
-
-This repository already includes Firebase deployment scaffolding.
-
-```bash
-npx firebase-tools login
-npx firebase-tools use --add
-npm run deploy:firebase
-```
-
-GitHub Actions auto-deploys Hosting on every push to `main`.
-Functions deploy is optional and controlled by repository variable `ENABLE_FUNCTIONS_DEPLOY=true` because Firebase Functions requires the project on Blaze billing.
-Set these GitHub repository Actions Variables (or Secrets) so CI builds include Firebase Auth config:
-
+## Environment
+Create `.env` from `.env.example` and set required Firebase keys:
 - `VITE_FIREBASE_API_KEY`
 - `VITE_FIREBASE_AUTH_DOMAIN`
 - `VITE_FIREBASE_PROJECT_ID`
 - `VITE_FIREBASE_STORAGE_BUCKET`
 - `VITE_FIREBASE_MESSAGING_SENDER_ID`
 - `VITE_FIREBASE_APP_ID`
-- optional: `VITE_FIREBASE_FUNCTIONS_REGION` (defaults to `us-central1`)
 
-To deploy functions only:
+Optional:
+- `VITE_FIREBASE_FUNCTIONS_REGION`
+- `VITE_BOOTSTRAP_ADMIN_EMAILS`
 
+## Quality Gates
 ```bash
-npm run deploy:firebase:functions
+npm run check:env
+npm run test:unit
+npm run test:e2e
+npm run build
+npm run check:docs:governance
+npm run check:perf:bundle
+npm run check:perf:cwv
 ```
 
-### Payment + Owner SMS Setup (Stripe + Twilio)
+## Deploy Entry Points
+- Firebase hosting/functions: `npm run deploy:firebase`
+- Firebase functions only: `npm run deploy:firebase:functions`
+- Vercel (optional): `npm run deploy:vercel`
 
-Set runtime config for Cloud Functions:
-
-```bash
-npx firebase-tools functions:config:set \
-  stripe.secret_key="sk_live_..." \
-  stripe.webhook_secret="whsec_..." \
-  twilio.account_sid="AC..." \
-  twilio.auth_token="..." \
-  twilio.from_number="+12055550100" \
-  notifications.owner_phone="+12055550123" \
-  app.base_url="https://tonicatering.web.app"
-```
-
-Deploy functions after setting config:
-
-```bash
-npm run deploy:firebase:functions
-```
-
-Add Stripe webhook endpoint:
-
-- `https://us-central1-tonicatering.cloudfunctions.net/stripeWebhook`
-- Event: `checkout.session.completed`
-
-Supporting files:
-
-- `firebase.json`
-- `firestore.rules`
-- `firestore.indexes.json`
-- `.firebaserc.example`
-
-### Vercel
-
-Vercel support is included but optional.
-
-```bash
-npx vercel login
-npm run deploy:vercel
-```
-
-Use the same `VITE_FIREBASE_*` environment variables in the Vercel project settings.
-
-### Launch Guide
-
-For the fastest launch path, see `GO_LIVE_OPTION1.md`.
-
-## Firestore Data Model
-
-Primary collections used by the app:
-
-- `catalogPackages`
-- `catalogAddons`
-- `catalogRentals`
-- `pricing/settings`
-- `quotes`
-- `customerPortalQuotes`
-- `userRoles`
-
-The `pricing/settings` document contains configurable quote logic such as:
-
-- mileage pricing
-- service fee tiers
-- tax regions
-- deposit percentage
-- staffing rates
-- menu sections and menu item pricing
-- event templates
-- seasonal profiles
-- quote meta content
-- brand/hero content and brand color palette
-
-## Project Structure
-
-```text
-src/
-  components/
-    AdminCatalogModal.jsx
-    IntegrationOpsModal.jsx
-    LiveBreakdown.jsx
-    QuoteCompareModal.jsx
-    QuoteHistoryModal.jsx
-    ReportingDashboardModal.jsx
-    WizardSteps.jsx
-  data/
-    mockCatalog.js
-  hooks/
-    useCatalogData.js
-  lib/
-    firebase.js
-    proposalExport.js
-    quoteCalculator.js
-    quoteStore.js
-    recommendations.js
-  App.jsx
-  main.jsx
-  styles.css
-```
-
-## Operational Notes
-
-- Firebase Hosting is live at `https://tonicatering.web.app`
-- `.env` is ignored and should never be committed
-- `.firebase/` is ignored as local CLI state
-- Firestore rules enforce authentication, role-gated admin writes, and controlled customer portal status updates
-
-## Engineering Governance
-
-The repository now includes a contributor and agent governance layer:
-
-- `AGENTS.md` for AI-agent execution standards
-- `CONTRIBUTING.md` for branch, commit, and PR policy
-- `docs/VERSION_CONTROL.md` for release/tag workflow
-- `docs/SKILLS.md` for local Codex skill inventory
-- `.codex/skills/` for reusable maintenance and release skills
-
-## Roadmap
-
-See `DEV_TASKS.md` for planned enhancements across:
-
-- beauty and branding
-- advanced capability
-- configurability
-- testing and platform quality
-
-Requested operations expansion includes:
-
-- production reporting for planning and post-event review
-- accounting integration for invoice and reconciliation sync (deferred for now)
-- CRM integration for lead/client lifecycle management
-- event scheduling and staffing calendar workflows
-- booking workflows from quote to confirmation
-- a more robust integration and audit foundation
-
-## Status
-
-The application is currently configured for live Firebase hosting and local development, with GitHub deployment history already in place.
+## Governance Docs
+- Contributor workflow: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Version/release playbook: [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md)
+- Agent governance: [docs/AGENT_GOVERNANCE.md](docs/AGENT_GOVERNANCE.md)
+- Skill index: [docs/SKILLS.md](docs/SKILLS.md)
+- Performance guardrails: [docs/PERFORMANCE_GUARDRAILS.md](docs/PERFORMANCE_GUARDRAILS.md)
+- Current operational state: [PROJECT_STATUS.md](PROJECT_STATUS.md)
+- Prioritized backlog: [DEV_TASKS.md](DEV_TASKS.md)
+- Change history: [CHANGELOG.md](CHANGELOG.md)

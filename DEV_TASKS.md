@@ -1,46 +1,28 @@
 # Dev Tasks
 
-## Priority Now
+Last updated: March 16, 2026
 
-- [x] Add automated quote-calculation tests with fixtures covering package, addon, rental, labor, mileage, tax, and deposit scenarios.
-- [x] Generate proposal PDFs and email payloads from quote data with consistent branding and verification snapshots.
-- [x] Add Playwright end-to-end coverage for key quote-builder flows (new quote, edit quote, save quote, export/send actions).
+## P0 - Security and Reliability
+- Tighten Firestore rules for production-grade least-privilege access.
+- Add targeted E2E scenarios for booking conversion/confirmation edge cases.
+- Add automated secret scanning for non-markdown assets (scripts/config) in CI.
 
-## Beauty Backlog
+## P1 - Performance and UX
+- Reduce largest JavaScript chunk size (split proposal/export-heavy paths where practical).
+- Improve wizard mobile layout for dense review/pricing states.
+- Add intentional transition/motion polish for step changes and live breakdown updates.
 
-- [ ] Create a full design token system (typography, spacing, radii, shadows, brand colors) and apply it app-wide.
-- [ ] Add richer visual storytelling in the wizard (food imagery, section art, and themed backgrounds per step).
-- [ ] Improve motion design with intentional step transitions and subtle live-breakdown feedback animations.
-- [ ] Upgrade proposal visual polish (cover page, event theme accents, cleaner totals hierarchy).
-- [ ] Add mobile-first layout refinements for review tables and pricing cards.
+## P1 - Product Capability
+- Add lead/client follow-up workflow stages with reminder prompts.
+- Add basic analytics events for funnel drop-off and add-on selection trends.
+- Extend operations audit controls (retry dashboards, sync health trends, role-based action logs).
 
-## Capability Backlog
+## P2 - Integrations
+- Add CRM adapters (HubSpot/Salesforce or webhook bridge).
+- Add accounting sync for invoicing and reconciliation flows.
+- Add two-way owner/client SMS thread support.
 
-- [ ] Add a side-by-side quote comparison mode (multiple packages, guests, and staffing plans).
-- [x] Build a recommendation layer for upsells based on guest count, event type, and selected menu.
-- [ ] Add lead and client workflow stages with reminders (follow-up dates, status prompts, conversion tracking).
-- [x] Add payment/deposit link support and confirmation tracking.
-- [ ] Add two-way owner/client SMS chat thread support (Twilio Conversations + portal UI).
-- [ ] Add basic analytics events for funnel drop-off by step and most-selected add-ons.
-- [ ] Add production reporting modules (prep sheets, labor plans, purchasing projections, and post-event actuals).
-- [ ] Add accounting integration for invoice, payment, deposit, and reconciliation sync (deferred for now).
-- [ ] Add CRM integrations (HubSpot/Salesforce or webhook adapters) for lead and client record sync.
-- [x] Add event scheduling with calendar views, staffing assignments, and kitchen timeline checkpoints.
-- [x] Add booking workflows with availability checks, proposal-to-contract conversion, and confirmation tracking.
-- [ ] Add a more robust operations architecture (integration retries, sync logs, audit trails, and role-based workflow controls).
-
-## Configurability Backlog
-
-- [ ] Move pricing and rule logic to config-driven policies (service fee rules, delivery thresholds, tax regions).
-- [ ] Support per-event templates (wedding, corporate, birthday, church) with preloaded defaults.
-- [ ] Add seasonal/holiday menu profiles with effective date ranges.
-- [ ] Add feature flags to enable/disable modules without code changes.
-- [ ] Add role-based admin controls for catalog edits, quote approvals, and reporting visibility.
-
-## Platform and Quality
-
-- [ ] Add CI checks for lint, unit tests, and Playwright smoke suite.
-- [x] Restore Docker runtime path for reproducible dev/prod local runs.
-- [x] Add CI Docker build smoke check (`docker compose build web`).
-- [x] Add visual regression snapshots for major wizard states and proposal output.
-- [x] Add error tracking and user-session diagnostics for production troubleshooting.
+## P2 - Configurability
+- Move more pricing behavior to config-driven policies.
+- Add feature flags for optional modules.
+- Add finer role-based controls for approvals/report visibility.

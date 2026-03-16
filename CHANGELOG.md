@@ -26,6 +26,8 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Hardened Playwright smoke selectors with exact label matching to avoid `Venue`/`Venue address` strict-mode collisions.
 - Updated Playwright history assertion to validate persisted quote row data that is actually rendered (`E2E Staff` and edited guest count).
 - Added `Governance + Perf Gates` CI job to enforce doc sync/security/drift checks plus bundle/CWV thresholds.
+- Consolidated canonical docs to remove duplicated status/backlog/process narrative across top-level files.
+- Replaced legacy go-live content with pointer to canonical launch runbook (`docs/LAUNCH_RUNBOOK.md`).
 - Hardened doc governance diff/path parsing and added explicit code/process/deploy/backlog doc ownership enforcement.
 - Updated Lighthouse CI to run against `vite preview` on `127.0.0.1` for deterministic smoke checks.
 - Ignored local `.lighthouseci/` artifacts to prevent accidental commit noise.

@@ -91,26 +91,25 @@ function normalizePath(file) {
   return normalized;
 }
 
-function parseStatusLine(line) {
-  if (!line || line.length < 4) return "";
-  const payload = line.slice(3).trim();
-  if (!payload) return "";
-  const renamed = payload.split(" -> ");
-  const file = renamed[renamed.length - 1].replace(/^"+|"+$/g, "");
-  return normalizePath(file.trim());
+function linesToPaths(output) {
+  if (!output) return [];
+  return output
+    .split(/\r?\n/)
+    .map((line) => normalizePath(line.trim()))
+    .filter(Boolean);
+}
+
+function getWorkingTreeFiles() {
+  const unstaged = linesToPaths(run("git diff --name-only"));
+  const staged = linesToPaths(run("git diff --name-only --cached"));
+  const untracked = linesToPaths(run("git ls-files --others --exclude-standard"));
+  return [...new Set([...unstaged, ...staged, ...untracked])];
 }
 
 function getChangedFiles() {
   const range = resolveDiffRange();
   const fromRange = changedFilesFromRange(range);
-  const output = run("git -c color.status=false status --porcelain=v1 --untracked-files=all");
-  const fromWorkingTree = output
-    ? output
-        .split(/\r?\n/)
-        .filter(Boolean)
-        .map(parseStatusLine)
-        .filter(Boolean)
-    : [];
+  const fromWorkingTree = getWorkingTreeFiles();
 
   const isCi = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
   if (!isCi && fromWorkingTree.length) {
