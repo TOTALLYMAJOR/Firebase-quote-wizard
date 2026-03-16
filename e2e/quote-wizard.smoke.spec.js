@@ -6,16 +6,16 @@ function parseMoney(text) {
 }
 
 async function fillRequiredQuoteFields(page, { guests = 72, eventName = "E2E Launch Dinner", venue = "Birmingham Civic Hall" } = {}) {
-  await page.getByLabel("Event date").fill("2026-06-14");
-  await page.getByLabel("Start time").fill("18:00");
-  await page.getByLabel("Event hours").fill("4");
-  await page.getByLabel("Guests (max 400)").fill(String(guests));
-  await page.getByLabel("Event name").fill(eventName);
-  await page.getByLabel("Venue").fill(venue);
-  await page.getByLabel("Venue address").fill("123 Event Way, Birmingham, AL");
-  await page.getByLabel("Your name").fill("E2E Staff");
-  await page.getByLabel("Phone").fill("205-555-0184");
-  await page.getByLabel("Email").fill("client@example.com");
+  await page.getByLabel("Event date", { exact: true }).fill("2026-06-14");
+  await page.getByLabel("Start time", { exact: true }).fill("18:00");
+  await page.getByLabel("Event hours", { exact: true }).fill("4");
+  await page.getByLabel("Guests (max 400)", { exact: true }).fill(String(guests));
+  await page.getByLabel("Event name", { exact: true }).fill(eventName);
+  await page.getByLabel("Venue", { exact: true }).fill(venue);
+  await page.getByLabel("Venue address", { exact: true }).fill("123 Event Way, Birmingham, AL");
+  await page.getByLabel("Your name", { exact: true }).fill("E2E Staff");
+  await page.getByLabel("Phone", { exact: true }).fill("205-555-0184");
+  await page.getByLabel("Email", { exact: true }).fill("client@example.com");
 }
 
 async function createQuoteToHistory(page, { guests = 72 } = {}) {
@@ -50,7 +50,7 @@ test("new quote flow allows edits before save and persists in history", async ({
   const beforeTotal = parseMoney(await totalLocator.innerText());
 
   await page.getByRole("button", { name: "Back" }).click();
-  await page.getByLabel("Guests (max 400)").fill("110");
+  await page.getByLabel("Guests (max 400)", { exact: true }).fill("110");
   await page.getByRole("button", { name: "Next" }).click();
 
   const afterTotal = parseMoney(await totalLocator.innerText());

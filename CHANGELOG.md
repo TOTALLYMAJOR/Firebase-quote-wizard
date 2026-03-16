@@ -19,6 +19,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Event schedule cards now surface contract number and confirmation state for accepted/booked events.
 - Updated `@vitejs/plugin-react` to a Vite 7 compatible major version so `npm ci` succeeds for CI and container builds.
 - Added a CI Docker smoke check job that runs `docker compose build web` on pushes/PRs.
+- Hardened Playwright smoke selectors with exact label matching to avoid `Venue`/`Venue address` strict-mode collisions.
 
 ## [2026-03-10]
 
