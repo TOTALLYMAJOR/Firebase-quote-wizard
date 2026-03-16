@@ -35,6 +35,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Added callable integration setup status + SMS test endpoints for staff-facing buyer onboarding checks.
 - Added in-app `Buyer Setup Assistant (Optional Twilio)` guidance in Integrations Ops with copy-ready config/deploy commands.
 - Hardened Twilio delivery so SMS provider errors no longer block core quote save or Stripe checkout workflows.
+- Updated Playwright `webServer` configuration to use cross-platform env injection so Windows test runs start correctly.
 
 ## [2026-03-10]
 

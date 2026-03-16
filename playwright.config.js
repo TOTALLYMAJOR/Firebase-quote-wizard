@@ -27,8 +27,12 @@ export default defineConfig({
     }
   ],
   webServer: {
-    command: `VITE_E2E_BYPASS_AUTH=true VITE_E2E_ROLE=admin npm run dev -- --host ${HOST} --port ${PORT}`,
+    command: `npm run dev -- --host ${HOST} --port ${PORT}`,
     url: BASE_URL,
+    env: {
+      VITE_E2E_BYPASS_AUTH: "true",
+      VITE_E2E_ROLE: "admin"
+    },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000
   }
