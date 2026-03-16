@@ -31,6 +31,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Hardened doc governance diff/path parsing and added explicit code/process/deploy/backlog doc ownership enforcement.
 - Updated Lighthouse CI to run against `vite preview` on `127.0.0.1` for deterministic smoke checks.
 - Ignored local `.lighthouseci/` artifacts to prevent accidental commit noise.
+- Adjusted doc secret scanning to allow placeholder credential examples while still failing real token-like values.
 
 ## [2026-03-10]
 

@@ -218,7 +218,7 @@ function checkSecretPatterns(errors) {
     { re: /whsec_[A-Za-z0-9]{16,}/, label: "Stripe webhook secret" },
     { re: /AC[a-fA-F0-9]{32}/, label: "Twilio account SID" },
     { re: /(?<![A-Za-z0-9])AIza[0-9A-Za-z\-_]{20,}/, label: "Google API key" },
-    { re: /twilio\.auth_token\s*=\s*"[^"]+"/i, label: "Twilio auth token assignment" },
+    { re: /twilio\.auth_token\s*=\s*"(?!<)[^"]+"/i, label: "Twilio auth token assignment" },
     { re: /^```\s*(sk_|whsec_|AC[a-fA-F0-9]{8,})/, label: "Malformed fenced secret block" }
   ];
 

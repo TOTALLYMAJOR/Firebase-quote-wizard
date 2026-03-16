@@ -45,6 +45,9 @@ Each major topic has one source of truth. Other docs should link to that source 
 - Do not duplicate command inventories when one canonical location exists.
 - Prefer links to canonical docs instead of copied sections.
 
+## Security Scan Note
+Documentation secret scanning blocks real token-like values and allows explicit placeholder values such as `<your_secret_here>`.
+
 ## Merge Discipline
 Per merge, contributors must review this order:
 1. `CHANGELOG.md`
