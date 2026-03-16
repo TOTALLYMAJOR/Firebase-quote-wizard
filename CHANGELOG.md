@@ -20,6 +20,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Updated `@vitejs/plugin-react` to a Vite 7 compatible major version so `npm ci` succeeds for CI and container builds.
 - Added a CI Docker smoke check job that runs `docker compose build web` on pushes/PRs.
 - Hardened Playwright smoke selectors with exact label matching to avoid `Venue`/`Venue address` strict-mode collisions.
+- Updated Playwright history assertion to validate persisted quote row data that is actually rendered (`E2E Staff` and edited guest count).
 
 ## [2026-03-10]
 

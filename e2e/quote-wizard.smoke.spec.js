@@ -63,7 +63,8 @@ test("new quote flow allows edits before save and persists in history", async ({
   const firstQuoteRow = page.locator(".history-table-wrap tbody tr").filter({
     has: page.getByRole("button", { name: "Copy Email" })
   }).first();
-  await expect(firstQuoteRow).toContainText("E2E Quote A");
+  await expect(firstQuoteRow).toContainText("E2E Staff");
+  await expect(firstQuoteRow).toContainText("110");
 });
 
 test("quote history supports export and send actions", async ({ page }) => {
