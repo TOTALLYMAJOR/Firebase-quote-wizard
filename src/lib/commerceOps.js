@@ -27,3 +27,19 @@ export async function createDepositCheckout({ quoteId, successUrl = "", cancelUr
   });
   return result.data || {};
 }
+
+export async function getIntegrationSetupStatus() {
+  ensureFunctionsReady();
+  const call = httpsCallable(cloudFunctions, "getIntegrationSetupStatus");
+  const result = await call({});
+  return result.data || {};
+}
+
+export async function sendIntegrationTestSms({ message = "" } = {}) {
+  ensureFunctionsReady();
+  const call = httpsCallable(cloudFunctions, "sendIntegrationTestSms");
+  const result = await call({
+    message
+  });
+  return result.data || {};
+}

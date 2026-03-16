@@ -32,6 +32,9 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Updated Lighthouse CI to run against `vite preview` on `127.0.0.1` for deterministic smoke checks.
 - Ignored local `.lighthouseci/` artifacts to prevent accidental commit noise.
 - Adjusted doc secret scanning to allow placeholder credential examples while still failing real token-like values.
+- Added callable integration setup status + SMS test endpoints for staff-facing buyer onboarding checks.
+- Added in-app `Buyer Setup Assistant (Optional Twilio)` guidance in Integrations Ops with copy-ready config/deploy commands.
+- Hardened Twilio delivery so SMS provider errors no longer block core quote save or Stripe checkout workflows.
 
 ## [2026-03-10]
 

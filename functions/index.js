@@ -8,6 +8,7 @@ admin.initializeApp();
 const db = admin.firestore();
 const REGION = "us-central1";
 const STAFF_ROLES = new Set(["admin", "sales"]);
+const SMS_PROVIDERS = new Set(["twilio", "none"]);
 const QUOTES_COLLECTION = "quotes";
 const PORTAL_COLLECTION = "customerPortalQuotes";
 
@@ -30,6 +31,78 @@ function currencyLabel(amount) {
   const value = Number(amount || 0);
   if (!Number.isFinite(value)) return "$0.00";
   return `$${value.toFixed(2)}`;
+}
+
+function maskText(value, visibleTail = 4) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  if (text.length <= visibleTail) return text;
+  return `${"*".repeat(Math.max(1, text.length - visibleTail))}${text.slice(-visibleTail)}`;
+}
+
+function getSmsProvider() {
+  const provider = normalizeText(readConfig("notifications.sms_provider", "twilio")).toLowerCase();
+  if (!provider) return "twilio";
+  return provider;
+}
+
+function getTwilioConfig() {
+  return {
+    accountSid: readConfig("twilio.account_sid"),
+    authToken: readConfig("twilio.auth_token"),
+    fromNumber: readConfig("twilio.from_number"),
+    toNumber: readConfig("notifications.owner_phone")
+  };
+}
+
+function getStripeConfig() {
+  return {
+    secretKey: readConfig("stripe.secret_key"),
+    webhookSecret: readConfig("stripe.webhook_secret")
+  };
+}
+
+function listMissingFields(fieldPairs) {
+  return fieldPairs.filter((item) => !normalizeText(item.value)).map((item) => item.name);
+}
+
+function buildIntegrationSetupStatus() {
+  const smsProvider = getSmsProvider();
+  const twilioConfig = getTwilioConfig();
+  const stripeConfig = getStripeConfig();
+  const appBaseUrl = readConfig("app.base_url");
+
+  const twilioMissingFields = listMissingFields([
+    { name: "twilio.account_sid", value: twilioConfig.accountSid },
+    { name: "twilio.auth_token", value: twilioConfig.authToken },
+    { name: "twilio.from_number", value: twilioConfig.fromNumber },
+    { name: "notifications.owner_phone", value: twilioConfig.toNumber }
+  ]);
+  const stripeMissingFields = listMissingFields([
+    { name: "stripe.secret_key", value: stripeConfig.secretKey },
+    { name: "stripe.webhook_secret", value: stripeConfig.webhookSecret }
+  ]);
+  const twilioConfigured = twilioMissingFields.length === 0;
+  const stripeConfigured = stripeMissingFields.length === 0;
+
+  return {
+    evaluatedAtISO: new Date().toISOString(),
+    smsProvider,
+    smsProviderSupported: SMS_PROVIDERS.has(smsProvider),
+    appBaseUrlConfigured: Boolean(normalizeText(appBaseUrl)),
+    twilio: {
+      configured: twilioConfigured,
+      canSend: smsProvider === "twilio" && twilioConfigured,
+      missingFields: twilioMissingFields,
+      accountSidHint: maskText(twilioConfig.accountSid),
+      fromNumberHint: maskText(twilioConfig.fromNumber),
+      ownerPhoneHint: maskText(twilioConfig.toNumber)
+    },
+    stripe: {
+      configured: stripeConfigured,
+      missingFields: stripeMissingFields
+    }
+  };
 }
 
 function parseUrlOrThrow(raw, fieldName) {
@@ -80,29 +153,57 @@ async function assertStaff(context) {
 }
 
 async function sendOwnerSms(message) {
-  const accountSid = readConfig("twilio.account_sid");
-  const authToken = readConfig("twilio.auth_token");
-  const fromNumber = readConfig("twilio.from_number");
-  const toNumber = readConfig("notifications.owner_phone");
-
-  if (!accountSid || !authToken || !fromNumber || !toNumber) {
+  const smsProvider = getSmsProvider();
+  if (smsProvider === "none") {
     return {
       sent: false,
-      reason: "sms_not_configured"
+      reason: "sms_disabled"
     };
   }
 
-  const client = twilio(accountSid, authToken);
-  const payload = await client.messages.create({
-    from: fromNumber,
-    to: toNumber,
-    body: normalizeText(message).slice(0, 1500)
-  });
+  if (!SMS_PROVIDERS.has(smsProvider)) {
+    return {
+      sent: false,
+      reason: "sms_provider_unsupported",
+      provider: smsProvider
+    };
+  }
 
-  return {
-    sent: true,
-    sid: payload.sid
-  };
+  const twilioConfig = getTwilioConfig();
+  const missingFields = listMissingFields([
+    { name: "twilio.account_sid", value: twilioConfig.accountSid },
+    { name: "twilio.auth_token", value: twilioConfig.authToken },
+    { name: "twilio.from_number", value: twilioConfig.fromNumber },
+    { name: "notifications.owner_phone", value: twilioConfig.toNumber }
+  ]);
+  if (missingFields.length) {
+    return {
+      sent: false,
+      reason: "sms_not_configured",
+      missingFields
+    };
+  }
+
+  try {
+    const client = twilio(twilioConfig.accountSid, twilioConfig.authToken);
+    const payload = await client.messages.create({
+      from: twilioConfig.fromNumber,
+      to: twilioConfig.toNumber,
+      body: normalizeText(message).slice(0, 1500)
+    });
+
+    return {
+      sent: true,
+      sid: payload.sid
+    };
+  } catch (err) {
+    functions.logger.error("Twilio SMS send failed", err);
+    return {
+      sent: false,
+      reason: "sms_send_failed",
+      message: normalizeText(err?.message).slice(0, 180)
+    };
+  }
 }
 
 async function patchPaymentState({ quoteId, portalKey = "", paymentPatch = {} }) {
@@ -156,6 +257,30 @@ exports.notifyOwnerNewQuote = functions.region(REGION).https.onCall(async (data,
     ok: true,
     quoteNumber,
     sms: smsResult
+  };
+});
+
+exports.getIntegrationSetupStatus = functions.region(REGION).https.onCall(async (_data, context) => {
+  await assertStaff(context);
+  return {
+    ok: true,
+    status: buildIntegrationSetupStatus()
+  };
+});
+
+exports.sendIntegrationTestSms = functions.region(REGION).https.onCall(async (data, context) => {
+  const staff = await assertStaff(context);
+  const actorEmail = normalizeEmail(context?.auth?.token?.email || staff.uid);
+  const customMessage = normalizeText(data?.message);
+  const message =
+    customMessage ||
+    `Integration SMS test from Firebase Quote Wizard (${new Date().toISOString()}) sent by ${actorEmail}.`;
+  const sms = await sendOwnerSms(message);
+
+  return {
+    ok: true,
+    sms,
+    status: buildIntegrationSetupStatus()
   };
 });
 

@@ -321,6 +321,10 @@ export default function App() {
             smsSuffix = " Owner SMS sent.";
           } else if (smsResult?.sms?.reason === "sms_not_configured") {
             smsSuffix = " Owner SMS not configured yet.";
+          } else if (smsResult?.sms?.reason === "sms_disabled") {
+            smsSuffix = " Owner SMS disabled by configuration.";
+          } else if (smsResult?.sms?.reason === "sms_send_failed") {
+            smsSuffix = " Owner SMS failed to send.";
           }
         } catch (smsErr) {
           smsSuffix = " Owner SMS failed to send.";

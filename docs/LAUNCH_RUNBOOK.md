@@ -45,9 +45,10 @@ Set repository variables/secrets used by deploy workflow:
 - optional: `ENABLE_FUNCTIONS_DEPLOY=true` (requires Blaze plan)
 
 ## 5) Optional Functions (Stripe + Twilio)
-Set configuration with your own credentials (never commit real secrets):
+Set configuration with buyer-owned credentials (never commit real secrets):
 ```bash
 npx firebase-tools functions:config:set \
+  notifications.sms_provider="twilio" \
   stripe.secret_key="<your_stripe_secret>" \
   stripe.webhook_secret="<your_stripe_webhook_secret>" \
   twilio.account_sid="<your_twilio_account_sid>" \
@@ -57,10 +58,22 @@ npx firebase-tools functions:config:set \
   app.base_url="https://tonicatering.web.app"
 ```
 
+If buyer wants Stripe checkout but no SMS yet:
+```bash
+npx firebase-tools functions:config:set \
+  notifications.sms_provider="none" \
+  stripe.secret_key="<your_stripe_secret>" \
+  stripe.webhook_secret="<your_stripe_webhook_secret>" \
+  app.base_url="https://tonicatering.web.app"
+```
+
 Deploy functions:
 ```bash
 npm run deploy:firebase:functions
 ```
+
+Buyer setup assistance is also available in-app:
+- `Integrations Ops` -> `Buyer Setup Assistant (Optional Twilio)` to check status and send SMS test.
 
 Stripe webhook endpoint:
 - `https://us-central1-tonicatering.cloudfunctions.net/stripeWebhook`

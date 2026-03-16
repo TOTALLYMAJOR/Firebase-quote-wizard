@@ -8,6 +8,8 @@ Last updated: March 16, 2026
 - Test coverage: unit + Playwright smoke suites are configured in CI.
 - CI gates: `Unit + Build`, `Governance + Perf Gates`, `Docker Build Smoke`, and `Playwright Smoke` are configured.
 - Delivery controls: canonical doc ownership and governance checks are now enforced in CI.
+- Commerce resilience: Twilio SMS failures are non-blocking for quote save and Stripe checkout.
+- Buyer onboarding: Integrations Ops now includes an in-app setup assistant for optional Twilio configuration.
 
 ## Active Risks
 - Firestore production hardening is still pending deeper policy tightening.

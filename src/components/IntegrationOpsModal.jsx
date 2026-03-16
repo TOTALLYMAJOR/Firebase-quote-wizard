@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { getIntegrationSetupStatus, sendIntegrationTestSms } from "../lib/commerceOps";
 import { currency } from "../lib/quoteCalculator";
 import { getQuoteHistory, recordQuoteIntegrationSync } from "../lib/quoteStore";
 
@@ -30,6 +31,33 @@ function toState(value) {
 
 function toDirection(value) {
   return String(value || "").trim().toLowerCase() === "pull" ? "pull" : "push";
+}
+
+function getWindowBaseUrl() {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+function formatMissingFields(fields) {
+  if (!Array.isArray(fields) || fields.length === 0) return "none";
+  return fields.join(", ");
+}
+
+function describeSmsOutcome(sms) {
+  if (sms?.sent) return "Test SMS sent successfully.";
+  const reason = String(sms?.reason || "").trim();
+  if (reason === "sms_not_configured") return "SMS not configured yet. Add Twilio values and redeploy functions.";
+  if (reason === "sms_disabled") return "SMS is intentionally disabled (`notifications.sms_provider=\"none\"`).";
+  if (reason === "sms_provider_unsupported") return "Configured SMS provider is unsupported in this build.";
+  if (reason === "sms_send_failed") return `SMS send failed${sms?.message ? `: ${sms.message}` : "."}`;
+  return "SMS test did not send.";
+}
+
+async function copyText(text) {
+  if (!navigator?.clipboard) {
+    throw new Error("Clipboard unavailable in this browser.");
+  }
+  await navigator.clipboard.writeText(text);
 }
 
 function flattenLogs(quotes) {
@@ -76,6 +104,19 @@ export default function IntegrationOpsModal({
   const [providerFilter, setProviderFilter] = useState("all");
   const [syncStateFilter, setSyncStateFilter] = useState("all");
   const [saving, setSaving] = useState(false);
+  const [setupState, setSetupState] = useState({
+    loading: false,
+    testing: false,
+    error: "",
+    resultMessage: "",
+    status: null,
+    testMessage: ""
+  });
+  const [setupForm, setSetupForm] = useState({
+    appBaseUrl: getWindowBaseUrl(),
+    twilioFromNumber: "",
+    ownerPhone: ""
+  });
   const [form, setForm] = useState({
     quoteId: "",
     provider: "crm",
@@ -109,10 +150,71 @@ export default function IntegrationOpsModal({
     }
   };
 
+  const refreshSetupStatus = async () => {
+    setSetupState((prev) => ({ ...prev, loading: true, error: "" }));
+    try {
+      const result = await getIntegrationSetupStatus();
+      const status = result?.status || null;
+      setSetupState((prev) => ({
+        ...prev,
+        loading: false,
+        error: "",
+        status
+      }));
+    } catch (err) {
+      setSetupState((prev) => ({
+        ...prev,
+        loading: false,
+        error: err?.message || "Failed to load integration setup status."
+      }));
+    }
+  };
+
+  const handleCopyValue = async (value, label) => {
+    try {
+      await copyText(value);
+      setFeedback(`${label} copied.`);
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err?.message || `Failed to copy ${label.toLowerCase()}.` }));
+    }
+  };
+
+  const handleSendTestSms = async () => {
+    setSetupState((prev) => ({
+      ...prev,
+      testing: true,
+      error: "",
+      resultMessage: ""
+    }));
+    try {
+      const result = await sendIntegrationTestSms({
+        message: setupState.testMessage
+      });
+      const sms = result?.sms || {};
+      setSetupState((prev) => ({
+        ...prev,
+        testing: false,
+        status: result?.status || prev.status,
+        resultMessage: describeSmsOutcome(sms)
+      }));
+    } catch (err) {
+      setSetupState((prev) => ({
+        ...prev,
+        testing: false,
+        error: err?.message || "Failed to send integration SMS test."
+      }));
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     setFeedback("");
     load();
+    refreshSetupStatus();
+    setSetupForm((prev) => ({
+      ...prev,
+      appBaseUrl: prev.appBaseUrl || getWindowBaseUrl()
+    }));
   }, [open]);
 
   const activityRows = useMemo(() => flattenLogs(state.quotes), [state.quotes]);
@@ -139,6 +241,33 @@ export default function IntegrationOpsModal({
       return haystack.includes(q);
     });
   }, [activityRows, providerFilter, syncStateFilter, search]);
+
+  const integrationStatus = setupState.status || {};
+  const twilioStatus = integrationStatus.twilio || {};
+  const stripeStatus = integrationStatus.stripe || {};
+  const twilioMissingFields = Array.isArray(twilioStatus.missingFields) ? twilioStatus.missingFields : [];
+  const stripeMissingFields = Array.isArray(stripeStatus.missingFields) ? stripeStatus.missingFields : [];
+
+  const setupCommand = useMemo(() => {
+    const appBaseUrl = setupForm.appBaseUrl.trim() || "https://your-live-domain.example";
+    const twilioFromNumber = setupForm.twilioFromNumber.trim() || "<your_twilio_from_number>";
+    const ownerPhone = setupForm.ownerPhone.trim() || "<your_owner_phone>";
+
+    return [
+      "npx firebase-tools functions:config:set \\",
+      "  notifications.sms_provider=\"twilio\" \\",
+      "  stripe.secret_key=\"<your_stripe_secret>\" \\",
+      "  stripe.webhook_secret=\"<your_stripe_webhook_secret>\" \\",
+      "  twilio.account_sid=\"<your_twilio_account_sid>\" \\",
+      "  twilio.auth_token=\"<your_twilio_auth_token>\" \\",
+      `  twilio.from_number=\"${twilioFromNumber}\" \\`,
+      `  notifications.owner_phone=\"${ownerPhone}\" \\`,
+      `  app.base_url=\"${appBaseUrl}\"`
+    ].join("\n");
+  }, [setupForm.appBaseUrl, setupForm.ownerPhone, setupForm.twilioFromNumber]);
+
+  const disableSmsCommand = "npx firebase-tools functions:config:set notifications.sms_provider=\"none\"";
+  const deployFunctionsCommand = "npm run deploy:firebase:functions";
 
   const handleRecord = async () => {
     if (!form.quoteId) {
@@ -184,6 +313,9 @@ export default function IntegrationOpsModal({
             <button type="button" className="ghost" onClick={load} disabled={state.loading}>
               {state.loading ? "Refreshing..." : "Refresh"}
             </button>
+            <button type="button" className="ghost" onClick={refreshSetupStatus} disabled={setupState.loading}>
+              {setupState.loading ? "Checking Setup..." : "Check Setup"}
+            </button>
             <button type="button" className="ghost" onClick={onClose}>Close</button>
           </div>
         </div>
@@ -203,6 +335,98 @@ export default function IntegrationOpsModal({
             <span>Provider: <strong>{settings.crmProvider || "webhook"}</strong></span>
             <span>Retry limit: <strong>{Math.max(1, Number(settings.integrationRetryLimit || 3))}</strong></span>
             <span>Audit retention: <strong>{Math.max(10, Number(settings.integrationAuditRetention || 50))}</strong></span>
+          </div>
+        </section>
+
+        <section className="admin-section">
+          <div className="admin-section-head">
+            <h3>Buyer Setup Assistant (Optional Twilio)</h3>
+          </div>
+          <p className="source-note">
+            Core quote + portal workflows continue without Twilio. Buyers can enable SMS later by supplying their own
+            provider credentials.
+          </p>
+          {setupState.error && <p className="error-note">{setupState.error}</p>}
+          {setupState.resultMessage && <p className="source-note">{setupState.resultMessage}</p>}
+          <div className="status-strip">
+            <span>SMS provider: <strong>{integrationStatus.smsProvider || "unknown"}</strong></span>
+            <span>Twilio: <strong>{twilioStatus.configured ? "configured" : "not configured"}</strong></span>
+            <span>SMS send ready: <strong>{twilioStatus.canSend ? "yes" : "no"}</strong></span>
+            <span>Stripe: <strong>{stripeStatus.configured ? "configured" : "not configured"}</strong></span>
+            <span>App base URL: <strong>{integrationStatus.appBaseUrlConfigured ? "configured" : "not configured"}</strong></span>
+          </div>
+          {twilioMissingFields.length > 0 && (
+            <p className="warning-note">Twilio missing fields: {formatMissingFields(twilioMissingFields)}</p>
+          )}
+          {stripeMissingFields.length > 0 && (
+            <p className="warning-note">Stripe missing fields: {formatMissingFields(stripeMissingFields)}</p>
+          )}
+          <div className="admin-grid-settings integration-form-grid">
+            <label>
+              App base URL
+              <input
+                type="url"
+                placeholder="https://your-live-domain.example"
+                value={setupForm.appBaseUrl}
+                onChange={(event) => setSetupForm((prev) => ({ ...prev, appBaseUrl: event.target.value }))}
+              />
+            </label>
+            <label>
+              Twilio from number
+              <input
+                type="text"
+                placeholder="+15551234567"
+                value={setupForm.twilioFromNumber}
+                onChange={(event) => setSetupForm((prev) => ({ ...prev, twilioFromNumber: event.target.value }))}
+              />
+            </label>
+            <label>
+              Owner SMS number
+              <input
+                type="text"
+                placeholder="+15557654321"
+                value={setupForm.ownerPhone}
+                onChange={(event) => setSetupForm((prev) => ({ ...prev, ownerPhone: event.target.value }))}
+              />
+            </label>
+            <label className="integration-message-field">
+              Test SMS message (optional)
+              <input
+                type="text"
+                placeholder="Connectivity test for buyer setup"
+                value={setupState.testMessage}
+                onChange={(event) => setSetupState((prev) => ({ ...prev, testMessage: event.target.value }))}
+              />
+            </label>
+          </div>
+          <p className="source-note">Run in buyer environment, then redeploy functions.</p>
+          <pre className="integration-command-block"><code>{setupCommand}</code></pre>
+          <div className="right-actions">
+            <button type="button" className="ghost" onClick={() => handleCopyValue(setupCommand, "Setup command")}>
+              Copy Setup Command
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => handleCopyValue(disableSmsCommand, "SMS disable command")}
+            >
+              Copy SMS Off Command
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => handleCopyValue(deployFunctionsCommand, "Deploy command")}
+            >
+              Copy Deploy Command
+            </button>
+            <button
+              type="button"
+              className="cta"
+              onClick={handleSendTestSms}
+              disabled={setupState.testing || !twilioStatus.canSend}
+            >
+              {setupState.testing ? "Sending Test..." : "Send Test SMS"}
+            </button>
           </div>
         </section>
 

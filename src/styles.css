@@ -1103,6 +1103,19 @@ hr {
   gap: 0.5rem;
 }
 
+.integration-command-block {
+  margin: 0.55rem 0 0.65rem;
+  background: rgba(18, 22, 28, 0.95);
+  color: #f7e0a2;
+  border-radius: 10px;
+  border: 1px solid rgba(188, 142, 62, 0.45);
+  padding: 0.7rem 0.8rem;
+  overflow-x: auto;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
 .diagnostics-session-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
