@@ -71,7 +71,7 @@ The app supports:
 ## Tech Stack
 
 - React 18
-- Vite 5
+- Vite 7
 - Firebase 11
 - jsPDF
 - Plain CSS
@@ -105,6 +105,27 @@ npm run build
 ```bash
 npm run preview
 ```
+
+### Docker (Dev + Production)
+
+Restore and run the app with Docker Compose:
+
+```bash
+docker compose up --build web-dev
+```
+
+- serves Vite dev server on `http://localhost:5173`
+- reads `.env` if present (fallback/local defaults still apply when env keys are missing)
+
+Run the production image (Vite build + nginx SPA serving):
+
+```bash
+docker compose up --build web
+```
+
+- serves built app on `http://localhost:8080`
+- uses SPA-safe routing with `index.html` fallback
+- forwards `VITE_*` values as Docker build args (Compose reads project `.env` automatically)
 
 ## Environment Variables
 

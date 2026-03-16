@@ -40,5 +40,7 @@
 ## Platform and Quality
 
 - [ ] Add CI checks for lint, unit tests, and Playwright smoke suite.
+- [x] Restore Docker runtime path for reproducible dev/prod local runs.
+- [x] Add CI Docker build smoke check (`docker compose build web`).
 - [x] Add visual regression snapshots for major wizard states and proposal output.
 - [x] Add error tracking and user-session diagnostics for production troubleshooting.

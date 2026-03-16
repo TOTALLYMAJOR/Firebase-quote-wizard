@@ -29,6 +29,17 @@ jobs:
       - name: Build app
         run: npm run build
 
+  docker_build_smoke:
+    name: Docker Build Smoke
+    runs-on: ubuntu-latest
+    needs: unit_and_build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production Docker image
+        run: docker compose build web
+
   playwright_smoke:
     name: Playwright Smoke
     runs-on: ubuntu-latest

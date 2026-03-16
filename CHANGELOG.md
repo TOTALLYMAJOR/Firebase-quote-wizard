@@ -12,10 +12,13 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Unit tests for booking conversion and confirmation lifecycle in local fallback mode.
 - Visual snapshot tests covering Event/Menu/Review wizard states and the proposal sheet output.
 - Session diagnostics module with runtime error capture (`window.error` and `unhandledrejection`) and a staff diagnostics modal with export/clear tools.
+- Docker runtime scaffolding with multi-stage `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and nginx SPA config.
 
 ### Changed
 
 - Event schedule cards now surface contract number and confirmation state for accepted/booked events.
+- Updated `@vitejs/plugin-react` to a Vite 7 compatible major version so `npm ci` succeeds for CI and container builds.
+- Added a CI Docker smoke check job that runs `docker compose build web` on pushes/PRs.
 
 ## [2026-03-10]
 

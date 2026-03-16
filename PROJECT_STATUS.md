@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: March 11, 2026
+Last updated: March 15, 2026
 
 ## Summary
 
@@ -15,6 +15,7 @@ Current state:
 - automated unit tests and Playwright smoke coverage are in repo
 - booking conversion and confirmation tracking are implemented
 - in-app session diagnostics and runtime error logging are implemented
+- Docker implementation restored (`Dockerfile`, `docker-compose.yml`, nginx SPA config)
 - Vercel is optional and not required for current operation
 
 ## Live Status
@@ -83,6 +84,8 @@ Current state:
 - Firestore rules and indexes files added
 - `.firebaserc.example` added
 - environment validation script added
+- Docker local runtime scaffolding added for dev and production parity
+- CI quality workflow now includes a Docker production image build smoke check
 - GitHub remote configured and pushed
 - local Firebase CLI state ignored in `.gitignore`
 
@@ -108,6 +111,8 @@ Current state:
 - `npm run test:e2e`
 - Firebase env validation via `npm run check:env`
 - Firebase Hosting deployment via `npm run deploy:firebase`
+- Docker dev runtime via `docker compose up --build web-dev`
+- Docker production runtime via `docker compose up --build web`
 
 ### Not Yet Completed
 
@@ -177,3 +182,4 @@ Vercel support files exist, but Vercel has not been completed because Firebase H
 
 - Firebase Hosting is currently the primary deployment path.
 - Vercel can be added later if preview deploys or a separate deployment workflow are needed.
+- Docker can now be used as a reproducible local runtime path independent of host Node setup.
