@@ -19,6 +19,7 @@ git checkout -b feature/<scope>-<topic>
 ```
 3. Implement focused changes.
 4. Run required checks (see `CONTRIBUTING.md`).
+   - For CI workflow edits, confirm the CI gate steps are runnable in GitHub Actions and documented in `CHANGELOG.md`.
 5. Update canonical docs per `docs/DOC_SYSTEM.md`.
 6. Open PR with validation evidence and doc impact declaration.
 

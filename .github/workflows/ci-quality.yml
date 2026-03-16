@@ -61,7 +61,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Resolve Chromium path for Lighthouse
-        run: echo "CHROME_PATH=$(node -e \"const { chromium } = require('playwright'); console.log(chromium.executablePath())\")" >> "$GITHUB_ENV"
+        run: echo "CHROME_PATH=$(node -e 'const { chromium } = require(\"playwright\"); process.stdout.write(chromium.executablePath());')" >> "$GITHUB_ENV"
 
       - name: Run CWV smoke gate
         run: npm run check:perf:cwv

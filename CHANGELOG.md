@@ -36,6 +36,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Added in-app `Buyer Setup Assistant (Optional Twilio)` guidance in Integrations Ops with copy-ready config/deploy commands.
 - Hardened Twilio delivery so SMS provider errors no longer block core quote save or Stripe checkout workflows.
 - Updated Playwright `webServer` configuration to use cross-platform env injection so Windows test runs start correctly.
+- Fixed CI Lighthouse Chromium path step quoting so `Governance + Perf Gates` runs cleanly in GitHub Actions.
 
 ## [2026-03-10]
 
