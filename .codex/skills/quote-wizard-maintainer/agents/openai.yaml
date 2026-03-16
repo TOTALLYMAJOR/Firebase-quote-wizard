@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quote Wizard Maintainer"
+  short_description: "Implement and refine app features with safe, tested changes."
+  default_prompt: "Use this skill for day-to-day implementation, bug fixes, refactors, and documentation updates in this repository."

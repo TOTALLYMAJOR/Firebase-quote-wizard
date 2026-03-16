@@ -1,32 +1,26 @@
 # Version Control Playbook
 
-Last updated: March 10, 2026
+Last updated: March 16, 2026
 
 ## Goals
 - Keep `main` stable and deployable.
-- Keep history understandable.
-- Reduce risky late-stage merge conflicts.
+- Preserve traceable, reviewable history.
+- Keep canonical docs synchronized per merge.
 
-## Daily Workflow
-1. Sync from remote:
-   ```bash
-   git checkout main
-   git pull origin main
-   ```
-2. Create a scoped branch:
-   ```bash
-   git checkout -b feature/quote-<topic>
-   ```
+## Daily Flow
+1. Sync:
+```bash
+git checkout main
+git pull origin main
+```
+2. Branch:
+```bash
+git checkout -b feature/<scope>-<topic>
+```
 3. Implement focused changes.
-4. Run project checks:
-   ```bash
-   npm run check:env
-   npm run test:unit
-   npm run test:e2e
-   npm run build
-   ```
-5. Commit with a conventional message.
-6. Open PR with verification notes.
+4. Run required checks (see `CONTRIBUTING.md`).
+5. Update canonical docs per `docs/DOC_SYSTEM.md`.
+6. Open PR with validation evidence and doc impact declaration.
 
 ## Branch Naming
 - `feature/<scope>-<topic>`
@@ -36,36 +30,22 @@ Last updated: March 10, 2026
 - `release/<version>`
 
 ## Commit Quality Rules
-- Commit logical units, not unrelated batches.
-- Do not mix refactors with behavior changes unless necessary.
-- Include doc updates in the same PR when behavior changed.
-- Avoid committing generated local state (`dist/`, `.firebase/`, `.env`).
+- Commit logical units only.
+- Avoid mixing unrelated refactors and behavior changes.
+- Never commit local state or secrets.
 
 ## Release Workflow
-1. Create `release/<version>` branch from `main`.
+1. Create `release/<version>` from `main`.
 2. Finalize `CHANGELOG.md` and `PROJECT_STATUS.md`.
-3. Run checks:
-   - `npm run check:env`
-   - `npm run test:unit`
-   - `npm run test:e2e`
-   - `npm run build`
+3. Run release checks.
 4. Merge release PR to `main`.
-5. Tag and push:
-   ```bash
-   git tag v<major>.<minor>.<patch>
-   git push origin v<major>.<minor>.<patch>
-   ```
-6. Deploy from `main` after tag confirmation.
+5. Tag semantic version:
+```bash
+git tag v<major>.<minor>.<patch>
+git push origin v<major>.<minor>.<patch>
+```
+6. Deploy from tagged `main` commit.
 
-## Hotfix Workflow
-1. Branch from `main` as `fix/<scope>-<topic>`.
-2. Patch only the urgent issue.
-3. Re-run checks and merge quickly.
-4. Record the fix in `CHANGELOG.md`.
-5. Tag a patch release.
-
-## Documentation Requirements Per Merge
-- User-visible changes: update `CHANGELOG.md`.
-- Operational status changes: update `PROJECT_STATUS.md`.
-- Priority changes: update `DEV_TASKS.md`.
-- Onboarding/config changes: update `README.md` and/or `CONTRIBUTING.md`.
+## Doc Sync Rule
+`docs/DOC_SYSTEM.md` is the canonical ownership matrix.
+If a topic changes, only update the owning doc and cross-link from others.

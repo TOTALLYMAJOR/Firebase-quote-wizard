@@ -1,55 +1,49 @@
 # Contributing to Firebase Quote Wizard
 
-Last updated: March 10, 2026
+Last updated: March 16, 2026
 
-## Development Setup
-1. Use Node.js 18+.
+## Setup
+1. Use Node.js 20+.
 2. Run `npm install`.
 3. Create `.env` from `.env.example`.
 4. Validate setup with `npm run check:env`.
-5. Start local dev with `npm run dev`.
 
-## Branching Strategy
+## Branching
 - `main`: production-ready branch.
-- `feature/<scope>-<topic>`: new features.
-- `fix/<scope>-<topic>`: bug fixes.
-- `docs/<topic>`: documentation-only updates.
-- `chore/<topic>`: maintenance tasks.
+- `feature/<scope>-<topic>`
+- `fix/<scope>-<topic>`
+- `docs/<topic>`
+- `chore/<topic>`
 
 ## Commit Convention
-Use Conventional Commits for clean history and changelog generation.
-
+Use Conventional Commits.
 Examples:
-- `feat(quote): add menu section subtotal grouping`
-- `fix(pdf): correct deposit value on export`
-- `docs(git): add release workflow guidance`
-- `chore(ci): add build smoke check`
+- `feat(quote): add event template presets`
+- `fix(store): guard portal status update path`
+- `docs(governance): add canonical doc ownership matrix`
+- `chore(ci): enforce bundle and cwv gates`
 
-## Pull Request Expectations
-1. Keep PR scope focused.
-2. Include a clear summary of behavior changes.
-3. Include test or verification evidence.
-4. Update docs when behavior or process changed.
-5. Note any follow-up work explicitly.
+## PR Requirements
+1. Keep scope focused.
+2. Include verification evidence.
+3. Complete doc impact declaration in PR template.
+4. Keep canonical docs in sync using `docs/DOC_SYSTEM.md`.
 
 ## Validation Checklist
-Run these before opening or merging a PR:
-- `npm run check:env`
-- `npm run test:unit`
-- `npm run test:e2e`
-- `npm run build`
-
-If you changed quote logic, Firestore behavior, or PDF output, include manual validation notes in the PR description.
+Run before merge:
+```bash
+npm run check:env
+npm run test:unit
+npm run test:e2e
+npm run build
+npm run check:docs:governance
+npm run check:perf:bundle
+npm run check:perf:cwv
+```
 
 ## Documentation Discipline
-Update these files when relevant:
-- `CHANGELOG.md` for notable changes.
-- `PROJECT_STATUS.md` for milestone/status movement.
-- `DEV_TASKS.md` for roadmap reprioritization.
-- `README.md` for setup or architecture changes.
+Canonical ownership is defined in `docs/DOC_SYSTEM.md`.
+Update only the owning docs for changed topics; link instead of duplicating narrative.
 
 ## Release Discipline
-- Keep `main` releasable.
-- Prefer small, frequent merges.
-- Tag releases with semantic versions (for example `v0.2.0`).
-- Record release notes in `CHANGELOG.md`.
+Follow `docs/VERSION_CONTROL.md` for branch/tag/release policy.

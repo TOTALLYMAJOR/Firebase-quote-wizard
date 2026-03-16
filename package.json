@@ -12,6 +12,9 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "check:env": "node ./scripts/check-env.mjs",
+    "check:docs:governance": "node ./scripts/check-doc-governance.mjs",
+    "check:perf:bundle": "node ./scripts/check-bundle-budget.mjs",
+    "check:perf:cwv": "lhci autorun --config=./.lighthouserc.json",
     "deploy:firebase:functions": "npx firebase-tools deploy --only functions",
     "deploy:firebase:hosting": "npm run build && npx firebase-tools deploy --only hosting",
     "deploy:firebase": "npm run build && npx firebase-tools deploy --only hosting,firestore,functions",
@@ -25,6 +28,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@lhci/cli": "^0.14.0",
     "@playwright/test": "^1.54.2",
     "@vitejs/plugin-react": "^5.2.0",
     "vite": "^7.3.1",

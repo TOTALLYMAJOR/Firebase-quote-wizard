@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quote Wizard Release Manager"
+  short_description: "Prepare, verify, and document safe releases for this app."
+  default_prompt: "Use this skill for changelogs, release validation, deployment checks, and release notes in this repository."

@@ -13,6 +13,10 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Visual snapshot tests covering Event/Menu/Review wizard states and the proposal sheet output.
 - Session diagnostics module with runtime error capture (`window.error` and `unhandledrejection`) and a staff diagnostics modal with export/clear tools.
 - Docker runtime scaffolding with multi-stage `Dockerfile`, `docker-compose.yml`, `.dockerignore`, and nginx SPA config.
+- Canonical documentation ownership spec (`docs/DOC_SYSTEM.md`) with update triggers and data ownership matrix.
+- Agent governance, performance guardrail docs, and technology exception log.
+- Governance enforcement script (`scripts/check-doc-governance.mjs`) and bundle budget gate (`scripts/check-bundle-budget.mjs`).
+- Lighthouse CI configuration and bundle baseline file for hard UX/performance gates.
 
 ### Changed
 
@@ -21,6 +25,10 @@ This changelog is backfilled from git history and will be maintained going forwa
 - Added a CI Docker smoke check job that runs `docker compose build web` on pushes/PRs.
 - Hardened Playwright smoke selectors with exact label matching to avoid `Venue`/`Venue address` strict-mode collisions.
 - Updated Playwright history assertion to validate persisted quote row data that is actually rendered (`E2E Staff` and edited guest count).
+- Added `Governance + Perf Gates` CI job to enforce doc sync/security/drift checks plus bundle/CWV thresholds.
+- Hardened doc governance diff/path parsing and added explicit code/process/deploy/backlog doc ownership enforcement.
+- Updated Lighthouse CI to run against `vite preview` on `127.0.0.1` for deterministic smoke checks.
+- Ignored local `.lighthouseci/` artifacts to prevent accidental commit noise.
 
 ## [2026-03-10]
 
