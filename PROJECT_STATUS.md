@@ -13,9 +13,11 @@ Last updated: March 17, 2026
 - Buyer onboarding: Integrations Ops now includes an in-app setup assistant for optional Twilio configuration.
 - Production guardrail: `ENABLE_FUNCTIONS_DEPLOY=false` (default locked state).
 - Production fail-safe integration mode: `notifications.sms_provider="none"` in Firebase Functions config.
+- Latest production release: header crew image/name spacing fix for narrow desktop header widths.
 - Last known good production deploy:
-  - commit: `393cef7c22ce1964f5d722ef2f20990cd566c957`
-  - workflow run: `Deploy Firebase Hosting (+ Optional Functions)` #23174414155 (March 17, 2026 UTC)
+  - commit: `a4a2568f06eaedcf9805c503bb161d2847d12710`
+  - CI run: `CI Quality` #23203096351 (March 17, 2026 UTC)
+  - workflow run: `Deploy Firebase Hosting (+ Optional Functions)` #23203174267 (March 17, 2026 UTC)
 
 ## Active Risks
 - Firestore production hardening is still pending deeper policy tightening.
