@@ -14,8 +14,8 @@ Last updated: March 17, 2026
 - Production guardrail: `ENABLE_FUNCTIONS_DEPLOY=false` (default locked state).
 - Production fail-safe integration mode: `notifications.sms_provider="none"` in Firebase Functions config.
 - Last known good production deploy:
-  - commit: `bac1a2009127e0a9b448ef984c6468dfed6dc458`
-  - workflow run: `Deploy Firebase Hosting (+ Optional Functions)` #23172799456 (March 17, 2026 UTC)
+  - commit: `393cef7c22ce1964f5d722ef2f20990cd566c957`
+  - workflow run: `Deploy Firebase Hosting (+ Optional Functions)` #23174414155 (March 17, 2026 UTC)
 
 ## Active Risks
 - Firestore production hardening is still pending deeper policy tightening.
