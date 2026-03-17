@@ -97,6 +97,7 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  row-gap: var(--space-2);
   padding: 0.68rem 0;
 }
 
@@ -138,12 +139,20 @@ body {
   margin: 0.2rem 0 0;
   color: rgba(255, 225, 161, 0.88);
   font-size: 0.79rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-crew {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+  row-gap: 0.35rem;
   margin-left: auto;
+  justify-content: flex-end;
 }
 
 .crew-chip {
@@ -151,6 +160,7 @@ body {
   padding: 0.2rem 0.5rem 0.2rem 0.26rem;
   border-radius: 999px;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 0.4rem;
   border: 1px solid rgba(231, 196, 113, 0.54);
@@ -169,12 +179,17 @@ body {
 .crew-chip figcaption {
   color: rgba(255, 231, 176, 0.95);
   font-size: 0.72rem;
+  line-height: 1.1;
   white-space: nowrap;
+  max-width: 11ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .right-actions {
   display: flex;
   gap: 0.55rem;
+  flex-wrap: wrap;
 }
 
 .header-actions {
@@ -1699,6 +1714,18 @@ hr {
 
   .hero-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1400px) {
+  .nav {
+    flex-wrap: wrap;
+  }
+
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
   }
 }
 
