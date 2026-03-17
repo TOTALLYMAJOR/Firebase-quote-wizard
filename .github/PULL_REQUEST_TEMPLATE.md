@@ -12,6 +12,12 @@
 - Affected areas:
 - Rollback approach:
 
+## Production Release Gate
+- Production impact: none / production-triggering
+- [ ] If production-triggering: all CI jobs are green (`Unit + Build`, `Governance + Perf Gates`, `Docker Build Smoke`, `Playwright Smoke`)
+- [ ] If production-triggering: 10-minute UAT checklist from `docs/LAUNCH_RUNBOOK.md` passed
+- [ ] If production-triggering: rollback SHA/path is confirmed against `PROJECT_STATUS.md`
+
 ## Documentation
 - [ ] `CHANGELOG.md` updated (if user-visible change)
 - [ ] `PROJECT_STATUS.md` updated (if milestone/status changed)

@@ -1,8 +1,9 @@
 # Dev Tasks
 
-Last updated: March 16, 2026
+Last updated: March 17, 2026
 
 ## P0 - Security and Reliability
+- Re-establish staging sign-off workflow and release checklist enforcement before broadening `main` merge velocity.
 - Tighten Firestore rules for production-grade least-privilege access.
 - Add targeted E2E scenarios for booking conversion/confirmation edge cases.
 - Add automated secret scanning for non-markdown assets (scripts/config) in CI.

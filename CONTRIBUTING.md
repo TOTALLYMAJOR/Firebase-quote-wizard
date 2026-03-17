@@ -1,6 +1,6 @@
 # Contributing to Firebase Quote Wizard
 
-Last updated: March 16, 2026
+Last updated: March 17, 2026
 
 ## Setup
 1. Use Node.js 20+.
@@ -9,7 +9,7 @@ Last updated: March 16, 2026
 4. Validate setup with `npm run check:env`.
 
 ## Branching
-- `main`: production-ready branch.
+- `main`: release-only, production-ready branch.
 - `feature/<scope>-<topic>`
 - `fix/<scope>-<topic>`
 - `docs/<topic>`
@@ -47,3 +47,4 @@ Update only the owning docs for changed topics; link instead of duplicating narr
 
 ## Release Discipline
 Follow `docs/VERSION_CONTROL.md` for branch/tag/release policy.
+Production-triggering merges to `main` require a completed 10-minute UAT checklist in `docs/LAUNCH_RUNBOOK.md`.

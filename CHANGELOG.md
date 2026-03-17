@@ -21,6 +21,9 @@ This changelog is backfilled from git history and will be maintained going forwa
 ### Changed
 
 - Event schedule cards now surface contract number and confirmation state for accepted/booked events.
+- Production deploy workflow is now gated on successful `CI Quality` completion for `main` pushes, with manual dispatch preserved for controlled operations.
+- Standardized production safety controls: `ENABLE_FUNCTIONS_DEPLOY=false` default and fail-safe SMS runtime config (`notifications.sms_provider="none"`).
+- Added explicit release gate policy requiring green CI + 10-minute UAT + rollback SHA confirmation for production-triggering merges.
 - Updated `@vitejs/plugin-react` to a Vite 7 compatible major version so `npm ci` succeeds for CI and container builds.
 - Added a CI Docker smoke check job that runs `docker compose build web` on pushes/PRs.
 - Hardened Playwright smoke selectors with exact label matching to avoid `Venue`/`Venue address` strict-mode collisions.
