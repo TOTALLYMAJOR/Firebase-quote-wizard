@@ -19,10 +19,21 @@ function meetsThreshold(rule, guests, hours) {
   return guests >= minGuests && hours >= minHours;
 }
 
+function resolvePricingType(target) {
+  const raw = String(target?.pricingType || target?.type || "").trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+  return "per_event";
+}
+
 function buildAddonRecommendation({ rule, catalog, form, guests, addonMultiplier }) {
   const target = catalog.addons.find((item) => item.id === rule.targetId);
   if (!target || hasSelection(form, "addons", target.id)) return null;
-  const estimate = (target.type === "per_person" ? Number(target.price || 0) * guests : Number(target.price || 0)) * addonMultiplier;
+  const pricingType = resolvePricingType(target);
+  const estimate = (
+    pricingType === "per_person"
+      ? Number(target.price || 0) * guests
+      : Number(target.price || 0)
+  ) * addonMultiplier;
   return {
     key: `${rule.id || "rule"}-addon-${target.id}`,
     kind: "addon",
@@ -36,7 +47,12 @@ function buildAddonRecommendation({ rule, catalog, form, guests, addonMultiplier
 function buildRentalRecommendation({ rule, catalog, form, guests, rentalMultiplier }) {
   const target = catalog.rentals.find((item) => item.id === rule.targetId);
   if (!target || hasSelection(form, "rentals", target.id)) return null;
-  const qty = typeof target.qtyRule === "function" ? target.qtyRule(guests) : 1;
+  const pricingType = resolvePricingType(target);
+  const qty = pricingType === "per_person"
+    ? guests
+    : pricingType === "per_item"
+      ? typeof target.qtyRule === "function" ? target.qtyRule(guests) : 1
+      : 1;
   const estimate = Number(target.price || 0) * qty * rentalMultiplier;
   return {
     key: `${rule.id || "rule"}-rental-${target.id}`,

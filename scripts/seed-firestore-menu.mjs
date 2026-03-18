@@ -35,6 +35,11 @@ function uniqueEventTypes() {
 function normalizeSectionItems(section) {
   const source = Array.isArray(section?.items) ? section.items : [];
   const seen = new Set();
+  const normalizePricingType = (value) => {
+    const raw = String(value || "").trim().toLowerCase();
+    if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+    return "per_event";
+  };
   return source
     .map((item, index) => {
       if (typeof item === "string") {
@@ -42,16 +47,21 @@ function normalizeSectionItems(section) {
         return {
           id: slugify(name, `item-${index + 1}`),
           name: name || `Item ${index + 1}`,
+          pricingType: "per_event",
           type: "per_event",
-          price: 0
+          price: 0,
+          active: true
         };
       }
       const name = String(item?.name || "").trim();
+      const pricingType = normalizePricingType(item?.pricingType || item?.type);
       return {
         id: slugify(item?.id || name, `item-${index + 1}`),
         name: name || `Item ${index + 1}`,
-        type: item?.type === "per_person" ? "per_person" : "per_event",
-        price: Number(item?.price || 0)
+        pricingType,
+        type: pricingType,
+        price: Number(item?.price || 0),
+        active: item?.active !== false
       };
     })
     .filter((item) => {
@@ -100,8 +110,10 @@ function buildSeedDocs(nowISO) {
             eventTypeId: eventType.id,
             categoryId,
             name: item.name,
+            pricingType: item.pricingType,
             type: item.type,
             price: Number(item.price || 0),
+            active: item.active !== false,
             source: "seed-script",
             createdAtISO: nowISO
           }
@@ -158,13 +170,13 @@ async function fetchMissingDocs(db, collectionName, docs) {
   return { missing, existingCount };
 }
 
-async function createDocsInBatches(db, collectionName, docs) {
+async function createDocsInBatches(db, collectionName, docs, { merge = false } = {}) {
   let created = 0;
   for (let i = 0; i < docs.length; i += MAX_BATCH_WRITES) {
     const chunk = docs.slice(i, i + MAX_BATCH_WRITES);
     const batch = db.batch();
     chunk.forEach((entry) => {
-      batch.set(db.collection(collectionName).doc(entry.id), entry.data, { merge: false });
+      batch.set(db.collection(collectionName).doc(entry.id), entry.data, { merge });
     });
     await batch.commit();
     created += chunk.length;
@@ -179,7 +191,9 @@ async function seedCollection({ db, collectionName, docs, dryRun }) {
       total: docs.length,
       existing: existingCount,
       created: dryRun ? 0 : 0,
-      wouldCreate: dryRun ? missing.length : 0
+      wouldCreate: dryRun ? missing.length : 0,
+      backfilled: 0,
+      wouldBackfill: 0
     };
   }
 
@@ -188,7 +202,80 @@ async function seedCollection({ db, collectionName, docs, dryRun }) {
     total: docs.length,
     existing: existingCount,
     created,
-    wouldCreate: 0
+    wouldCreate: 0,
+    backfilled: 0,
+    wouldBackfill: 0
+  };
+}
+
+function normalizePricingType(value, fallback = "per_event") {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+  return fallback;
+}
+
+async function seedMenuItemsCollection({ db, docs, dryRun }) {
+  if (!docs.length) {
+    return {
+      total: 0,
+      existing: 0,
+      created: 0,
+      backfilled: 0,
+      wouldCreate: 0,
+      wouldBackfill: 0
+    };
+  }
+
+  const refs = docs.map((entry) => db.collection("menuItems").doc(entry.id));
+  const snapshots = await db.getAll(...refs);
+  const missing = [];
+  const backfill = [];
+  let existing = 0;
+
+  snapshots.forEach((snapshot, index) => {
+    const entry = docs[index];
+    if (!snapshot.exists) {
+      missing.push(entry);
+      return;
+    }
+    existing += 1;
+    const current = snapshot.data() || {};
+    const resolvedPricingType = normalizePricingType(current.pricingType || current.type || entry.data.pricingType, "per_event");
+    const patch = {};
+    if (current.pricingType !== resolvedPricingType) patch.pricingType = resolvedPricingType;
+    if (current.type !== resolvedPricingType) patch.type = resolvedPricingType;
+    if (typeof current.active !== "boolean") patch.active = true;
+    if (!Object.keys(patch).length) return;
+    backfill.push({
+      id: entry.id,
+      data: {
+        ...patch,
+        updatedAtISO: new Date().toISOString()
+      }
+    });
+  });
+
+  if (dryRun) {
+    return {
+      total: docs.length,
+      existing,
+      created: 0,
+      backfilled: 0,
+      wouldCreate: missing.length,
+      wouldBackfill: backfill.length
+    };
+  }
+
+  const created = missing.length ? await createDocsInBatches(db, "menuItems", missing) : 0;
+  const backfilled = backfill.length ? await createDocsInBatches(db, "menuItems", backfill, { merge: true }) : 0;
+
+  return {
+    total: docs.length,
+    existing,
+    created,
+    backfilled,
+    wouldCreate: 0,
+    wouldBackfill: 0
   };
 }
 
@@ -207,7 +294,7 @@ async function main() {
   const [eventTypeSummary, categorySummary, itemSummary] = await Promise.all([
     seedCollection({ db, collectionName: "eventTypes", docs: eventTypeDocs, dryRun }),
     seedCollection({ db, collectionName: "menuCategories", docs: categoryDocs, dryRun }),
-    seedCollection({ db, collectionName: "menuItems", docs: itemDocs, dryRun })
+    seedMenuItemsCollection({ db, docs: itemDocs, dryRun })
   ]);
 
   const label = dryRun ? "Dry run completed." : "Seed completed.";
@@ -223,7 +310,9 @@ async function main() {
   );
   console.log(
     `menuItems -> total:${itemSummary.total} existing:${itemSummary.existing} created:${itemSummary.created}`
-    + (dryRun ? ` wouldCreate:${itemSummary.wouldCreate}` : "")
+    + `${dryRun ? ` wouldCreate:${itemSummary.wouldCreate}` : ""}`
+    + ` backfilled:${itemSummary.backfilled}`
+    + `${dryRun ? ` wouldBackfill:${itemSummary.wouldBackfill}` : ""}`
   );
 }
 

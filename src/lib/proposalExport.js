@@ -3,6 +3,7 @@ import { currency } from "./quoteCalculator";
 import { buildProposalPayload } from "./proposalPayload";
 
 const BRAND_ASSET_CACHE = new Map();
+const IMAGE_LOG_PREFIX = "[proposalExport:image]";
 
 function text(v) {
   return String(v ?? "-");
@@ -48,42 +49,173 @@ function resolveImageFormat(mimeType = "") {
   return "PNG";
 }
 
-async function loadBrandImage(path) {
+function logImageIssue(message, details = null, error = null) {
+  const payload = details ? { ...details } : undefined;
+  if (error) {
+    // Keep PDF export resilient while surfacing enough context to debug broken image paths.
+    console.warn(`${IMAGE_LOG_PREFIX} ${message}`, payload, error);
+    return;
+  }
+  console.warn(`${IMAGE_LOG_PREFIX} ${message}`, payload);
+}
+
+function safeAddImage(doc, image, x, y, width, height, label) {
+  if (!image?.dataUrl) return false;
+  try {
+    doc.addImage(image.dataUrl, image.format || "PNG", x, y, width, height);
+    return true;
+  } catch (error) {
+    logImageIssue(`Failed to render ${label}.`, {
+      format: image.format || "PNG",
+      x,
+      y,
+      width,
+      height
+    }, error);
+    return false;
+  }
+}
+
+async function loadBrandImage(path, label = "image") {
   if (!path) return null;
   try {
     const response = await fetch(path);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      logImageIssue(`Failed to load ${label}.`, {
+        path,
+        status: response.status,
+        statusText: response.statusText
+      });
+      return null;
+    }
     const blob = await response.blob();
+    if (!blob?.size) {
+      logImageIssue(`Received empty blob for ${label}.`, { path, mimeType: blob?.type || "unknown" });
+      return null;
+    }
+
+    let dataUrl = "";
+    try {
+      dataUrl = await blobToDataUrl(blob);
+    } catch (error) {
+      logImageIssue(`Failed to convert ${label} blob to Data URL.`, { path, mimeType: blob.type || "unknown" }, error);
+      return null;
+    }
+    if (!dataUrl) {
+      logImageIssue(`Data URL conversion returned empty value for ${label}.`, { path, mimeType: blob.type || "unknown" });
+      return null;
+    }
+
     return {
       format: resolveImageFormat(blob.type),
-      dataUrl: await blobToDataUrl(blob)
+      dataUrl
     };
-  } catch {
+  } catch (error) {
+    logImageIssue(`Unexpected error while loading ${label}.`, { path }, error);
     return null;
   }
 }
 
 async function loadBrandAssets(branding) {
-  const cacheKey = JSON.stringify([
-    branding.logoPath,
-    ...branding.crewMembers.map((member) => member.imagePath)
-  ]);
+  const logoPath = branding?.logoPath || "";
+  const crewMembers = Array.isArray(branding?.crewMembers) ? branding.crewMembers : [];
+  const cacheKey = JSON.stringify([logoPath, ...crewMembers.map((member) => member?.imagePath || "")]);
   if (BRAND_ASSET_CACHE.has(cacheKey)) {
     return BRAND_ASSET_CACHE.get(cacheKey);
   }
+
   const [logo, ...crewImages] = await Promise.all([
-    loadBrandImage(branding.logoPath),
-    ...branding.crewMembers.map((member) => loadBrandImage(member.imagePath))
+    loadBrandImage(logoPath, "logo image"),
+    ...crewMembers.map((member, index) => loadBrandImage(member?.imagePath, `crew image (${member?.label || index + 1})`))
   ]);
+
   const assets = {
     logo,
-    crewMembers: branding.crewMembers.map((member, index) => ({
+    crewMembers: crewMembers.map((member, index) => ({
       ...member,
       image: crewImages[index] || null
     }))
   };
   BRAND_ASSET_CACHE.set(cacheKey, assets);
   return assets;
+}
+
+function sectionItemLabel(label, count) {
+  return count > 0 ? `${label} (${count} item${count === 1 ? "" : "s"})` : label;
+}
+
+function summarizeList(items, limit = 5) {
+  const safeItems = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!safeItems.length) return "";
+  const preview = safeItems.slice(0, limit).join(", ");
+  return safeItems.length > limit ? `${preview}...` : preview;
+}
+
+function renderHeader({
+  doc,
+  palette,
+  brandAssets,
+  branding,
+  proposal,
+  left,
+  right,
+  maxWidth,
+  pageWidth,
+  headerHeight,
+  y
+}) {
+  doc.setFillColor(...palette.ink);
+  doc.rect(0, 0, pageWidth, headerHeight, "F");
+  doc.setFillColor(...palette.gold);
+  doc.rect(0, headerHeight - 10, pageWidth, 10, "F");
+
+  if (brandAssets.logo) {
+    safeAddImage(doc, brandAssets.logo, left, 18, 52, 52, "logo image");
+  }
+
+  const crewChipSize = 42;
+  const crewGap = 14;
+  const crewCount = brandAssets.crewMembers.length;
+  const crewBlockWidth =
+    crewCount > 0 ? (crewCount * crewChipSize) + ((crewCount - 1) * crewGap) : 0;
+  const crewStartX = right - crewBlockWidth;
+  const crewTopY = 18;
+  brandAssets.crewMembers.forEach((member, index) => {
+    const chipX = crewStartX + (index * (crewChipSize + crewGap));
+    doc.setFillColor(...palette.cream);
+    doc.roundedRect(chipX - 2, crewTopY - 2, crewChipSize + 4, crewChipSize + 4, 8, 8, "F");
+    if (member.image) {
+      safeAddImage(doc, member.image, chipX, crewTopY, crewChipSize, crewChipSize, `crew image (${member.label || index + 1})`);
+    }
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(text(member.label), chipX + (crewChipSize / 2), crewTopY + crewChipSize + 13, { align: "center" });
+  });
+
+  const titleX = brandAssets.logo ? left + 64 : left;
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.text(text(branding.title), titleX, 42);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.text(text(branding.brandTagline), titleX, 58);
+  doc.text(`Quote #${text(proposal.quoteNumber)}`, titleX, 74);
+  doc.text(`Created: ${proposal.createdOn}`, right, 94, { align: "right" });
+  doc.text(`Valid Through: ${proposal.expiresOn}`, right, 110, { align: "right" });
+
+  doc.setFillColor(...palette.cream);
+  doc.roundedRect(left, y - 14, maxWidth, 38, 10, 10, "F");
+  doc.setDrawColor(...palette.line);
+  doc.roundedRect(left, y - 14, maxWidth, 38, 10, 10);
+  doc.setTextColor(...palette.text);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(10);
+  doc.text(`Status: ${text(proposal.status || "draft")}`, left + 12, y + 4);
+  doc.text(`Deposit Status: ${text(proposal.payment.depositStatus || "unpaid")}`, left + 160, y + 4);
+  doc.text(`Template: ${text(proposal.selection.eventTemplateId || "custom")}`, left + 350, y + 4);
+  return y + 56;
 }
 
 export async function exportQuoteProposal(quote) {
@@ -138,58 +270,46 @@ export async function exportQuoteProposal(quote) {
     y += lineGap * Math.max(1, wrapped.length);
   };
 
-  doc.setFillColor(...palette.ink);
-  doc.rect(0, 0, pageWidth, headerHeight, "F");
-  doc.setFillColor(...palette.gold);
-  doc.rect(0, headerHeight - 10, pageWidth, 10, "F");
+  const subtotalRow = (label, amount) => {
+    ensureSpace(24);
+    doc.setTextColor(...palette.text);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text(`${label}:`, left + 2, y);
+    doc.setTextColor(...palette.gold);
+    doc.text(currency(amount || 0), left + 128, y);
+    y += lineGap + 4;
+  };
 
-  if (brandAssets.logo) {
-    doc.addImage(brandAssets.logo.dataUrl, brandAssets.logo.format, left, 18, 52, 52);
-  }
-
-  const crewChipSize = 42;
-  const crewGap = 14;
-  const crewCount = brandAssets.crewMembers.length;
-  const crewBlockWidth =
-    crewCount > 0 ? (crewCount * crewChipSize) + ((crewCount - 1) * crewGap) : 0;
-  const crewStartX = right - crewBlockWidth;
-  const crewTopY = 18;
-  brandAssets.crewMembers.forEach((member, index) => {
-    const chipX = crewStartX + (index * (crewChipSize + crewGap));
-    doc.setFillColor(...palette.cream);
-    doc.roundedRect(chipX - 2, crewTopY - 2, crewChipSize + 4, crewChipSize + 4, 8, 8, "F");
-    if (member.image) {
-      doc.addImage(member.image.dataUrl, member.image.format, chipX, crewTopY, crewChipSize, crewChipSize);
-    }
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica", "normal");
+  const countedAmountRow = (label, items, amount) => {
+    const safeItems = Array.isArray(items) ? items : [];
+    row(sectionItemLabel(label, safeItems.length), currency(amount || 0));
+    if (!safeItems.length) return;
+    const itemPreview = summarizeList(safeItems, 5);
+    if (!itemPreview) return;
+    const wrapped = doc.splitTextToSize(itemPreview, maxWidth - 140);
+    ensureSpace((8 * Math.max(1, wrapped.length)) + 2);
+    doc.setTextColor(...palette.muted);
+    doc.setFont("helvetica", "italic");
     doc.setFontSize(8);
-    doc.text(member.label, chipX + (crewChipSize / 2), crewTopY + crewChipSize + 13, { align: "center" });
+    doc.text(wrapped, left + 130, y);
+    y += (8 * Math.max(1, wrapped.length)) + 2;
+  };
+
+  // Render branded cover/header block first so body sections can flow page-by-page.
+  y = renderHeader({
+    doc,
+    palette,
+    brandAssets,
+    branding,
+    proposal,
+    left,
+    right,
+    maxWidth,
+    pageWidth,
+    headerHeight,
+    y
   });
-
-  const titleX = brandAssets.logo ? left + 64 : left;
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.text(branding.title, titleX, 42);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.text(branding.brandTagline, titleX, 58);
-  doc.text(`Quote #${text(proposal.quoteNumber)}`, titleX, 74);
-  doc.text(`Created: ${proposal.createdOn}`, right, 94, { align: "right" });
-  doc.text(`Valid Through: ${proposal.expiresOn}`, right, 110, { align: "right" });
-
-  doc.setFillColor(...palette.cream);
-  doc.roundedRect(left, y - 14, maxWidth, 38, 10, 10, "F");
-  doc.setDrawColor(...palette.line);
-  doc.roundedRect(left, y - 14, maxWidth, 38, 10, 10);
-  doc.setTextColor(...palette.text);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10);
-  doc.text(`Status: ${text(proposal.status || "draft")}`, left + 12, y + 4);
-  doc.text(`Deposit Status: ${text(proposal.payment.depositStatus || "unpaid")}`, left + 160, y + 4);
-  doc.text(`Template: ${text(proposal.selection.eventTemplateId || "custom")}`, left + 350, y + 4);
-  y += 56;
 
   section("Client and Event");
   row("Responsible Party / Client", proposal.customer.name);
@@ -219,14 +339,47 @@ export async function exportQuoteProposal(quote) {
   row("Deposit Link", proposal.payment.depositLink || "-");
 
   section("Pricing");
-  row("Per Person", `${currency(perPersonRate)} x ${proposal.event.guests || 0} = ${currency(proposal.totals.base || 0)}`);
-  row("Base", currency(proposal.totals.base || 0));
-  row("Add-ons", currency(proposal.totals.addons || 0));
-  row("Rentals", currency(proposal.totals.rentals || 0));
-  row("Menu Selections", currency(proposal.totals.menu || 0));
-  row("Staffing", currency((proposal.totals.labor || 0) - (proposal.totals.bartenderLabor || 0)));
-  row("Bartender", currency(proposal.totals.bartenderLabor || 0));
-  row("Travel", currency(proposal.totals.travel || 0));
+
+  // Keep pricing in grouped blocks to make the PDF easier to scan.
+  row("Per Person", `${currency(perPersonRate)} x ${proposal.event.guests || 0}`);
+  row("  Base Package", currency(proposal.totals.base || 0));
+  row("  Menu Selections", currency(proposal.totals.menu || 0));
+
+  const foodSubtotal = (proposal.totals.base || 0) + (proposal.totals.menu || 0);
+  subtotalRow("Food Subtotal", foodSubtotal);
+
+  countedAmountRow("Add-ons", proposal.selection.addons, proposal.totals.addons);
+  countedAmountRow("Rentals", proposal.selection.rentals, proposal.totals.rentals);
+
+  const serverLabor = (proposal.totals.labor || 0) - (proposal.totals.bartenderLabor || 0);
+  row("  Server/Chef Labor", currency(serverLabor));
+  row("  Bartender Labor", currency(proposal.totals.bartenderLabor || 0));
+
+  const laborSubtotal = serverLabor + (proposal.totals.bartenderLabor || 0);
+  subtotalRow("Labor Subtotal", laborSubtotal);
+
+  row("Travel/Mileage", currency(proposal.totals.travel || 0));
+
+  const prefeeSubtotal = foodSubtotal + 
+    (proposal.totals.addons || 0) + 
+    (proposal.totals.rentals || 0) + 
+    laborSubtotal + 
+    (proposal.totals.travel || 0);
+
+  ensureSpace(26);
+  doc.setFillColor(...palette.goldSoft);
+  doc.roundedRect(left, y - 10, maxWidth, 22, 4, 4, "F");
+  doc.setDrawColor(...palette.line);
+  doc.roundedRect(left, y - 10, maxWidth, 22, 4, 4);
+  doc.setTextColor(...palette.text);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(11);
+  doc.text("Pre-fee Subtotal:", left + 12, y + 2);
+  doc.setTextColor(...palette.gold);
+  doc.text(currency(prefeeSubtotal), left + 128, y + 2);
+  y += 26;
+  
+  // Service fee and Tax
   row(
     `Gratuity / Service Fee (${Math.round(Number(proposal.totals.serviceFeePctApplied || 0) * 1000) / 10}%)`,
     currency(proposal.totals.serviceFee || 0)
@@ -235,6 +388,16 @@ export async function exportQuoteProposal(quote) {
     `Tax (${Math.round(Number(proposal.totals.taxRateApplied || 0) * 1000) / 10}%)`,
     currency(proposal.totals.tax || 0)
   );
+  
+  // Total before fees (for clarity)
+  const totalBeforeTaxServiceFee = prefeeSubtotal;
+  ensureSpace(24);
+  doc.setTextColor(...palette.muted);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  doc.text("Total Before Tax/Service Fee:", left + 2, y);
+  doc.text(currency(totalBeforeTaxServiceFee), left + 128, y);
+  y += lineGap + 2;
 
   ensureSpace(56);
   doc.setFillColor(...palette.goldSoft);

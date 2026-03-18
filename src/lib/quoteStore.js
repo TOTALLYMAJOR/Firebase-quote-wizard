@@ -81,6 +81,31 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function normalizePricingType(value, fallback = "per_event") {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+  return fallback;
+}
+
+function normalizeQuantityMap(input) {
+  if (!input || typeof input !== "object") return {};
+  return Object.entries(input).reduce((acc, [key, value]) => {
+    const id = String(key || "").trim();
+    if (!id) return acc;
+    acc[id] = Math.max(1, Math.round(toNumber(value, 1)));
+    return acc;
+  }, {});
+}
+
+function resolveSnapshotQuantity(quantityMap, itemId, fallback = 1) {
+  const id = String(itemId || "").trim();
+  if (!id) return Math.max(1, Math.round(toNumber(fallback, 1)));
+  if (!Object.prototype.hasOwnProperty.call(quantityMap, id)) {
+    return Math.max(1, Math.round(toNumber(fallback, 1)));
+  }
+  return Math.max(1, Math.round(toNumber(quantityMap[id], fallback)));
+}
+
 function parseTimeToMinutes(value) {
   const text = String(value || "").trim();
   if (!/^\d{1,2}:\d{2}$/.test(text)) return null;
@@ -229,8 +254,8 @@ function buildContractNumber() {
 
 function sortQuotesDesc(items) {
   return [...items].sort((a, b) => {
-    const aTs = new Date(a.createdAtISO || a.createdAt || 0).getTime();
-    const bTs = new Date(b.createdAtISO || b.createdAt || 0).getTime();
+    const aTs = new Date(a.updatedAtISO || a.createdAtISO || a.createdAt || 0).getTime();
+    const bTs = new Date(b.updatedAtISO || b.createdAtISO || b.createdAt || 0).getTime();
     return bTs - aTs;
   });
 }
@@ -337,9 +362,10 @@ function lifecyclePatch(status, nowISO) {
   };
 }
 
-function resolveMenuItemDetails(menuItemIds, settings) {
+function resolveMenuItemDetails(menuItemIds, settings, menuItemQuantities = {}) {
   const selected = new Set(Array.isArray(menuItemIds) ? menuItemIds : []);
   if (!selected.size) return [];
+  const quantityMap = normalizeQuantityMap(menuItemQuantities);
 
   const sections = Array.isArray(settings?.menuSections) ? settings.menuSections : [];
   const byId = new Map();
@@ -347,20 +373,59 @@ function resolveMenuItemDetails(menuItemIds, settings) {
     (section.items || []).forEach((item) => {
       const id = String(item?.id || "").trim();
       if (!id || !selected.has(id) || byId.has(id)) return;
+      const pricingType = normalizePricingType(item?.pricingType || item?.type, "per_event");
       byId.set(id, {
         id,
         name: String(item?.name || "").trim() || id,
-        type: item?.type === "per_person" ? "per_person" : "per_event",
-        price: Number(item?.price || 0)
+        pricingType,
+        type: pricingType,
+        price: Number(item?.price || 0),
+        quantity: resolveSnapshotQuantity(quantityMap, id, 1)
       });
     });
   });
 
-  return Array.from(selected).map((id) => byId.get(id) || {
-    id,
-    name: id,
-    type: "per_event",
-    price: 0
+  return Array.from(selected).map((id) => {
+    const detail = byId.get(id);
+    if (detail) return detail;
+    const quantity = resolveSnapshotQuantity(quantityMap, id, 1);
+    return {
+      id,
+      name: id,
+      pricingType: "per_event",
+      type: "per_event",
+      price: 0,
+      quantity
+    };
+  });
+}
+
+function resolveItemSnapshots(ids = [], catalogItems = [], quantityMap = {}, { guests = 0, defaultPricingType = "per_event" } = {}) {
+  const selected = Array.isArray(ids) ? ids.map((id) => String(id || "").trim()).filter(Boolean) : [];
+  if (!selected.length) return [];
+  const normalizedQtyMap = normalizeQuantityMap(quantityMap);
+  const byId = new Map((Array.isArray(catalogItems) ? catalogItems : []).map((item) => [String(item?.id || "").trim(), item]));
+
+  return selected.map((id) => {
+    const found = byId.get(id);
+    const pricingType = normalizePricingType(found?.pricingType || found?.type, defaultPricingType);
+    const defaultQty =
+      pricingType === "per_person"
+        ? Math.max(1, Math.round(toNumber(guests, 1)))
+        : pricingType === "per_item"
+          ? typeof found?.qtyRule === "function"
+            ? Math.max(1, Math.round(toNumber(found.qtyRule(guests), 1)))
+            : 1
+          : 1;
+    const quantity = resolveSnapshotQuantity(normalizedQtyMap, id, defaultQty);
+    return {
+      id,
+      name: String(found?.name || id).trim() || id,
+      price: Number(found?.price || 0),
+      pricingType,
+      type: pricingType,
+      quantity
+    };
   });
 }
 
@@ -850,7 +915,7 @@ export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } =
   return { ok: true, storage: "local" };
 }
 
-export async function submitQuote({ form, totals, catalogSource, settings, ownerUid = "", ownerEmail = "" }) {
+export async function submitQuote({ form, totals, catalogSource, settings, catalog = {}, ownerUid = "", ownerEmail = "" }) {
   const nowISO = isoNow();
   const quoteNumber = buildQuoteNumber();
   const portalKey = buildPortalKey();
@@ -860,8 +925,20 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
   const validityDays = Math.max(1, Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS));
   const expiresAtISO = addDaysISO(nowISO, validityDays);
   const menuItems = Array.isArray(form.menuItems) ? form.menuItems : [];
-  const menuItemDetails = resolveMenuItemDetails(menuItems, settings);
+  const guests = Number(form.guests || 0);
+  const menuItemQuantities = normalizeQuantityMap(form.menuItemQuantities);
+  const addonQuantities = normalizeQuantityMap(form.addonQuantities);
+  const rentalQuantities = normalizeQuantityMap(form.rentalQuantities);
+  const menuItemDetails = resolveMenuItemDetails(menuItems, settings, menuItemQuantities);
   const menuItemNames = menuItemDetails.map((item) => item.name);
+  const addonSnapshots = resolveItemSnapshots(form.addons, catalog?.addons, addonQuantities, {
+    guests,
+    defaultPricingType: "per_person"
+  });
+  const rentalSnapshots = resolveItemSnapshots(form.rentals, catalog?.rentals, rentalQuantities, {
+    guests,
+    defaultPricingType: "per_item"
+  });
   const payload = {
     quoteNumber,
     customer: {
@@ -894,11 +971,18 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       packageName: totals.selectedPkg?.name || "",
       addons: form.addons,
       rentals: form.rentals,
+      addonQuantities,
+      rentalQuantities,
+      menuItemQuantities,
+      addonSnapshots,
+      rentalSnapshots,
       menuItems,
       menuItemsSnapshot: menuItemDetails.map((item) => ({
         id: item.id,
         name: item.name,
-        price: Number(item.price || 0)
+        price: Number(item.price || 0),
+        pricingType: normalizePricingType(item.pricingType || item.type, "per_event"),
+        quantity: Math.max(1, Math.round(toNumber(item.quantity, 1)))
       })),
       menuItemNames,
       menuItemDetails,
@@ -1055,6 +1139,7 @@ export async function updateQuote({
   totals,
   catalogSource,
   settings,
+  catalog = {},
   ownerUid = "",
   ownerEmail = ""
 }) {
@@ -1071,8 +1156,20 @@ export async function updateQuote({
   const validityDays = Math.max(1, Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS));
   const expiresAtISO = addDaysISO(nowISO, validityDays);
   const menuItems = Array.isArray(form.menuItems) ? form.menuItems : [];
-  const menuItemDetails = resolveMenuItemDetails(menuItems, settings);
+  const guests = Number(form.guests || 0);
+  const menuItemQuantities = normalizeQuantityMap(form.menuItemQuantities);
+  const addonQuantities = normalizeQuantityMap(form.addonQuantities);
+  const rentalQuantities = normalizeQuantityMap(form.rentalQuantities);
+  const menuItemDetails = resolveMenuItemDetails(menuItems, settings, menuItemQuantities);
   const menuItemNames = menuItemDetails.map((item) => item.name);
+  const addonSnapshots = resolveItemSnapshots(form.addons, catalog?.addons, addonQuantities, {
+    guests,
+    defaultPricingType: "per_person"
+  });
+  const rentalSnapshots = resolveItemSnapshots(form.rentals, catalog?.rentals, rentalQuantities, {
+    guests,
+    defaultPricingType: "per_item"
+  });
   const lifecycle = lifecycleObject("draft", nowISO, existing.lifecycle);
 
   const existingPayment = hydratePayment(existing.payment);
@@ -1115,11 +1212,18 @@ export async function updateQuote({
       packageName: totals.selectedPkg?.name || "",
       addons: form.addons,
       rentals: form.rentals,
+      addonQuantities,
+      rentalQuantities,
+      menuItemQuantities,
+      addonSnapshots,
+      rentalSnapshots,
       menuItems,
       menuItemsSnapshot: menuItemDetails.map((item) => ({
         id: item.id,
         name: item.name,
-        price: Number(item.price || 0)
+        price: Number(item.price || 0),
+        pricingType: normalizePricingType(item.pricingType || item.type, "per_event"),
+        quantity: Math.max(1, Math.round(toNumber(item.quantity, 1)))
       })),
       menuItemNames,
       menuItemDetails,
@@ -1252,6 +1356,105 @@ export async function updateQuote({
     portalKey: existing.portalKey || "",
     storage: "local"
   };
+}
+
+export async function duplicateQuote(quoteId, { ownerUid = "", ownerEmail = "" } = {}) {
+  const source = await readQuoteById(quoteId);
+  const nowISO = isoNow();
+  const quoteNumber = buildQuoteNumber();
+  const portalKey = buildPortalKey();
+  const validityDays = Math.max(1, Number(source?.quoteMeta?.quoteValidityDays || DEFAULT_VALIDITY_DAYS));
+  const expiresAtISO = addDaysISO(nowISO, validityDays);
+  const payment = hydratePayment(source.payment);
+  const normalizedOwnerEmail = normalizeEmail(ownerEmail) || source.ownerEmail || "";
+  const { id: _sourceId, createdAt: _createdAt, ...sourceWithoutIdentity } = source;
+
+  const selection = {
+    ...(sourceWithoutIdentity.selection || {}),
+    addonQuantities: normalizeQuantityMap(sourceWithoutIdentity.selection?.addonQuantities),
+    rentalQuantities: normalizeQuantityMap(sourceWithoutIdentity.selection?.rentalQuantities),
+    menuItemQuantities: normalizeQuantityMap(sourceWithoutIdentity.selection?.menuItemQuantities),
+    menuItemsSnapshot: Array.isArray(sourceWithoutIdentity.selection?.menuItemsSnapshot)
+      ? sourceWithoutIdentity.selection.menuItemsSnapshot.map((item) => ({
+        id: String(item?.id || "").trim(),
+        name: String(item?.name || "").trim() || String(item?.id || "").trim(),
+        price: Number(item?.price || 0),
+        pricingType: normalizePricingType(item?.pricingType || item?.type, "per_event"),
+        quantity: Math.max(1, Math.round(toNumber(item?.quantity, 1)))
+      }))
+      : [],
+    menuItemDetails: Array.isArray(sourceWithoutIdentity.selection?.menuItemDetails)
+      ? sourceWithoutIdentity.selection.menuItemDetails.map((item) => ({
+        id: String(item?.id || "").trim(),
+        name: String(item?.name || "").trim() || String(item?.id || "").trim(),
+        price: Number(item?.price || 0),
+        pricingType: normalizePricingType(item?.pricingType || item?.type, "per_event"),
+        type: normalizePricingType(item?.pricingType || item?.type, "per_event"),
+        quantity: Math.max(1, Math.round(toNumber(item?.quantity, 1)))
+      }))
+      : []
+  };
+
+  const payload = {
+    ...sourceWithoutIdentity,
+    quoteNumber,
+    portalKey,
+    ownerUid: ownerUid || source.ownerUid || "",
+    ownerEmail: normalizedOwnerEmail,
+    status: "draft",
+    deletedAtISO: "",
+    selection,
+    payment: {
+      ...payment,
+      depositStatus: payment.depositLink ? "sent" : "unpaid",
+      depositConfirmedAtISO: ""
+    },
+    booking: {
+      bookedAtISO: "",
+      bookedByEmail: "",
+      staffLead: "",
+      staffAssignedAtISO: "",
+      contractNumber: "",
+      contractConvertedAtISO: "",
+      contractConvertedByEmail: "",
+      confirmationStatus: "pending",
+      confirmationSentAtISO: "",
+      confirmedAtISO: "",
+      confirmationUpdatedByEmail: "",
+      availabilityCheckedAtISO: "",
+      availabilitySummary: {}
+    },
+    integrations: {
+      ...(sourceWithoutIdentity.integrations || {}),
+      lastSyncAtISO: "",
+      logs: []
+    },
+    createdAtISO: nowISO,
+    updatedAtISO: nowISO,
+    expiresAtISO,
+    lifecycle: {
+      draftAtISO: nowISO
+    }
+  };
+
+  if (firebaseReady) {
+    const ref = await addDoc(collection(db, "quotes"), {
+      ...payload,
+      createdAt: serverTimestamp()
+    });
+    await setDoc(
+      doc(db, PORTAL_COLLECTION, portalKey),
+      buildPortalSnapshot(ref.id, payload),
+      { merge: true }
+    );
+    return { id: ref.id, quoteNumber, portalKey, storage: "firebase" };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const fallbackId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now());
+  existing.unshift({ id: fallbackId, ...payload });
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(existing));
+  return { id: fallbackId, quoteNumber, portalKey, storage: "local" };
 }
 
 function applyQuoteHistoryFilters(quotes, { eventTypeId = "", customerName = "" } = {}) {

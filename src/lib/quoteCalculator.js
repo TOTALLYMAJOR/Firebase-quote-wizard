@@ -22,6 +22,35 @@ function toTypeId(value) {
   return String(value || "").trim();
 }
 
+function normalizePricingType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") {
+    return raw;
+  }
+  return "per_event";
+}
+
+function normalizeQuantityMap(input) {
+  if (!input || typeof input !== "object") return {};
+  return Object.entries(input).reduce((acc, [key, value]) => {
+    const id = String(key || "").trim();
+    if (!id) return acc;
+    const quantity = Math.max(1, Math.round(toNumber(value, 1)));
+    acc[id] = quantity;
+    return acc;
+  }, {});
+}
+
+function resolveLineQuantity(itemId, quantityMap, fallback = 1) {
+  const id = String(itemId || "").trim();
+  if (!id) return Math.max(1, Math.round(toNumber(fallback, 1)));
+  const quantity = quantityMap?.[id];
+  if (quantity === undefined) {
+    return Math.max(1, Math.round(toNumber(fallback, 1)));
+  }
+  return Math.max(1, Math.round(toNumber(quantity, fallback)));
+}
+
 function dateParts(isoDate) {
   const raw = isoDate ? new Date(isoDate) : new Date();
   if (Number.isNaN(raw.getTime())) {
@@ -153,7 +182,12 @@ export function calculateQuote(form, catalog, settings) {
   const baseMiles = Math.min(milesRT, thresholdMiles);
   const longDistanceMiles = Math.max(0, milesRT - thresholdMiles);
   const laborRates = resolveLaborRates(form, settings);
+  const selectedAddonIds = new Set(Array.isArray(form.addons) ? form.addons : []);
+  const selectedRentalIds = new Set(Array.isArray(form.rentals) ? form.rentals : []);
   const selectedMenuIds = new Set(Array.isArray(form.menuItems) ? form.menuItems : []);
+  const addonQuantityMap = normalizeQuantityMap(form.addonQuantities);
+  const rentalQuantityMap = normalizeQuantityMap(form.rentalQuantities);
+  const menuItemQuantityMap = normalizeQuantityMap(form.menuItemQuantities);
   const menuCatalog = Array.isArray(settings?.menuSections)
     ? settings.menuSections.flatMap((section) => section.items || [])
     : [];
@@ -193,6 +227,9 @@ export function calculateQuote(form, catalog, settings) {
       packageMultiplier,
       addonMultiplier,
       rentalMultiplier,
+      addonQuantityMap,
+      rentalQuantityMap,
+      menuItemQuantityMap,
       travelBaseMiles: baseMiles,
       travelLongDistanceMiles: longDistanceMiles
     };
@@ -201,24 +238,49 @@ export function calculateQuote(form, catalog, settings) {
   const base = (selectedPkg?.ppp || 0) * guests * packageMultiplier;
 
   const addons = catalog.addons
-    .filter((a) => form.addons.includes(a.id))
-    .reduce((sum, a) => sum + (a.type === "per_person" ? a.price * guests : a.price) * addonMultiplier, 0);
-
-  const rentals = catalog.rentals
-    .filter((r) => form.rentals.includes(r.id))
-    .reduce(
-      (sum, r) => sum + r.price * (typeof r.qtyRule === "function" ? r.qtyRule(guests) : 1) * rentalMultiplier,
-      0
-    );
-
-  const menu = menuCatalog
-    .filter((item) => selectedMenuIds.has(item.id))
+    .filter((item) => selectedAddonIds.has(item.id) && item.active !== false)
     .reduce((sum, item) => {
       const price = Number(item.price || 0);
-      if (item.type === "per_person") {
-        return sum + price * guests * addonMultiplier;
+      const pricingType = normalizePricingType(item.pricingType || item.type);
+      if (pricingType === "per_person") {
+        return sum + (price * guests * addonMultiplier);
       }
-      return sum + price * addonMultiplier;
+      if (pricingType === "per_item") {
+        const quantity = resolveLineQuantity(item.id, addonQuantityMap, 1);
+        return sum + (price * quantity * addonMultiplier);
+      }
+      return sum + (price * addonMultiplier);
+    }, 0);
+
+  const rentals = catalog.rentals
+    .filter((item) => selectedRentalIds.has(item.id) && item.active !== false)
+    .reduce((sum, item) => {
+      const price = Number(item.price || 0);
+      const pricingType = normalizePricingType(item.pricingType || item.type || "per_item");
+      if (pricingType === "per_person") {
+        return sum + (price * guests * rentalMultiplier);
+      }
+      if (pricingType === "per_event") {
+        return sum + (price * rentalMultiplier);
+      }
+      const defaultQty = typeof item.qtyRule === "function" ? item.qtyRule(guests) : 1;
+      const quantity = resolveLineQuantity(item.id, rentalQuantityMap, defaultQty);
+      return sum + (price * quantity * rentalMultiplier);
+    }, 0);
+
+  const menu = menuCatalog
+    .filter((item) => selectedMenuIds.has(item.id) && item.active !== false)
+    .reduce((sum, item) => {
+      const price = Number(item.price || 0);
+      const pricingType = normalizePricingType(item.pricingType || item.type);
+      if (pricingType === "per_person") {
+        return sum + (price * guests * addonMultiplier);
+      }
+      if (pricingType === "per_item") {
+        const quantity = resolveLineQuantity(item.id, menuItemQuantityMap, 1);
+        return sum + (price * quantity * addonMultiplier);
+      }
+      return sum + (price * addonMultiplier);
     }, 0);
 
   const styleRules = STAFF_RULES[form.style] || STAFF_RULES.Buffet;
@@ -276,6 +338,9 @@ export function calculateQuote(form, catalog, settings) {
     packageMultiplier,
     addonMultiplier,
     rentalMultiplier,
+    addonQuantityMap,
+    rentalQuantityMap,
+    menuItemQuantityMap,
     travelBaseMiles: baseMiles,
     travelLongDistanceMiles: longDistanceMiles
   };

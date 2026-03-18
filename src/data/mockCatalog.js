@@ -407,6 +407,14 @@ function normalizeId(value, fallback) {
   return sanitized || fallback;
 }
 
+function normalizePricingType(value, fallback = "per_event") {
+  const raw = String(value || fallback || "").trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") {
+    return raw;
+  }
+  return fallback;
+}
+
 function normalizeServiceFeeTiers(input) {
   const source = Array.isArray(input) && input.length ? input : DEFAULT_SERVICE_FEE_TIERS;
   return source
@@ -521,15 +529,18 @@ function normalizeMenuSections(input) {
         if (typeof item === "string") {
           const name = item.trim();
           const id = normalizeId(name, `${sectionId}-item-${itemIdx + 1}`);
-          return { id, name, price: 0, type: "per_event" };
+          return { id, name, price: 0, pricingType: "per_event", type: "per_event", active: true };
         }
         const name = String(item?.name || "").trim();
         const id = normalizeId(item?.id, `${sectionId}-item-${itemIdx + 1}`);
+        const pricingType = normalizePricingType(item?.pricingType || item?.type, "per_event");
         return {
           id,
           name,
           price: toNumber(item?.price, 0, 0),
-          type: item?.type === "per_person" ? "per_person" : "per_event"
+          pricingType,
+          type: pricingType,
+          active: item?.active !== false
         };
       })
       .filter((item) => {
@@ -661,8 +672,12 @@ function normalizeHexColor(value, fallback) {
 
 export function normalizeRental(item) {
   const qtyPerGuests = Number(item.qtyPerGuests || 1);
+  const pricingType = normalizePricingType(item.pricingType || item.type, "per_item");
   return {
     ...item,
+    pricingType,
+    type: pricingType,
+    active: item.active !== false,
     qtyPerGuests,
     qtyRule: (guests) => Math.max(1, Math.ceil(guests / qtyPerGuests))
   };
@@ -682,15 +697,20 @@ export function normalizeCatalog(raw) {
   const addons = (raw.addons || DEFAULT_ADDONS).map((a) => ({
     id: a.id,
     name: a.name,
-    type: a.type === "per_event" ? "per_event" : "per_person",
-    price: Number(a.price || 0)
+    pricingType: normalizePricingType(a.pricingType || a.type, "per_person"),
+    type: normalizePricingType(a.pricingType || a.type, "per_person"),
+    price: Number(a.price || 0),
+    active: a.active !== false
   }));
   const rentals = (raw.rentals || DEFAULT_RENTALS).map((r) =>
     normalizeRental({
       id: r.id,
       name: r.name,
       price: Number(r.price || 0),
-      qtyPerGuests: Number(r.qtyPerGuests || 1)
+      qtyPerGuests: Number(r.qtyPerGuests || 1),
+      pricingType: normalizePricingType(r.pricingType || r.type, "per_item"),
+      type: normalizePricingType(r.pricingType || r.type, "per_item"),
+      active: r.active !== false
     })
   );
   const serviceFeeTiers = normalizeServiceFeeTiers(rawSettings.serviceFeeTiers);
@@ -807,12 +827,22 @@ export function normalizeCatalog(raw) {
 export function toStorageCatalog(catalog) {
   return {
     packages: catalog.packages.map(({ id, name, ppp }) => ({ id, name, ppp })),
-    addons: catalog.addons.map(({ id, name, type, price }) => ({ id, name, type, price })),
-    rentals: catalog.rentals.map(({ id, name, price, qtyPerGuests }) => ({
+    addons: catalog.addons.map(({ id, name, type, pricingType, price, active }) => ({
+      id,
+      name,
+      type: normalizePricingType(pricingType || type, "per_person"),
+      pricingType: normalizePricingType(pricingType || type, "per_person"),
+      price,
+      active: active !== false
+    })),
+    rentals: catalog.rentals.map(({ id, name, price, qtyPerGuests, type, pricingType, active }) => ({
       id,
       name,
       price,
-      qtyPerGuests
+      qtyPerGuests,
+      type: normalizePricingType(pricingType || type, "per_item"),
+      pricingType: normalizePricingType(pricingType || type, "per_item"),
+      active: active !== false
     })),
     settings: catalog.settings
   };

@@ -27,7 +27,15 @@ function asNumber(value, fallback = 0) {
 }
 
 function normalizePriceType(value) {
-  return value === "per_person" ? "per_person" : "per_event";
+  if (value === "per_person" || value === "per_item" || value === "per_event") {
+    return value;
+  }
+  return "per_event";
+}
+
+function normalizeActive(value, fallback = true) {
+  if (typeof value === "boolean") return value;
+  return fallback;
 }
 
 function mapDocs(snapshot) {
@@ -67,32 +75,39 @@ export async function getMenuCategories(eventTypeId) {
   );
 }
 
-export async function getMenuItems(eventTypeId) {
+export async function getMenuItems(eventTypeId, { includeInactive = false } = {}) {
   const nextEventTypeId = asText(eventTypeId);
   if (!nextEventTypeId || !firebaseReady || !db) return [];
   const snap = await getDocs(
     query(collection(db, "menuItems"), where("eventTypeId", "==", nextEventTypeId))
   );
-  return sortByName(
-    mapDocs(snap).map((item) => ({
+  const mapped = mapDocs(snap).map((item) => {
+    const pricingType = normalizePriceType(item.pricingType || item.type);
+    return {
       ...item,
       eventTypeId: asText(item.eventTypeId),
       categoryId: asText(item.categoryId),
       name: asText(item.name, "Untitled Item"),
       price: asNumber(item.price, 0),
-      type: normalizePriceType(item.type)
-    }))
-  );
+      pricingType,
+      type: pricingType,
+      active: normalizeActive(item.active, true)
+    };
+  });
+  return sortByName(includeInactive ? mapped : mapped.filter((item) => item.active !== false));
 }
 
 export async function createMenuItem(data = {}) {
   ensureReady();
+  const pricingType = normalizePriceType(data.pricingType || data.type);
   const payload = {
     eventTypeId: asText(data.eventTypeId),
     categoryId: asText(data.categoryId),
     name: asText(data.name, "New Menu Item"),
     price: asNumber(data.price, 0),
-    type: normalizePriceType(data.type),
+    pricingType,
+    type: pricingType,
+    active: normalizeActive(data.active, true),
     createdAtISO: new Date().toISOString()
   };
   if (!payload.eventTypeId) {
@@ -129,7 +144,17 @@ export async function updateMenuItem(id, data = {}) {
     payload.eventTypeId = asText(data.eventTypeId);
   }
   if (Object.prototype.hasOwnProperty.call(data, "type")) {
-    payload.type = normalizePriceType(data.type);
+    const pricingType = normalizePriceType(data.type);
+    payload.pricingType = pricingType;
+    payload.type = pricingType;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "pricingType")) {
+    const pricingType = normalizePriceType(data.pricingType);
+    payload.pricingType = pricingType;
+    payload.type = pricingType;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "active")) {
+    payload.active = normalizeActive(data.active, true);
   }
   payload.updatedAtISO = new Date().toISOString();
 

@@ -2,7 +2,8 @@ import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import AuthGate from "./components/AuthGate";
 import CustomerPortalView from "./components/CustomerPortalView";
 import LiveBreakdown from "./components/LiveBreakdown";
-import { StepEvent, StepMenu, StepReview } from "./components/WizardSteps";
+import { StepEvent, StepMenu, StepReview, StepServices } from "./components/WizardSteps";
+import { useEventType } from "./context/EventTypeContext";
 import { STAFF_RULES } from "./data/mockCatalog";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
@@ -20,7 +21,7 @@ const QuoteCompareModal = lazy(() => import("./components/QuoteCompareModal"));
 const QuoteHistoryModal = lazy(() => import("./components/QuoteHistoryModal"));
 const ReportingDashboardModal = lazy(() => import("./components/ReportingDashboardModal"));
 
-const STEP_LABELS = ["Event", "Menu & Services", "Review"];
+const STEP_LABELS = ["Event Basics", "Menu Selection", "Add-ons / Rentals", "Pricing Summary", "Save / Submit"];
 
 function readPortalKeyFromUrl() {
   if (typeof window === "undefined") return "";
@@ -48,6 +49,7 @@ function toOptionalNumber(value) {
 
 export default function App() {
   const wizardRef = useRef(null);
+  const { eventTypeId: globalEventTypeId, setEventTypeId: setGlobalEventTypeId } = useEventType();
   const authSession = useAuthSession();
   const [portalKey, setPortalKey] = useState(() => readPortalKeyFromUrl());
   const [portalMode, setPortalMode] = useState(Boolean(portalKey));
@@ -66,6 +68,7 @@ export default function App() {
   const [submitState, setSubmitState] = useState({ saving: false, message: "", portalLink: "" });
   const [availabilityNotice, setAvailabilityNotice] = useState("");
   const [editingQuote, setEditingQuote] = useState({ id: "", quoteNumber: "" });
+  const [toasts, setToasts] = useState([]);
 
   const [form, setForm] = useState({
     date: "",
@@ -83,8 +86,11 @@ export default function App() {
     email: "",
     pkg: "classic",
     addons: [],
+    addonQuantities: {},
     rentals: [],
+    rentalQuantities: {},
     menuItems: [],
+    menuItemQuantities: {},
     eventTypeId: "",
     bartenderRateTypeId: "",
     staffingRateTypeId: "",
@@ -99,6 +105,14 @@ export default function App() {
     depositLink: "",
     payMethod: "card"
   });
+
+  const pushToast = (message, tone = "info") => {
+    const id = `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
+    }, 3600);
+  };
 
   const effectiveMenuSections = useMemo(
     () => (Array.isArray(dynamicMenuSections) ? dynamicMenuSections : []),
@@ -119,6 +133,7 @@ export default function App() {
     if (currentEventTypeId) return;
     const fallbackEventTypeId = String(catalog.eventTypes?.[0]?.id || "").trim();
     if (!fallbackEventTypeId) return;
+    setGlobalEventTypeId(fallbackEventTypeId);
     setForm((prev) => {
       if (String(prev.eventTypeId || "").trim()) return prev;
       return {
@@ -126,7 +141,19 @@ export default function App() {
         eventTypeId: fallbackEventTypeId
       };
     });
-  }, [catalog.eventTypes, catalog.loading, form.eventTypeId]);
+  }, [catalog.eventTypes, catalog.loading, form.eventTypeId, setGlobalEventTypeId]);
+
+  useEffect(() => {
+    const nextGlobal = String(globalEventTypeId || "").trim();
+    if (!nextGlobal) return;
+    if (nextGlobal === String(form.eventTypeId || "").trim()) return;
+    setForm((prev) => ({
+      ...prev,
+      eventTypeId: nextGlobal,
+      menuItems: [],
+      menuItemQuantities: {}
+    }));
+  }, [globalEventTypeId, form.eventTypeId]);
 
   const totals = useMemo(
     () => calculateQuote(form, catalog, effectiveSettings),
@@ -216,12 +243,22 @@ export default function App() {
     );
     setForm((prev) => {
       const filtered = (prev.menuItems || []).filter((id) => availableMenuItemIds.has(id));
-      if (filtered.length === (prev.menuItems || []).length) {
+      const nextMenuQty = Object.entries(prev.menuItemQuantities || {}).reduce((acc, [id, quantity]) => {
+        if (availableMenuItemIds.has(id)) {
+          acc[id] = Math.max(1, Number(quantity || 1));
+        }
+        return acc;
+      }, {});
+      const unchangedSelection = filtered.length === (prev.menuItems || []).length;
+      const unchangedQuantities =
+        Object.keys(nextMenuQty).length === Object.keys(prev.menuItemQuantities || {}).length;
+      if (unchangedSelection && unchangedQuantities) {
         return prev;
       }
       return {
         ...prev,
-        menuItems: filtered
+        menuItems: filtered,
+        menuItemQuantities: nextMenuQty
       };
     });
   }, [effectiveMenuSections]);
@@ -309,6 +346,12 @@ export default function App() {
     const menuItemIds = new Set(
       effectiveMenuSections.flatMap((section) => (section.items || []).map((item) => item.id))
     );
+    const templateMenuItems = (template.menuItems || []).filter((id) => menuItemIds.has(id));
+    const templateAddons = (template.addons || []).filter((id) => addonIds.has(id));
+    const templateRentals = (template.rentals || []).filter((id) => rentalIds.has(id));
+    if (template.eventTypeId) {
+      setGlobalEventTypeId(template.eventTypeId);
+    }
 
     setForm((prev) => ({
       ...prev,
@@ -318,9 +361,12 @@ export default function App() {
       hours: Number(template.hours || prev.hours || 0),
       bartenders: Number(template.bartenders ?? prev.bartenders ?? 0),
       pkg: template.pkg || prev.pkg,
-      addons: (template.addons || []).filter((id) => addonIds.has(id)),
-      rentals: (template.rentals || []).filter((id) => rentalIds.has(id)),
-      menuItems: (template.menuItems || []).filter((id) => menuItemIds.has(id)),
+      addons: templateAddons,
+      addonQuantities: templateAddons.reduce((acc, id) => ({ ...acc, [id]: 1 }), {}),
+      rentals: templateRentals,
+      rentalQuantities: templateRentals.reduce((acc, id) => ({ ...acc, [id]: 1 }), {}),
+      menuItems: templateMenuItems,
+      menuItemQuantities: templateMenuItems.reduce((acc, id) => ({ ...acc, [id]: 1 }), {}),
       milesRT: Number(template.milesRT || prev.milesRT || 0),
       payMethod: template.payMethod || prev.payMethod,
       taxRegion: template.taxRegion || prev.taxRegion || catalog.settings.defaultTaxRegion || "",
@@ -343,11 +389,14 @@ export default function App() {
   };
 
   const handleEventTypeChange = (eventTypeId) => {
+    const nextEventTypeId = String(eventTypeId || "");
+    setGlobalEventTypeId(nextEventTypeId);
     setForm((prev) => ({
       ...prev,
-      eventTypeId: String(eventTypeId || ""),
+      eventTypeId: nextEventTypeId,
       eventTemplateId: "custom",
-      menuItems: []
+      menuItems: [],
+      menuItemQuantities: {}
     }));
   };
 
@@ -361,12 +410,28 @@ export default function App() {
       if (item.kind === "addon") {
         const next = new Set(prev.addons || []);
         next.add(item.id);
-        return { ...prev, eventTemplateId: "custom", addons: [...next] };
+        return {
+          ...prev,
+          eventTemplateId: "custom",
+          addons: [...next],
+          addonQuantities: {
+            ...(prev.addonQuantities || {}),
+            [item.id]: Math.max(1, Number(prev.addonQuantities?.[item.id] || 1))
+          }
+        };
       }
       if (item.kind === "rental") {
         const next = new Set(prev.rentals || []);
         next.add(item.id);
-        return { ...prev, eventTemplateId: "custom", rentals: [...next] };
+        return {
+          ...prev,
+          eventTemplateId: "custom",
+          rentals: [...next],
+          rentalQuantities: {
+            ...(prev.rentalQuantities || {}),
+            [item.id]: Math.max(1, Number(prev.rentalQuantities?.[item.id] || 1))
+          }
+        };
       }
       return prev;
     });
@@ -456,6 +521,7 @@ export default function App() {
           totals,
           catalogSource: catalog.source,
           settings: effectiveSettings,
+          catalog,
           ownerUid: authSession.user?.uid || "",
           ownerEmail: authSession.user?.email || ""
         })
@@ -464,6 +530,7 @@ export default function App() {
           totals,
           catalogSource: catalog.source,
           settings: effectiveSettings,
+          catalog,
           ownerUid: authSession.user?.uid || "",
           ownerEmail: authSession.user?.email || ""
         });
@@ -476,6 +543,7 @@ export default function App() {
           message: `Quote ${result.quoteNumber} updated in ${result.storage}. Version snapshot saved and rates locked.`,
           portalLink
         });
+        pushToast(`Quote ${result.quoteNumber} updated.`, "success");
         setHistoryOpen(true);
         return;
       }
@@ -505,6 +573,7 @@ export default function App() {
         message: `Quote ${result.quoteNumber} saved to ${result.storage}.${smsSuffix}`,
         portalLink
       });
+      pushToast(`Quote ${result.quoteNumber} saved.`, "success");
       setHistoryOpen(true);
     } catch (err) {
       recordDiagnosticError(err, {
@@ -514,6 +583,7 @@ export default function App() {
         venue: form.venue,
         guests: totals.guests
       });
+      pushToast(err?.message || "Failed to save quote.", "error");
       setSubmitState({ saving: false, message: err?.message || "Failed to save quote.", portalLink: "" });
     }
   };
@@ -529,6 +599,22 @@ export default function App() {
       ? selection.menuItemDetails.map((item) => String(item?.id || "").trim()).filter(Boolean)
       : [];
     const menuItems = menuItemsFromSelection.length ? menuItemsFromSelection : menuItemsFromDetails;
+    const menuItemQuantitiesFromDetails = Array.isArray(selection.menuItemDetails)
+      ? selection.menuItemDetails.reduce((acc, item) => {
+        const id = String(item?.id || "").trim();
+        if (!id) return acc;
+        acc[id] = Math.max(1, Number(item?.quantity || 1));
+        return acc;
+      }, {})
+      : {};
+    const menuItemQuantities = {
+      ...menuItemQuantitiesFromDetails,
+      ...(selection.menuItemQuantities || {})
+    };
+    const addonQuantities = selection.addonQuantities || {};
+    const rentalQuantities = selection.rentalQuantities || {};
+    const quoteEventTypeId = String(quote.eventTypeId || selection.eventTypeId || event.eventTypeId || "");
+    setGlobalEventTypeId(quoteEventTypeId);
 
     // Lock labor rates during editing by defaulting overrides to the applied snapshot.
     const laborRateSnapshot = selection.laborRateSnapshot || {};
@@ -559,9 +645,12 @@ export default function App() {
       email: customer.email || "",
       pkg: selection.packageId || prev.pkg,
       addons: Array.isArray(selection.addons) ? selection.addons : [],
+      addonQuantities,
       rentals: Array.isArray(selection.rentals) ? selection.rentals : [],
+      rentalQuantities,
       menuItems,
-      eventTypeId: String(quote.eventTypeId || selection.eventTypeId || event.eventTypeId || ""),
+      menuItemQuantities,
+      eventTypeId: quoteEventTypeId,
       bartenderRateTypeId:
         String(selection.bartenderRateTypeId || laborRateSnapshot.bartenderRateTypeId || ""),
       staffingRateTypeId:
@@ -689,6 +778,23 @@ export default function App() {
     );
   }
 
+  if (catalog.requiresFirebase) {
+    return (
+      <main className="auth-shell container">
+        <section className="panel auth-card">
+          <h1>Catalog Unavailable</h1>
+          <p className="muted">
+            Firebase catalog access is required in this environment.
+          </p>
+          <p className="source-note">{catalog.error || "Configure Firebase credentials and reload."}</p>
+          <div className="auth-actions">
+            <button type="button" className="ghost" onClick={handleSignOut}>Sign Out</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <div className="app-shell" style={appThemeVars}>
       <header className="site-header">
@@ -789,15 +895,29 @@ export default function App() {
               <StepMenu
                 form={form}
                 setForm={setForm}
-                catalog={catalog}
-                recommendations={recommendations}
-                onApplyRecommendation={applyRecommendation}
                 menuSections={effectiveMenuSections}
                 menuLoading={dynamicMenuLoading}
               />
             )}
-            {!catalog.loading && step === 3 && <StepReview form={form} totals={totals} settings={effectiveSettings} />}
             {!catalog.loading && step === 3 && (
+              <StepServices
+                form={form}
+                setForm={setForm}
+                catalog={catalog}
+                recommendations={recommendations}
+                onApplyRecommendation={applyRecommendation}
+              />
+            )}
+            {!catalog.loading && step === 4 && <StepReview form={form} totals={totals} settings={effectiveSettings} />}
+            {!catalog.loading && step === 5 && (
+              <div className="grid two-col">
+                <label className="field">
+                  <span>Payment method</span>
+                  <select value={form.payMethod} onChange={(e) => setForm((f) => ({ ...f, payMethod: e.target.value }))}>
+                    <option value="card">Pay by Card</option>
+                    <option value="ach">Pay by ACH/Check</option>
+                  </select>
+                </label>
               <label className="field deposit-link-field">
                 <span>Deposit payment link (optional)</span>
                 <input
@@ -807,6 +927,12 @@ export default function App() {
                   onChange={(e) => setForm((f) => ({ ...f, depositLink: e.target.value }))}
                 />
               </label>
+                <article className="summary-total">
+                  <p><strong>Final total:</strong> {currency(totals.total)}</p>
+                  <p><strong>Deposit due:</strong> {currency(totals.deposit)}</p>
+                  <p className="muted">Saving will keep a version snapshot for edits and lifecycle changes.</p>
+                </article>
+              </div>
             )}
           </div>
 
@@ -816,20 +942,16 @@ export default function App() {
               <button className="ghost" onClick={() => setCompareOpen(true)} disabled={catalog.loading || step < 2}>Compare Scenario</button>
             </div>
             <div className="right-actions">
-              {step < 3 ? (
-                <button className="cta" onClick={() => setStep((s) => Math.min(3, s + 1))} disabled={catalog.loading}>Next</button>
+              {step < 5 ? (
+                <button className="cta" onClick={() => setStep((s) => Math.min(5, s + 1))} disabled={catalog.loading}>Next</button>
               ) : (
                 <>
-                  <select value={form.payMethod} onChange={(e) => setForm((f) => ({ ...f, payMethod: e.target.value }))}>
-                    <option value="card">Pay by Card</option>
-                    <option value="ach">Pay by ACH/Check</option>
-                  </select>
                 <button
                   className="cta"
                   onClick={handleSubmitQuote}
                   disabled={submitState.saving || catalog.loading || totals.guests <= 0}
                 >
-                    {submitState.saving ? (isEditingQuote ? "Saving Changes..." : "Saving...") : (isEditingQuote ? "Save Changes" : "Accept & Continue")}
+                    {submitState.saving ? (isEditingQuote ? "Saving Changes..." : "Saving...") : (isEditingQuote ? "Save Changes" : "Save & Submit")}
                   </button>
                 </>
               )}
@@ -855,8 +977,18 @@ export default function App() {
           {submitState.message && <p className="source-note">{submitState.message}</p>}
         </section>
 
-        <LiveBreakdown form={form} totals={totals} settings={catalog.settings} catalog={catalog} />
+        <LiveBreakdown form={form} totals={totals} settings={effectiveSettings} catalog={catalog} />
       </main>
+
+      {toasts.length > 0 && (
+        <div className="toast-stack" role="status" aria-live="polite">
+          {toasts.map((toast) => (
+            <div key={toast.id} className={`toast toast-${toast.tone || "info"}`}>
+              {toast.message}
+            </div>
+          ))}
+        </div>
+      )}
 
       <Suspense fallback={null}>
         {authSession.isAdmin && (
@@ -866,6 +998,9 @@ export default function App() {
             onClose={() => setAdminOpen(false)}
             onSave={catalog.saveCatalog}
             saving={catalog.saving}
+            selectedEventType={globalEventTypeId}
+            onEventTypeChange={setGlobalEventTypeId}
+            onToast={pushToast}
           />
         )}
 
@@ -873,8 +1008,10 @@ export default function App() {
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           basePortalUrl={`${window.location.origin}${window.location.pathname}`}
+          currentUserUid={authSession.user?.uid || ""}
           currentUserEmail={authSession.user?.email || ""}
           onEditQuote={handleEditQuote}
+          onToast={pushToast}
         />
 
         <EventScheduleModal

@@ -7,6 +7,7 @@ import {
   buildQuoteEmailTemplate,
   convertQuoteToContract,
   deleteQuote,
+  duplicateQuote,
   getAllowedStatusTransitions,
   getQuoteHistory,
   PAYMENT_STATUSES,
@@ -29,12 +30,28 @@ function canConvertToContract(quote) {
   return status === "accepted" || (status === "booked" && !hasContract);
 }
 
+function statusBucket(status) {
+  const normalized = String(status || "draft").trim().toLowerCase();
+  if (normalized === "draft") return "draft";
+  if (normalized === "deleted") return "deleted";
+  if (["sent", "viewed", "accepted"].includes(normalized)) return "submitted";
+  if (["booked", "declined", "expired"].includes(normalized)) return "archived";
+  return normalized;
+}
+
+function statusBucketLabel(status) {
+  const bucket = statusBucket(status);
+  return bucket.charAt(0).toUpperCase() + bucket.slice(1);
+}
+
 export default function QuoteHistoryModal({
   open,
   onClose,
   basePortalUrl = "",
+  currentUserUid = "",
   currentUserEmail = "",
-  onEditQuote
+  onEditQuote,
+  onToast
 }) {
   const [state, setState] = useState({
     loading: false,
@@ -52,6 +69,14 @@ export default function QuoteHistoryModal({
   const [convertingId, setConvertingId] = useState("");
   const [updatingConfirmationId, setUpdatingConfirmationId] = useState("");
   const [creatingCheckoutId, setCreatingCheckoutId] = useState("");
+  const [duplicatingId, setDuplicatingId] = useState("");
+  const [pendingDeleteQuote, setPendingDeleteQuote] = useState(null);
+
+  const pushToast = (message, tone = "info") => {
+    if (typeof onToast === "function") {
+      onToast(message, tone);
+    }
+  };
 
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "", feedback: "" }));
@@ -110,7 +135,7 @@ export default function QuoteHistoryModal({
   );
 
   const filteredQuotes = state.quotes.filter((quote) => {
-    const statusMatch = statusFilter === "all" || (quote.status || "draft") === statusFilter;
+    const statusMatch = statusFilter === "all" || statusBucket(quote.status || "draft") === statusFilter;
     if (!statusMatch) return false;
 
     const quoteEventType = String(quote.eventTypeId || quote.selection?.eventTypeId || "").trim();
@@ -170,6 +195,7 @@ export default function QuoteHistoryModal({
       applyStatusLocally(quoteId, nextStatus);
       if (!silent) {
         setState((prev) => ({ ...prev, feedback: `Status updated to ${nextStatus}.` }));
+        pushToast(`Quote status updated to ${nextStatus}.`, "success");
       }
     } catch (err) {
       setState((prev) => ({
@@ -187,6 +213,7 @@ export default function QuoteHistoryModal({
       await updateQuotePaymentStatus(quoteId, nextPaymentStatus);
       applyPaymentLocally(quoteId, nextPaymentStatus);
       setState((prev) => ({ ...prev, feedback: `Payment marked ${nextPaymentStatus}.` }));
+      pushToast(`Payment marked ${nextPaymentStatus}.`, "success");
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -208,6 +235,7 @@ export default function QuoteHistoryModal({
         deletedAtISO: ""
       }));
       setState((prev) => ({ ...prev, feedback: "Quote reopened to draft." }));
+      pushToast("Quote reopened to draft.", "success");
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -229,6 +257,7 @@ export default function QuoteHistoryModal({
         deletedAtISO: new Date().toISOString()
       }));
       setState((prev) => ({ ...prev, feedback: "Quote soft-deleted." }));
+      pushToast("Quote soft-deleted.", "success");
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -237,6 +266,42 @@ export default function QuoteHistoryModal({
     } finally {
       setUpdatingId("");
     }
+  };
+
+  const handleDuplicateQuote = async (quote) => {
+    if (!quote?.id) return;
+    setDuplicatingId(quote.id);
+    setState((prev) => ({ ...prev, error: "" }));
+    try {
+      const result = await duplicateQuote(quote.id, {
+        ownerUid: currentUserUid,
+        ownerEmail: currentUserEmail
+      });
+      setState((prev) => ({
+        ...prev,
+        feedback: `Quote duplicated as ${result.quoteNumber}.`
+      }));
+      pushToast(`Quote duplicated as ${result.quoteNumber}.`, "success");
+      await load();
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "Failed to duplicate quote."
+      }));
+    } finally {
+      setDuplicatingId("");
+    }
+  };
+
+  const requestDeleteQuote = (quote) => {
+    setPendingDeleteQuote(quote || null);
+  };
+
+  const confirmDeleteQuote = async () => {
+    const quoteId = pendingDeleteQuote?.id;
+    if (!quoteId) return;
+    await handleDeleteQuote(quoteId);
+    setPendingDeleteQuote(null);
   };
 
   const handleConvertToContract = async (quote) => {
@@ -264,6 +329,7 @@ export default function QuoteHistoryModal({
         ...prev,
         feedback: `Converted ${quote.quoteNumber} to contract ${result.contractNumber}.${acceptedNote}${capacityNote}`
       }));
+      pushToast(`Converted ${quote.quoteNumber} to contract ${result.contractNumber}.`, "success");
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -291,6 +357,7 @@ export default function QuoteHistoryModal({
         ...prev,
         feedback: `Confirmation marked ${nextConfirmationStatus}.`
       }));
+      pushToast(`Confirmation marked ${nextConfirmationStatus}.`, "success");
     } catch (err) {
       setState((prev) => ({
         ...prev,
@@ -310,10 +377,12 @@ export default function QuoteHistoryModal({
       const mailText = `Subject: ${template.subject}\n\n${template.body}`;
       await navigator.clipboard.writeText(mailText);
       setState((prev) => ({ ...prev, feedback: `Email template copied for ${quote.quoteNumber}.` }));
+      pushToast(`Email template copied for ${quote.quoteNumber}.`, "success");
 
       if (quote.status === "draft") {
         await handleStatusUpdate(quote.id, "sent", true);
         setState((prev) => ({ ...prev, feedback: `Email copied and ${quote.quoteNumber} marked sent.` }));
+        pushToast(`Email copied and ${quote.quoteNumber} marked sent.`, "success");
       }
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to copy email template." }));
@@ -325,6 +394,7 @@ export default function QuoteHistoryModal({
       const { exportQuoteProposal } = await import("../lib/proposalExport");
       await exportQuoteProposal(quote);
       setState((prev) => ({ ...prev, feedback: `Downloaded PDF for ${quote.quoteNumber}.` }));
+      pushToast(`Downloaded PDF for ${quote.quoteNumber}.`, "success");
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to export proposal PDF." }));
     }
@@ -341,6 +411,7 @@ export default function QuoteHistoryModal({
       }
       await navigator.clipboard.writeText(paymentLink);
       setState((prev) => ({ ...prev, feedback: `Deposit link copied for ${quote.quoteNumber}.` }));
+      pushToast(`Deposit link copied for ${quote.quoteNumber}.`, "success");
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to copy payment link." }));
     }
@@ -358,6 +429,7 @@ export default function QuoteHistoryModal({
       const portalLink = `${base}?portal=${quote.portalKey}`;
       await navigator.clipboard.writeText(portalLink);
       setState((prev) => ({ ...prev, feedback: `Portal link copied for ${quote.quoteNumber}.` }));
+      pushToast(`Portal link copied for ${quote.quoteNumber}.`, "success");
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to copy portal link." }));
     }
@@ -391,6 +463,7 @@ export default function QuoteHistoryModal({
 
       applyPaymentLinkLocally(quote.id, paymentLink);
       setState((prev) => ({ ...prev, feedback: `Stripe checkout created for ${quote.quoteNumber}.` }));
+      pushToast(`Stripe checkout created for ${quote.quoteNumber}.`, "success");
       window.open(paymentLink, "_blank", "noopener,noreferrer");
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to create Stripe checkout." }));
@@ -436,12 +509,8 @@ export default function QuoteHistoryModal({
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All statuses</option>
             <option value="draft">Draft</option>
-            <option value="sent">Sent</option>
-            <option value="viewed">Viewed</option>
-            <option value="accepted">Accepted</option>
-            <option value="booked">Booked</option>
-            <option value="declined">Declined</option>
-            <option value="expired">Expired</option>
+            <option value="submitted">Submitted</option>
+            <option value="archived">Archived</option>
             <option value="deleted">Deleted</option>
           </select>
         </div>
@@ -462,7 +531,7 @@ export default function QuoteHistoryModal({
                 <th>Contract</th>
                 <th>Confirm</th>
                 <th>Expires</th>
-                <th>Created</th>
+                <th>Updated</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -498,15 +567,18 @@ export default function QuoteHistoryModal({
                     <td>{currency(quote.totals?.total || 0)}</td>
                     <td>{currency(quote.totals?.deposit || 0)}</td>
                     <td>
-                      <select
-                        value={quote.status || "draft"}
-                        onChange={(e) => handleStatusUpdate(quote.id, e.target.value)}
-                        disabled={updatingId === quote.id || statusTransitions.length === 0 || quote.status === "deleted"}
-                      >
-                        {statusOptions.map((status) => (
-                          <option key={status} value={status}>{status}</option>
-                        ))}
-                      </select>
+                      <div className="history-meta-stack">
+                        <select
+                          value={quote.status || "draft"}
+                          onChange={(e) => handleStatusUpdate(quote.id, e.target.value)}
+                          disabled={updatingId === quote.id || statusTransitions.length === 0 || quote.status === "deleted"}
+                        >
+                          {statusOptions.map((status) => (
+                            <option key={status} value={status}>{status}</option>
+                          ))}
+                        </select>
+                        <small>{statusBucketLabel(quote.status || "draft")}</small>
+                      </div>
                     </td>
                     <td>
                       <select
@@ -544,7 +616,7 @@ export default function QuoteHistoryModal({
                       )}
                     </td>
                     <td>{fmtDate(quote.expiresAtISO)}</td>
-                    <td>{fmtDate(quote.createdAtISO)}</td>
+                    <td>{fmtDate(quote.updatedAtISO || quote.createdAtISO)}</td>
                     <td>
                       <div className="row-actions">
                         {canConvert && (
@@ -572,6 +644,14 @@ export default function QuoteHistoryModal({
                             Edit
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="ghost compact"
+                          onClick={() => handleDuplicateQuote(quote)}
+                          disabled={duplicatingId === quote.id}
+                        >
+                          {duplicatingId === quote.id ? "Duplicating..." : "Duplicate"}
+                        </button>
                         <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
@@ -597,7 +677,7 @@ export default function QuoteHistoryModal({
                           <button
                             type="button"
                             className="ghost compact"
-                            onClick={() => handleDeleteQuote(quote.id)}
+                            onClick={() => requestDeleteQuote(quote)}
                             disabled={updatingId === quote.id}
                           >
                             {updatingId === quote.id ? "Deleting..." : "Delete"}
@@ -611,6 +691,28 @@ export default function QuoteHistoryModal({
             </tbody>
           </table>
         </div>
+
+        {pendingDeleteQuote && (
+          <div className="confirm-modal">
+            <p>
+              Delete quote <strong>{pendingDeleteQuote.quoteNumber || pendingDeleteQuote.id}</strong>?
+              This is a soft delete and can be reopened later.
+            </p>
+            <div className="right-actions">
+              <button type="button" className="ghost compact" onClick={() => setPendingDeleteQuote(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="cta compact"
+                onClick={confirmDeleteQuote}
+                disabled={updatingId === pendingDeleteQuote.id}
+              >
+                {updatingId === pendingDeleteQuote.id ? "Deleting..." : "Confirm Delete"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

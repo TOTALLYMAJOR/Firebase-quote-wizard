@@ -13,6 +13,8 @@ import { getEventTypes, getMenuCategories, getMenuItems } from "../lib/menuServi
 import { recordDiagnosticError } from "../lib/sessionDiagnostics";
 
 const LOCAL_KEY = "quoteWizard.catalog";
+const ALLOW_LOCAL_CATALOG_FALLBACK =
+  import.meta.env.DEV && String(import.meta.env.VITE_ALLOW_LOCAL_CATALOG_FALLBACK || "true").trim().toLowerCase() !== "false";
 
 function defaultCatalog() {
   return normalizeCatalog({
@@ -23,17 +25,41 @@ function defaultCatalog() {
   });
 }
 
+function blockedCatalog() {
+  return normalizeCatalog({
+    packages: [],
+    addons: [],
+    rentals: [],
+    settings: {
+      ...DEFAULT_SETTINGS,
+      menuSections: []
+    }
+  });
+}
+
+function normalizePricingType(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") {
+    return raw;
+  }
+  return "per_event";
+}
+
 function normalizeMenuSectionsFromEvent(categories = [], items = []) {
   const itemLookup = new Map();
   items.forEach((item) => {
+    if (item?.active === false) return;
     const categoryId = String(item?.categoryId || "").trim();
     if (!categoryId) return;
+    const pricingType = normalizePricingType(item?.pricingType || item?.type);
     const nextItems = itemLookup.get(categoryId) || [];
     nextItems.push({
       id: String(item?.id || "").trim(),
       name: String(item?.name || "").trim() || "Untitled Item",
-      type: item?.type === "per_person" ? "per_person" : "per_event",
-      price: Number(item?.price || 0)
+      pricingType,
+      type: pricingType,
+      price: Number(item?.price || 0),
+      active: item?.active !== false
     });
     itemLookup.set(categoryId, nextItems);
   });
@@ -96,17 +122,24 @@ async function saveToFirebase(catalog) {
     });
   });
   catalog.addons.forEach((item) => {
+    const pricingType = normalizePricingType(item.pricingType || item.type || "per_person");
     batch.set(doc(db, "catalogAddons", item.id), {
       name: item.name,
-      type: item.type,
-      price: Number(item.price || 0)
+      pricingType,
+      type: pricingType,
+      price: Number(item.price || 0),
+      active: item.active !== false
     });
   });
   catalog.rentals.forEach((item) => {
+    const pricingType = normalizePricingType(item.pricingType || item.type || "per_item");
     batch.set(doc(db, "catalogRentals", item.id), {
       name: item.name,
       price: Number(item.price || 0),
-      qtyPerGuests: Number(item.qtyPerGuests || 1)
+      qtyPerGuests: Number(item.qtyPerGuests || 1),
+      pricingType,
+      type: pricingType,
+      active: item.active !== false
     });
   });
 
@@ -118,10 +151,11 @@ export function useCatalogData({ enabled = true } = {}) {
   const [state, setState] = useState(() => ({
     loading: enabled,
     saving: false,
-    source: enabled ? (firebaseReady ? "firebase" : "local-defaults") : "auth-required",
+    source: enabled ? (firebaseReady ? "firebase" : ALLOW_LOCAL_CATALOG_FALLBACK ? "local-defaults" : "firebase-required") : "auth-required",
     error: "",
+    requiresFirebase: enabled && !firebaseReady && !ALLOW_LOCAL_CATALOG_FALLBACK,
     eventTypes: [],
-    ...defaultCatalog()
+    ...(enabled && !firebaseReady && !ALLOW_LOCAL_CATALOG_FALLBACK ? blockedCatalog() : defaultCatalog())
   }));
 
   useEffect(() => {
@@ -135,6 +169,7 @@ export function useCatalogData({ enabled = true } = {}) {
         saving: false,
         source: "auth-required",
         error: "",
+        requiresFirebase: false,
         eventTypes: [],
         ...fallback
       }));
@@ -159,6 +194,7 @@ export function useCatalogData({ enabled = true } = {}) {
                 ...prev,
                 loading: false,
                 source: "firebase-empty-defaults",
+                requiresFirebase: false,
                 eventTypes,
                 ...defaults
               }));
@@ -170,8 +206,24 @@ export function useCatalogData({ enabled = true } = {}) {
             ...prev,
             loading: false,
             source: "firebase",
+            requiresFirebase: false,
             eventTypes,
             ...catalog
+          }));
+          return;
+        }
+
+        if (!ALLOW_LOCAL_CATALOG_FALLBACK) {
+          const blocked = blockedCatalog();
+          if (!alive) return;
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            source: "firebase-required",
+            requiresFirebase: true,
+            error: "Firebase catalog is required in this environment. Configure Firebase to continue.",
+            eventTypes: [],
+            ...blocked
           }));
           return;
         }
@@ -183,6 +235,7 @@ export function useCatalogData({ enabled = true } = {}) {
           ...prev,
           loading: false,
           source: cached ? "local-cache" : "local-defaults",
+          requiresFirebase: false,
           eventTypes: [],
           ...catalog
         }));
@@ -192,12 +245,15 @@ export function useCatalogData({ enabled = true } = {}) {
           surface: "catalog",
           action: "load"
         });
-        const fallback = defaultCatalog();
+        const fallback = ALLOW_LOCAL_CATALOG_FALLBACK ? defaultCatalog() : blockedCatalog();
         setState((prev) => ({
           ...prev,
           loading: false,
-          source: "fallback-defaults",
-          error: err?.message || "Failed to load catalog.",
+          source: ALLOW_LOCAL_CATALOG_FALLBACK ? "fallback-defaults" : "firebase-required",
+          requiresFirebase: !ALLOW_LOCAL_CATALOG_FALLBACK,
+          error: ALLOW_LOCAL_CATALOG_FALLBACK
+            ? err?.message || "Failed to load catalog."
+            : "Firebase catalog is required in this environment. Configure Firebase to continue.",
           eventTypes: [],
           ...fallback
         }));
@@ -214,6 +270,9 @@ export function useCatalogData({ enabled = true } = {}) {
     if (!enabled) {
       return { ok: false, error: "Sign in as staff to edit catalog." };
     }
+    if (!firebaseReady && !ALLOW_LOCAL_CATALOG_FALLBACK) {
+      return { ok: false, error: "Firebase catalog is required in this environment." };
+    }
     const normalized = normalizeCatalog(nextCatalog);
     setState((prev) => ({ ...prev, saving: true, error: "" }));
 
@@ -222,11 +281,14 @@ export function useCatalogData({ enabled = true } = {}) {
         await saveToFirebase(normalized);
       }
 
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(toStorageCatalog(normalized)));
+      if (ALLOW_LOCAL_CATALOG_FALLBACK) {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(toStorageCatalog(normalized)));
+      }
       setState((prev) => ({
         ...prev,
         saving: false,
         source: firebaseReady ? "firebase" : "local-cache",
+        requiresFirebase: false,
         ...normalized
       }));
       return { ok: true };
@@ -250,15 +312,11 @@ export function useCatalogData({ enabled = true } = {}) {
       return [];
     }
 
-    try {
-      const [categories, items] = await Promise.all([
-        getMenuCategories(nextEventTypeId),
-        getMenuItems(nextEventTypeId)
-      ]);
-      return normalizeMenuSectionsFromEvent(categories, items);
-    } catch {
-      return [];
-    }
+    const [categories, items] = await Promise.all([
+      getMenuCategories(nextEventTypeId),
+      getMenuItems(nextEventTypeId)
+    ]);
+    return normalizeMenuSectionsFromEvent(categories, items);
   }, []);
 
   return {

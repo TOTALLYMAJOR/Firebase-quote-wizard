@@ -48,6 +48,20 @@ const RULE_KIND_META = [
   { value: "package", label: "Package" }
 ];
 
+const ADMIN_TABS = [
+  { id: "packages", label: "Packages" },
+  { id: "addons", label: "Addons" },
+  { id: "rentals", label: "Rentals" },
+  { id: "menu", label: "Menu" },
+  { id: "pricing", label: "Pricing" }
+];
+
+function normalizePricingType(value, fallback = "per_event") {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+  return fallback;
+}
+
 function defaultRuleName(kind) {
   if (kind === "rental") return "Rental recommendation";
   if (kind === "package") return "Package recommendation";
@@ -86,8 +100,18 @@ function Section({ title, onAdd, children }) {
   );
 }
 
-export default function AdminCatalogModal({ open, catalog, onClose, onSave, saving }) {
+export default function AdminCatalogModal({
+  open,
+  catalog,
+  onClose,
+  onSave,
+  saving,
+  selectedEventType: selectedEventTypeProp = "",
+  onEventTypeChange,
+  onToast
+}) {
   const [draft, setDraft] = useState(catalog);
+  const [activeTab, setActiveTab] = useState("packages");
   const [status, setStatus] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [jsonDrafts, setJsonDrafts] = useState(() => buildJsonDrafts(catalog));
@@ -105,8 +129,52 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
   const [newItemDraft, setNewItemDraft] = useState({
     name: "",
     price: 0,
-    type: "per_event"
+    pricingType: "per_event",
+    active: true
   });
+  const [menuItemBaselines, setMenuItemBaselines] = useState({});
+  const [menuItemDirty, setMenuItemDirty] = useState({});
+  const [menuItemSavingId, setMenuItemSavingId] = useState("");
+
+  const pushToast = (message, tone = "info") => {
+    if (typeof onToast === "function") {
+      onToast(message, tone);
+    }
+  };
+
+  const normalizeManagedMenuItem = (item) => {
+    const pricingType = normalizePricingType(item?.pricingType || item?.type, "per_event");
+    return {
+      ...item,
+      name: String(item?.name || "").trim(),
+      price: Number(item?.price || 0),
+      pricingType,
+      type: pricingType,
+      active: item?.active !== false
+    };
+  };
+
+  const buildMenuItemBaselineMap = (items) =>
+    (items || []).reduce((acc, item) => {
+      acc[item.id] = { ...item };
+      return acc;
+    }, {});
+
+  const applyManagedMenuItems = (items) => {
+    const normalized = (items || []).map(normalizeManagedMenuItem);
+    setMenuItems(normalized);
+    setMenuItemBaselines(buildMenuItemBaselineMap(normalized));
+    setMenuItemDirty({});
+    setMenuItemSavingId("");
+  };
+
+  const setManagedEventType = (eventTypeId) => {
+    const nextEventTypeId = String(eventTypeId || "").trim();
+    setSelectedEventType(nextEventTypeId);
+    if (typeof onEventTypeChange === "function") {
+      onEventTypeChange(nextEventTypeId);
+    }
+  };
 
   useEffect(() => {
     if (open) {
@@ -114,20 +182,24 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       setJsonDrafts(buildJsonDrafts(catalog));
       setStatus("");
       setUploadingLogo(false);
-      setSelectedEventType("");
+      setActiveTab("packages");
+      setSelectedEventType(String(selectedEventTypeProp || "").trim());
       setSelectedCategory("");
       setMenuEventTypes([]);
       setMenuCategories([]);
       setMenuItems([]);
+      setMenuItemBaselines({});
+      setMenuItemDirty({});
+      setMenuItemSavingId("");
       setMenuLoading(false);
       setMenuActionLoading(false);
       setNewEventTypeName("");
       setNewCategoryName("");
       setEventTypeEditName("");
       setCategoryEditName("");
-      setNewItemDraft({ name: "", price: 0, type: "per_event" });
+      setNewItemDraft({ name: "", price: 0, pricingType: "per_event", active: true });
     }
-  }, [open, catalog]);
+  }, [open, catalog, selectedEventTypeProp]);
 
   useEffect(() => {
     if (!open) return;
@@ -139,10 +211,11 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
         const eventTypes = await getEventTypes();
         if (!alive) return;
         setMenuEventTypes(eventTypes);
-        setSelectedEventType((current) => current || eventTypes[0]?.id || "");
+        setManagedEventType(selectedEventTypeProp || eventTypes[0]?.id || "");
       } catch (err) {
         if (!alive) return;
         setStatus(err?.message || "Failed to load menu event types.");
+        pushToast(err?.message || "Failed to load menu event types.", "error");
       } finally {
         if (alive) setMenuLoading(false);
       }
@@ -170,11 +243,11 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       try {
         const [categories, items] = await Promise.all([
           getMenuCategories(eventTypeId),
-          getMenuItems(eventTypeId)
+          getMenuItems(eventTypeId, { includeInactive: true })
         ]);
         if (!alive) return;
         setMenuCategories(categories);
-        setMenuItems(items);
+        applyManagedMenuItems(items);
         setSelectedCategory((current) => {
           const keepCurrent = current && categories.some((category) => category.id === current);
           if (keepCurrent) return current;
@@ -183,6 +256,7 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       } catch (err) {
         if (!alive) return;
         setStatus(err?.message || "Failed to load menu categories/items.");
+        pushToast(err?.message || "Failed to load menu categories/items.", "error");
       } finally {
         if (alive) setMenuLoading(false);
       }
@@ -221,9 +295,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     const template =
       key === "packages"
         ? { id, name: "New Package", ppp: 0 }
-        : key === "addons"
-          ? { id, name: "New Add-on", type: "per_person", price: 0 }
-          : { id, name: "New Rental", price: 0, qtyPerGuests: 10 };
+      : key === "addons"
+          ? { id, name: "New Add-on", pricingType: "per_person", type: "per_person", price: 0, active: true }
+          : { id, name: "New Rental", pricingType: "per_item", type: "per_item", price: 0, qtyPerGuests: 10, active: true };
 
     setDraft((prev) => ({ ...prev, [key]: [...prev[key], template] }));
   };
@@ -431,11 +505,13 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
   const refreshEventTypes = async (preferredId = "") => {
     const items = await getEventTypes();
     setMenuEventTypes(items);
-    setSelectedEventType((current) => {
-      if (preferredId && items.some((item) => item.id === preferredId)) return preferredId;
-      if (current && items.some((item) => item.id === current)) return current;
-      return items[0]?.id || "";
-    });
+    const currentId = String(selectedEventType || "").trim();
+    const nextId =
+      (preferredId && items.some((item) => item.id === preferredId) && preferredId) ||
+      (currentId && items.some((item) => item.id === currentId) && currentId) ||
+      items[0]?.id ||
+      "";
+    setManagedEventType(nextId);
     return items;
   };
 
@@ -449,10 +525,10 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     }
     const [categories, items] = await Promise.all([
       getMenuCategories(nextEventTypeId),
-      getMenuItems(nextEventTypeId)
+      getMenuItems(nextEventTypeId, { includeInactive: true })
     ]);
     setMenuCategories(categories);
-    setMenuItems(items);
+    applyManagedMenuItems(items);
     setSelectedCategory((current) => {
       if (current && categories.some((category) => category.id === current)) return current;
       return categories[0]?.id || "";
@@ -472,8 +548,10 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       await refreshEventTypes(created.id);
       await refreshEventMenuData(created.id);
       setStatus(`Event type "${created.name}" added.`);
+      pushToast(`Event type "${created.name}" added.`, "success");
     } catch (err) {
       setStatus(err?.message || "Failed to create event type.");
+      pushToast(err?.message || "Failed to create event type.", "error");
     } finally {
       setMenuActionLoading(false);
     }
@@ -499,8 +577,10 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       await refreshEventMenuData(selectedEventType);
       setSelectedCategory(created.id);
       setStatus(`Category "${created.name}" added.`);
+      pushToast(`Category "${created.name}" added.`, "success");
     } catch (err) {
       setStatus(err?.message || "Failed to create category.");
+      pushToast(err?.message || "Failed to create category.", "error");
     } finally {
       setMenuActionLoading(false);
     }
@@ -522,8 +602,10 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       await updateEventType(selectedEventType, { name });
       await refreshEventTypes(selectedEventType);
       setStatus("Event type updated.");
+      pushToast("Event type updated.", "success");
     } catch (err) {
       setStatus(err?.message || "Failed to update event type.");
+      pushToast(err?.message || "Failed to update event type.", "error");
     } finally {
       setMenuActionLoading(false);
     }
@@ -548,8 +630,10 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       });
       await refreshEventMenuData(selectedEventType);
       setStatus("Category updated.");
+      pushToast("Category updated.", "success");
     } catch (err) {
       setStatus(err?.message || "Failed to update category.");
+      pushToast(err?.message || "Failed to update category.", "error");
     } finally {
       setMenuActionLoading(false);
     }
@@ -572,37 +656,113 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
         categoryId: selectedCategory,
         name,
         price: Number(newItemDraft.price || 0),
-        type: newItemDraft.type
+        pricingType: normalizePricingType(newItemDraft.pricingType, "per_event"),
+        active: newItemDraft.active !== false
       });
-      setNewItemDraft({ name: "", price: 0, type: "per_event" });
+      setNewItemDraft({ name: "", price: 0, pricingType: "per_event", active: true });
       await refreshEventMenuData(selectedEventType);
       setStatus("Menu item added.");
+      pushToast("Menu item added.", "success");
     } catch (err) {
       setStatus(err?.message || "Failed to add menu item.");
+      pushToast(err?.message || "Failed to add menu item.", "error");
     } finally {
       setMenuActionLoading(false);
     }
   };
 
   const patchManagedMenuItem = (id, field, value) => {
-    setMenuItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+    setMenuItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        if (field === "pricingType") {
+          const pricingType = normalizePricingType(value, "per_event");
+          return { ...item, pricingType, type: pricingType };
+        }
+        if (field === "active") {
+          return { ...item, active: Boolean(value) };
+        }
+        if (field === "price") {
+          return { ...item, price: Number(value || 0) };
+        }
+        return { ...item, [field]: value };
+      })
+    );
+    setMenuItemDirty((prev) => ({ ...prev, [id]: true }));
   };
 
   const handleUpdateManagedMenuItem = async (item) => {
-    setMenuActionLoading(true);
+    const itemId = String(item?.id || "").trim();
+    if (!itemId) return;
+    setMenuItemSavingId(itemId);
     try {
-      await updateMenuItem(item.id, {
-        name: item.name,
+      const pricingType = normalizePricingType(item.pricingType || item.type, "per_event");
+      const nextPayload = {
+        name: String(item.name || "").trim() || "Untitled Item",
         price: Number(item.price || 0),
-        type: item.type
+        pricingType,
+        active: item.active !== false
+      };
+      await updateMenuItem(item.id, {
+        ...nextPayload,
+        eventTypeId: selectedEventType,
+        categoryId: selectedCategory || item.categoryId
+      });
+      setMenuItems((prev) =>
+        prev.map((entry) =>
+          entry.id === itemId
+            ? {
+              ...entry,
+              ...nextPayload,
+              type: pricingType
+            }
+            : entry
+        )
+      );
+      setMenuItemBaselines((prev) => ({
+        ...prev,
+        [itemId]: {
+          ...(prev[itemId] || item),
+          ...nextPayload,
+          type: pricingType
+        }
+      }));
+      setMenuItemDirty((prev) => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
       });
       setStatus("Menu item updated.");
-      await refreshEventMenuData(selectedEventType);
+      pushToast("Menu item updated.", "success");
     } catch (err) {
       setStatus(err?.message || "Failed to update menu item.");
+      const baseline = menuItemBaselines[itemId];
+      if (baseline) {
+        setMenuItems((prev) => prev.map((entry) => (entry.id === itemId ? { ...baseline } : entry)));
+      }
+      setMenuItemDirty((prev) => {
+        const next = { ...prev };
+        delete next[itemId];
+        return next;
+      });
+      pushToast(err?.message || "Failed to update menu item.", "error");
     } finally {
-      setMenuActionLoading(false);
+      setMenuItemSavingId("");
     }
+  };
+
+  const handleManagedMenuItemBlur = (itemId) => {
+    if (!menuItemDirty[itemId]) return;
+    const current = menuItems.find((entry) => entry.id === itemId);
+    if (!current) return;
+    handleUpdateManagedMenuItem(current);
+  };
+
+  const handleManagedMenuItemKeyDown = (event, itemId) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    event.currentTarget.blur();
+    handleManagedMenuItemBlur(itemId);
   };
 
   const handleDeleteManagedMenuItem = async (id) => {
@@ -610,9 +770,11 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     try {
       await deleteMenuItem(id);
       setStatus("Menu item deleted.");
+      pushToast("Menu item deleted.", "success");
       await refreshEventMenuData(selectedEventType);
     } catch (err) {
       setStatus(err?.message || "Failed to delete menu item.");
+      pushToast(err?.message || "Failed to delete menu item.", "error");
     } finally {
       setMenuActionLoading(false);
     }
@@ -682,11 +844,14 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       const result = await onSave(nextDraft);
       if (result.ok) {
         setStatus("Catalog saved.");
+        pushToast("Catalog saved.", "success");
         return;
       }
       setStatus(result.error || "Save failed.");
+      pushToast(result.error || "Save failed.", "error");
     } catch (err) {
       setStatus(err?.message || "Invalid JSON in advanced settings.");
+      pushToast(err?.message || "Invalid JSON in advanced settings.", "error");
     }
   };
 
@@ -700,7 +865,21 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
           <button type="button" className="ghost" onClick={onClose}>Close</button>
         </div>
 
-        <Section title="Packages" onAdd={() => addRow("packages")}>
+        <div className="admin-tabs" role="tablist" aria-label="Catalog admin sections">
+          {ADMIN_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={`admin-tab ${activeTab === tab.id ? "active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "packages" && (
+          <Section title="Packages" onAdd={() => addRow("packages")}>
           {draft.packages.map((item, i) => (
             <div className="admin-row" key={item.id}>
               <input value={item.id} disabled />
@@ -709,36 +888,78 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               <button type="button" className="ghost" onClick={() => removeRow("packages", i)}>Delete</button>
             </div>
           ))}
-        </Section>
+          </Section>
+        )}
 
-        <Section title="Add-ons" onAdd={() => addRow("addons")}>
+        {activeTab === "addons" && (
+          <Section title="Add-ons" onAdd={() => addRow("addons")}>
           {draft.addons.map((item, i) => (
             <div className="admin-row" key={item.id}>
               <input value={item.id} disabled />
               <input value={item.name} onChange={(e) => patchArrayItem("addons", i, "name", e.target.value)} />
-              <select value={item.type} onChange={(e) => patchArrayItem("addons", i, "type", e.target.value)}>
+              <select
+                value={item.pricingType || item.type || "per_person"}
+                onChange={(e) => {
+                  const pricingType = normalizePricingType(e.target.value, "per_person");
+                  patchArrayItem("addons", i, "pricingType", pricingType);
+                  patchArrayItem("addons", i, "type", pricingType);
+                }}
+              >
                 <option value="per_person">per_person</option>
+                <option value="per_item">per_item</option>
                 <option value="per_event">per_event</option>
               </select>
               <input type="number" value={item.price} onChange={(e) => patchArrayItem("addons", i, "price", Number(e.target.value))} />
+              <label className="admin-inline-toggle">
+                <span>Active</span>
+                <input
+                  type="checkbox"
+                  checked={item.active !== false}
+                  onChange={(e) => patchArrayItem("addons", i, "active", e.target.checked)}
+                />
+              </label>
               <button type="button" className="ghost" onClick={() => removeRow("addons", i)}>Delete</button>
             </div>
           ))}
-        </Section>
+          </Section>
+        )}
 
-        <Section title="Rentals" onAdd={() => addRow("rentals")}>
+        {activeTab === "rentals" && (
+          <Section title="Rentals" onAdd={() => addRow("rentals")}>
           {draft.rentals.map((item, i) => (
             <div className="admin-row" key={item.id}>
               <input value={item.id} disabled />
               <input value={item.name} onChange={(e) => patchArrayItem("rentals", i, "name", e.target.value)} />
+              <select
+                value={item.pricingType || item.type || "per_item"}
+                onChange={(e) => {
+                  const pricingType = normalizePricingType(e.target.value, "per_item");
+                  patchArrayItem("rentals", i, "pricingType", pricingType);
+                  patchArrayItem("rentals", i, "type", pricingType);
+                }}
+              >
+                <option value="per_item">per_item</option>
+                <option value="per_person">per_person</option>
+                <option value="per_event">per_event</option>
+              </select>
               <input type="number" value={item.price} onChange={(e) => patchArrayItem("rentals", i, "price", Number(e.target.value))} />
               <input type="number" value={item.qtyPerGuests} onChange={(e) => patchArrayItem("rentals", i, "qtyPerGuests", Number(e.target.value))} />
+              <label className="admin-inline-toggle">
+                <span>Active</span>
+                <input
+                  type="checkbox"
+                  checked={item.active !== false}
+                  onChange={(e) => patchArrayItem("rentals", i, "active", e.target.checked)}
+                />
+              </label>
               <button type="button" className="ghost" onClick={() => removeRow("rentals", i)}>Delete</button>
             </div>
           ))}
-        </Section>
+          </Section>
+        )}
 
-        <section className="admin-section">
+        {activeTab === "menu" && (
+          <section className="admin-section">
           <div className="admin-section-head"><h3>Menu Management</h3></div>
           <div className="admin-section-body">
             <div className="admin-menu-management-grid">
@@ -746,7 +967,7 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
                 Event type
                 <select
                   value={selectedEventType}
-                  onChange={(e) => setSelectedEventType(e.target.value)}
+                  onChange={(e) => setManagedEventType(e.target.value)}
                   disabled={menuLoading}
                 >
                   <option value="">Choose event type</option>
@@ -830,7 +1051,7 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               </div>
             </div>
 
-            <div className="admin-inline-actions">
+            <div className="admin-inline-actions admin-inline-actions-create-item">
               <input
                 type="text"
                 placeholder="New item name"
@@ -846,13 +1067,28 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
                 disabled={!selectedCategory}
               />
               <select
-                value={newItemDraft.type}
-                onChange={(e) => setNewItemDraft((prev) => ({ ...prev, type: e.target.value }))}
+                value={newItemDraft.pricingType}
+                onChange={(e) =>
+                  setNewItemDraft((prev) => ({
+                    ...prev,
+                    pricingType: normalizePricingType(e.target.value, "per_event")
+                  }))
+                }
                 disabled={!selectedCategory}
               >
                 <option value="per_event">per_event</option>
                 <option value="per_person">per_person</option>
+                <option value="per_item">per_item</option>
               </select>
+              <label className="admin-inline-toggle">
+                <span>Active</span>
+                <input
+                  type="checkbox"
+                  checked={newItemDraft.active !== false}
+                  onChange={(e) => setNewItemDraft((prev) => ({ ...prev, active: e.target.checked }))}
+                  disabled={!selectedCategory}
+                />
+              </label>
               <button type="button" className="ghost compact" onClick={handleCreateMenuItem} disabled={menuActionLoading || !selectedCategory}>
                 {menuActionLoading ? "Saving..." : "Add Item"}
               </button>
@@ -870,28 +1106,39 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
                   type="text"
                   value={item.name || ""}
                   onChange={(e) => patchManagedMenuItem(item.id, "name", e.target.value)}
+                  onBlur={() => handleManagedMenuItemBlur(item.id)}
+                  onKeyDown={(e) => handleManagedMenuItemKeyDown(e, item.id)}
                 />
                 <select
-                  value={item.type || "per_event"}
-                  onChange={(e) => patchManagedMenuItem(item.id, "type", e.target.value)}
+                  value={item.pricingType || item.type || "per_event"}
+                  onChange={(e) => patchManagedMenuItem(item.id, "pricingType", e.target.value)}
+                  onBlur={() => handleManagedMenuItemBlur(item.id)}
+                  onKeyDown={(e) => handleManagedMenuItemKeyDown(e, item.id)}
                 >
                   <option value="per_event">per_event</option>
                   <option value="per_person">per_person</option>
+                  <option value="per_item">per_item</option>
                 </select>
                 <input
                   type="number"
                   step="0.01"
                   value={Number(item.price || 0)}
-                  onChange={(e) => patchManagedMenuItem(item.id, "price", Number(e.target.value))}
+                  onChange={(e) => patchManagedMenuItem(item.id, "price", e.target.value)}
+                  onBlur={() => handleManagedMenuItemBlur(item.id)}
+                  onKeyDown={(e) => handleManagedMenuItemKeyDown(e, item.id)}
                 />
-                <button
-                  type="button"
-                  className="ghost compact"
-                  onClick={() => handleUpdateManagedMenuItem(item)}
-                  disabled={menuActionLoading}
-                >
-                  Save
-                </button>
+                <label className="admin-inline-toggle">
+                  <span>Active</span>
+                  <input
+                    type="checkbox"
+                    checked={item.active !== false}
+                    onChange={(e) => patchManagedMenuItem(item.id, "active", e.target.checked)}
+                    onBlur={() => handleManagedMenuItemBlur(item.id)}
+                  />
+                </label>
+                <span className="admin-row-state">
+                  {menuItemSavingId === item.id ? "Saving..." : (menuItemDirty[item.id] ? "Unsaved" : "Saved")}
+                </span>
                 <button
                   type="button"
                   className="ghost compact"
@@ -904,8 +1151,11 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             ))}
           </div>
         </section>
+        )}
 
-        <section className="admin-section">
+        {activeTab === "pricing" && (
+          <>
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Numeric Settings</h3></div>
           <div className="admin-grid-settings">
             <label>Per-mile rate<input type="number" step="0.01" value={draft.settings.perMileRate} onChange={(e) => patchNumericSetting("perMileRate", e.target.value)} /></label>
@@ -922,9 +1172,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             <label>Integration retry limit<input type="number" step="1" min="1" max="10" value={draft.settings.integrationRetryLimit || 3} onChange={(e) => patchNumericSetting("integrationRetryLimit", e.target.value)} /></label>
             <label>Integration audit retention<input type="number" step="1" min="10" max="200" value={draft.settings.integrationAuditRetention || 50} onChange={(e) => patchNumericSetting("integrationAuditRetention", e.target.value)} /></label>
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head">
             <h3>Labor Rate Types</h3>
             <div className="admin-inline-actions">
@@ -1018,9 +1268,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               </select>
             </label>
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head">
             <h3>Guided Selling & Staffing Controls</h3>
             <button type="button" className="ghost" onClick={addUpsellRule}>Add Rule</button>
@@ -1133,9 +1383,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               <p className="source-note">No upsell rules are configured yet. Add at least one to power guided selling.</p>
             )}
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Quote Meta</h3></div>
           <div className="admin-grid-settings">
             <label>
@@ -1195,9 +1445,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               />
             </label>
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Integrations</h3></div>
           <div className="admin-grid-settings">
             <label>
@@ -1241,9 +1491,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               />
             </label>
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Branding</h3></div>
           <div className="admin-grid-settings">
             <label>
@@ -1351,9 +1601,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               />
             </label>
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Default Selectors</h3></div>
           <div className="admin-grid-settings">
             <label>
@@ -1373,9 +1623,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               />
             </label>
           </div>
-        </section>
+            </section>
 
-        <section className="admin-section">
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Advanced Config (JSON)</h3></div>
           <div className="admin-section-body">
             {JSON_FIELD_META.map((field) => (
@@ -1390,7 +1640,9 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               </label>
             ))}
           </div>
-        </section>
+            </section>
+          </>
+        )}
 
         <div className="modal-foot">
           <span className="source-note">{status}</span>

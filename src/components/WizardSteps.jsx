@@ -154,22 +154,167 @@ export function StepEvent({
 export function StepMenu({
   form,
   setForm,
-  catalog,
-  recommendations,
-  onApplyRecommendation,
   menuSections,
   menuLoading = false
 }) {
   const resolvedMenuSections = Array.isArray(menuSections) ? menuSections : [];
-  const guidedSellingEnabled = catalog.settings?.guidedSellingEnabled !== false;
+  const resolvePricingType = (item) => {
+    const raw = String(item?.pricingType || item?.type || "").trim().toLowerCase();
+    if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+    return "per_event";
+  };
+  const pricingLabel = (item) => {
+    const pricingType = resolvePricingType(item);
+    if (pricingType === "per_person") return `${currency(item.price)}/person`;
+    if (pricingType === "per_item") return `${currency(item.price)}/item`;
+    return currency(item.price);
+  };
+  const menuQuantities = form.menuItemQuantities || {};
 
-  const toggle = (key, id, checked) => {
+  const toggleMenuItem = (item, checked) => {
+    const itemId = String(item?.id || "").trim();
+    if (!itemId) return;
+    const pricingType = resolvePricingType(item);
     setForm((f) => {
-      const set = new Set(f[key]);
-      if (checked) set.add(id);
-      else set.delete(id);
-      return { ...f, [key]: [...set] };
+      const nextSelected = new Set(Array.isArray(f.menuItems) ? f.menuItems : []);
+      const nextQuantities = { ...(f.menuItemQuantities || {}) };
+      if (checked) {
+        nextSelected.add(itemId);
+        if (pricingType === "per_item") {
+          nextQuantities[itemId] = Math.max(1, Number(nextQuantities[itemId] || 1));
+        }
+      } else {
+        nextSelected.delete(itemId);
+        delete nextQuantities[itemId];
+      }
+      return {
+        ...f,
+        menuItems: [...nextSelected],
+        menuItemQuantities: nextQuantities
+      };
     });
+  };
+
+  const patchMenuQuantity = (itemId, value) => {
+    const quantity = Math.max(1, Math.round(Number(value || 1)));
+    setForm((f) => ({
+      ...f,
+      menuItemQuantities: {
+        ...(f.menuItemQuantities || {}),
+        [itemId]: quantity
+      }
+    }));
+  };
+
+  return (
+    <div className="grid two-col">
+      {resolvedMenuSections.length > 0 && (
+        <div className="menu-library">
+          <h4>Customized Cuisine Menu</h4>
+          {menuLoading && <p className="source-note">Loading menu for selected event type...</p>}
+          <p className="source-note">Select menu items to include in this quote proposal.</p>
+          <div className="menu-grid">
+            {resolvedMenuSections.map((section) => (
+              <section className="menu-category" key={section.id}>
+                <div className="menu-category-head">
+                  <strong>{section.name}</strong>
+                  <small>
+                    {
+                      (section.items || []).filter((item) => form.menuItems.includes(item.id)).length
+                    }/{(section.items || []).length}
+                  </small>
+                </div>
+                <div className="checklist">
+                  {(section.items || []).map((item) => (
+                    <label className="checkrow checkrow-quantity" key={item.id}>
+                      <input
+                        type="checkbox"
+                        checked={form.menuItems.includes(item.id)}
+                        onChange={(e) => toggleMenuItem(item, e.target.checked)}
+                      />
+                      <span>{item.name}</span>
+                      <small>{pricingLabel(item)}</small>
+                      {resolvePricingType(item) === "per_item" && form.menuItems.includes(item.id) && (
+                        <input
+                          className="qty-input"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={Math.max(1, Number(menuQuantities[item.id] || 1))}
+                          onChange={(e) => patchMenuQuantity(item.id, e.target.value)}
+                        />
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      )}
+      {resolvedMenuSections.length === 0 && !menuLoading && (
+        <div className="menu-library">
+          <h4>Customized Cuisine Menu</h4>
+          <p className="source-note">Select an event type to load menu categories and items.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function StepServices({
+  form,
+  setForm,
+  catalog,
+  recommendations,
+  onApplyRecommendation
+}) {
+  const guidedSellingEnabled = catalog.settings?.guidedSellingEnabled !== false;
+  const resolvePricingType = (item, fallback = "per_event") => {
+    const raw = String(item?.pricingType || item?.type || "").trim().toLowerCase();
+    if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+    return fallback;
+  };
+  const pricingLabel = (item, fallback = "per_event") => {
+    const pricingType = resolvePricingType(item, fallback);
+    if (pricingType === "per_person") return `${currency(item.price)}/person`;
+    if (pricingType === "per_item") return `${currency(item.price)}/item`;
+    return currency(item.price);
+  };
+
+  const toggle = (key, quantityKey, item, checked, fallbackQty = 1) => {
+    const id = String(item?.id || "").trim();
+    if (!id) return;
+    const pricingType = resolvePricingType(item, key === "rentals" ? "per_item" : "per_event");
+    setForm((f) => {
+      const set = new Set(Array.isArray(f[key]) ? f[key] : []);
+      const quantityMap = { ...(f[quantityKey] || {}) };
+      if (checked) {
+        set.add(id);
+        if (pricingType === "per_item") {
+          quantityMap[id] = Math.max(1, Number(quantityMap[id] || fallbackQty || 1));
+        }
+      } else {
+        set.delete(id);
+        delete quantityMap[id];
+      }
+      return {
+        ...f,
+        [key]: [...set],
+        [quantityKey]: quantityMap
+      };
+    });
+  };
+
+  const patchQuantity = (quantityKey, id, value) => {
+    const quantity = Math.max(1, Math.round(Number(value || 1)));
+    setForm((f) => ({
+      ...f,
+      [quantityKey]: {
+        ...(f[quantityKey] || {}),
+        [id]: quantity
+      }
+    }));
   };
 
   return (
@@ -179,39 +324,77 @@ export function StepMenu({
           {catalog.packages.map((p) => <option key={p.id} value={p.id}>{p.name} - {currency(p.ppp)}/person</option>)}
         </select>
       </Field>
-      <Field label="Travel (round trip miles)"><input type="number" min="0" value={form.milesRT} onChange={(e) => setForm((f) => ({ ...f, milesRT: Number(e.target.value) }))} /></Field>
+      <Field label="Travel (round trip miles)">
+        <input
+          type="number"
+          min="0"
+          value={form.milesRT}
+          onChange={(e) => setForm((f) => ({ ...f, milesRT: Number(e.target.value) }))}
+        />
+      </Field>
 
       <div>
         <h4>Add-ons</h4>
         <div className="checklist">
-          {catalog.addons.map((item) => (
-            <label className="checkrow" key={item.id}>
-              <input
-                type="checkbox"
-                checked={form.addons.includes(item.id)}
-                onChange={(e) => toggle("addons", item.id, e.target.checked)}
-              />
-              <span>{item.name}</span>
-              <small>{item.type === "per_person" ? `${currency(item.price)}/person` : currency(item.price)}</small>
-            </label>
-          ))}
+          {catalog.addons.map((item) => {
+            const pricingType = resolvePricingType(item, "per_person");
+            const selected = form.addons.includes(item.id);
+            return (
+              <label className="checkrow checkrow-quantity" key={item.id}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={(e) => toggle("addons", "addonQuantities", item, e.target.checked, 1)}
+                />
+                <span>{item.name}</span>
+                <small>{pricingLabel(item, "per_person")}</small>
+                {pricingType === "per_item" && selected && (
+                  <input
+                    className="qty-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={Math.max(1, Number(form.addonQuantities?.[item.id] || 1))}
+                    onChange={(e) => patchQuantity("addonQuantities", item.id, e.target.value)}
+                  />
+                )}
+              </label>
+            );
+          })}
         </div>
       </div>
 
       <div>
         <h4>Rentals</h4>
         <div className="checklist">
-          {catalog.rentals.map((item) => (
-            <label className="checkrow" key={item.id}>
-              <input
-                type="checkbox"
-                checked={form.rentals.includes(item.id)}
-                onChange={(e) => toggle("rentals", item.id, e.target.checked)}
-              />
-              <span>{item.name}</span>
-              <small>{currency(item.price)} each</small>
-            </label>
-          ))}
+          {catalog.rentals.map((item) => {
+            const pricingType = resolvePricingType(item, "per_item");
+            const selected = form.rentals.includes(item.id);
+            const fallbackQty = typeof item.qtyRule === "function"
+              ? item.qtyRule(Math.max(0, Number(form.guests || 0)))
+              : 1;
+            return (
+              <label className="checkrow checkrow-quantity" key={item.id}>
+                <input
+                  type="checkbox"
+                  checked={selected}
+                  onChange={(e) => toggle("rentals", "rentalQuantities", item, e.target.checked, fallbackQty)}
+                />
+                <span>{item.name}</span>
+                <small>{pricingLabel(item, "per_item")}</small>
+                {pricingType === "per_item" && selected && (
+                  <input
+                    className="qty-input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={Math.max(1, Number(form.rentalQuantities?.[item.id] || fallbackQty))}
+                    onChange={(e) => patchQuantity("rentalQuantities", item.id, e.target.value)}
+                  />
+                )}
+              </label>
+            );
+          })}
         </div>
       </div>
 
@@ -240,47 +423,6 @@ export function StepMenu({
           </div>
         )}
       </div>
-
-      {resolvedMenuSections.length > 0 && (
-        <div className="menu-library">
-          <h4>Customized Cuisine Menu</h4>
-          {menuLoading && <p className="source-note">Loading menu for selected event type...</p>}
-          <p className="source-note">Select menu items to include in this quote proposal.</p>
-          <div className="menu-grid">
-            {resolvedMenuSections.map((section) => (
-              <section className="menu-category" key={section.id}>
-                <div className="menu-category-head">
-                  <strong>{section.name}</strong>
-                  <small>
-                    {
-                      (section.items || []).filter((item) => form.menuItems.includes(item.id)).length
-                    }/{(section.items || []).length}
-                  </small>
-                </div>
-                <div className="checklist">
-                  {(section.items || []).map((item) => (
-                    <label className="checkrow" key={item.id}>
-                      <input
-                        type="checkbox"
-                        checked={form.menuItems.includes(item.id)}
-                        onChange={(e) => toggle("menuItems", item.id, e.target.checked)}
-                      />
-                      <span>{item.name}</span>
-                      <small>{item.type === "per_person" ? `${currency(item.price)}/person` : currency(item.price)}</small>
-                    </label>
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
-      )}
-      {resolvedMenuSections.length === 0 && !menuLoading && (
-        <div className="menu-library">
-          <h4>Customized Cuisine Menu</h4>
-          <p className="source-note">Select an event type to load menu categories and items.</p>
-        </div>
-      )}
     </div>
   );
 }
