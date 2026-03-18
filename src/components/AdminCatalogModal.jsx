@@ -9,6 +9,8 @@ import {
   getEventTypes,
   getMenuCategories,
   getMenuItems,
+  updateCategory,
+  updateEventType,
   updateMenuItem
 } from "../lib/menuService";
 
@@ -98,6 +100,8 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
   const [menuActionLoading, setMenuActionLoading] = useState(false);
   const [newEventTypeName, setNewEventTypeName] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [eventTypeEditName, setEventTypeEditName] = useState("");
+  const [categoryEditName, setCategoryEditName] = useState("");
   const [newItemDraft, setNewItemDraft] = useState({
     name: "",
     price: 0,
@@ -119,6 +123,8 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       setMenuActionLoading(false);
       setNewEventTypeName("");
       setNewCategoryName("");
+      setEventTypeEditName("");
+      setCategoryEditName("");
       setNewItemDraft({ name: "", price: 0, type: "per_event" });
     }
   }, [open, catalog]);
@@ -187,6 +193,18 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       alive = false;
     };
   }, [open, selectedEventType]);
+
+  useEffect(() => {
+    if (!open) return;
+    const selected = menuEventTypes.find((eventType) => eventType.id === selectedEventType);
+    setEventTypeEditName(selected?.name || "");
+  }, [open, selectedEventType, menuEventTypes]);
+
+  useEffect(() => {
+    if (!open) return;
+    const selected = menuCategories.find((category) => category.id === selectedCategory);
+    setCategoryEditName(selected?.name || "");
+  }, [open, selectedCategory, menuCategories]);
 
   if (!open) return null;
 
@@ -488,6 +506,55 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     }
   };
 
+  const handleUpdateEventType = async () => {
+    if (!selectedEventType) {
+      setStatus("Choose an event type first.");
+      return;
+    }
+    const name = String(eventTypeEditName || "").trim();
+    if (!name) {
+      setStatus("Event type name cannot be empty.");
+      return;
+    }
+
+    setMenuActionLoading(true);
+    try {
+      await updateEventType(selectedEventType, { name });
+      await refreshEventTypes(selectedEventType);
+      setStatus("Event type updated.");
+    } catch (err) {
+      setStatus(err?.message || "Failed to update event type.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
+  const handleUpdateCategory = async () => {
+    if (!selectedEventType || !selectedCategory) {
+      setStatus("Choose event type and category first.");
+      return;
+    }
+    const name = String(categoryEditName || "").trim();
+    if (!name) {
+      setStatus("Category name cannot be empty.");
+      return;
+    }
+
+    setMenuActionLoading(true);
+    try {
+      await updateCategory(selectedCategory, {
+        name,
+        eventTypeId: selectedEventType
+      });
+      await refreshEventMenuData(selectedEventType);
+      setStatus("Category updated.");
+    } catch (err) {
+      setStatus(err?.message || "Failed to update category.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
   const handleCreateMenuItem = async () => {
     const name = String(newItemDraft.name || "").trim();
     if (!selectedEventType || !selectedCategory) {
@@ -691,6 +758,23 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
               <div className="admin-inline-actions">
                 <input
                   type="text"
+                  placeholder="Edit selected event type"
+                  value={eventTypeEditName}
+                  onChange={(e) => setEventTypeEditName(e.target.value)}
+                  disabled={!selectedEventType || menuLoading}
+                />
+                <button
+                  type="button"
+                  className="ghost compact"
+                  onClick={handleUpdateEventType}
+                  disabled={menuActionLoading || !selectedEventType}
+                >
+                  {menuActionLoading ? "Saving..." : "Save Event Type"}
+                </button>
+              </div>
+              <div className="admin-inline-actions">
+                <input
+                  type="text"
                   placeholder="New event type"
                   value={newEventTypeName}
                   onChange={(e) => setNewEventTypeName(e.target.value)}
@@ -715,6 +799,23 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
                   ))}
                 </select>
               </label>
+              <div className="admin-inline-actions">
+                <input
+                  type="text"
+                  placeholder="Edit selected category"
+                  value={categoryEditName}
+                  onChange={(e) => setCategoryEditName(e.target.value)}
+                  disabled={!selectedCategory}
+                />
+                <button
+                  type="button"
+                  className="ghost compact"
+                  onClick={handleUpdateCategory}
+                  disabled={menuActionLoading || !selectedCategory}
+                >
+                  {menuActionLoading ? "Saving..." : "Save Category"}
+                </button>
+              </div>
               <div className="admin-inline-actions">
                 <input
                   type="text"

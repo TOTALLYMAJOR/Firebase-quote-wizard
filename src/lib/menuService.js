@@ -167,6 +167,29 @@ export async function createCategory(data = {}) {
   };
 }
 
+export async function updateCategory(id, data = {}) {
+  ensureReady();
+  const categoryId = asText(id);
+  if (!categoryId) {
+    throw new Error("Category id is required.");
+  }
+
+  const payload = {};
+  if (Object.prototype.hasOwnProperty.call(data, "name")) {
+    payload.name = asText(data.name, "New Category");
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "eventTypeId")) {
+    payload.eventTypeId = asText(data.eventTypeId);
+  }
+  payload.updatedAtISO = new Date().toISOString();
+
+  await updateDoc(doc(db, "menuCategories", categoryId), payload);
+  return {
+    id: categoryId,
+    ...payload
+  };
+}
+
 export async function createEventType(data = {}) {
   ensureReady();
   const payload = {
@@ -176,6 +199,26 @@ export async function createEventType(data = {}) {
   const ref = await addDoc(collection(db, "eventTypes"), payload);
   return {
     id: ref.id,
+    ...payload
+  };
+}
+
+export async function updateEventType(id, data = {}) {
+  ensureReady();
+  const eventTypeId = asText(id);
+  if (!eventTypeId) {
+    throw new Error("Event type id is required.");
+  }
+
+  const payload = {};
+  if (Object.prototype.hasOwnProperty.call(data, "name")) {
+    payload.name = asText(data.name, "New Event Type");
+  }
+  payload.updatedAtISO = new Date().toISOString();
+
+  await updateDoc(doc(db, "eventTypes", eventTypeId), payload);
+  return {
+    id: eventTypeId,
     ...payload
   };
 }

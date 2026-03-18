@@ -13,6 +13,8 @@ import {
   getEventTypes,
   getMenuCategories,
   getMenuItems,
+  updateCategory,
+  updateEventType,
   updateMenuItem
 } from "../menuService";
 
@@ -27,6 +29,8 @@ describe("menuService fallback behavior", () => {
     await expect(createEventType({ name: "Wedding" })).rejects.toThrow(/firebase is not configured/i);
     await expect(createCategory({ eventTypeId: "a", name: "Mains" })).rejects.toThrow(/firebase is not configured/i);
     await expect(createMenuItem({ eventTypeId: "a", categoryId: "b", name: "Ribs" })).rejects.toThrow(/firebase is not configured/i);
+    await expect(updateEventType("id-1", { name: "Updated" })).rejects.toThrow(/firebase is not configured/i);
+    await expect(updateCategory("id-1", { name: "Updated" })).rejects.toThrow(/firebase is not configured/i);
     await expect(updateMenuItem("id-1", { name: "Updated" })).rejects.toThrow(/firebase is not configured/i);
     await expect(deleteMenuItem("id-1")).rejects.toThrow(/firebase is not configured/i);
   });
