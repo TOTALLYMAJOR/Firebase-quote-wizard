@@ -6,10 +6,11 @@ Production-ready catering quote application built with React, Vite, Firebase, an
 - Live app: https://tonicatering.web.app
 - Repository: https://github.com/TOTALLYMAJOR/Firebase-quote-wizard
 - Launch runbook: [docs/LAUNCH_RUNBOOK.md](docs/LAUNCH_RUNBOOK.md)
+- User manual: [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
 - Canonical doc system: [docs/DOC_SYSTEM.md](docs/DOC_SYSTEM.md)
 
 ## Product Scope
-The app supports quote intake, pricing configuration, proposal export, customer portal updates, and operations workflows (history, scheduling, reporting, diagnostics).
+The app supports a 5-step quote wizard, dynamic event-type menus, pricing configuration, proposal export, customer portal updates, and operations workflows (history, scheduling, reporting, diagnostics).
 
 ## Architecture Snapshot
 - Frontend: React 18 + Vite 7
@@ -96,6 +97,7 @@ Notes:
 - Version/release playbook: [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md)
 - Agent governance: [docs/AGENT_GOVERNANCE.md](docs/AGENT_GOVERNANCE.md)
 - Skill index: [docs/SKILLS.md](docs/SKILLS.md)
+- Staff/admin operations guide: [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
 - Performance guardrails: [docs/PERFORMANCE_GUARDRAILS.md](docs/PERFORMANCE_GUARDRAILS.md)
 - Current operational state: [PROJECT_STATUS.md](PROJECT_STATUS.md)
 - Prioritized backlog: [DEV_TASKS.md](DEV_TASKS.md)

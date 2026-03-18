@@ -8,6 +8,9 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ### Added
 
+- End-user operations guide for staff/admin workflows (`docs/USER_MANUAL.md`).
+- Global event-type context provider for cross-surface event-type synchronization (wizard + admin).
+- Duplicate quote action in Quote History, creating new draft quotes with copied snapshots and pricing details.
 - Booking workflow upgrades: availability-aware proposal-to-contract conversion and confirmation tracking in quote history.
 - Firestore dynamic menu seed script (`scripts/seed-firestore-menu.mjs`) and npm entrypoint (`seed:menu:firestore`) for idempotent creation of `eventTypes`, `menuCategories`, and `menuItems`.
 - Unit tests for booking conversion and confirmation lifecycle in local fallback mode.
@@ -21,6 +24,11 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ### Changed
 
+- Expanded wizard to a 5-step flow (`Event Basics`, `Menu Selection`, `Add-ons / Rentals`, `Pricing Summary`, `Save / Submit`) with sticky live summary and toast feedback.
+- Added quantity-aware `per_item` pricing support across menu/add-ons/rentals and quote snapshot persistence (`pricingType`, `quantity`, active-aware filtering).
+- Updated Admin Catalog UX to tabbed sections (Packages/Addons/Rentals/Menu/Pricing) with inline menu-item save on blur/Enter and active/pricingType editing.
+- Enforced non-dev fail-fast catalog behavior when Firebase is unavailable; local fallback remains development-only.
+- Improved proposal PDF image handling with refactored loaders and explicit error logging for failed image fetch/render operations.
 - Completed the parallel migration rollout: Firestore-backed event menus (`eventTypes/menuCategories/menuItems`), quote-history filtering, soft delete/reopen controls, immutable menu snapshots, and pre-mutation version history in `quoteHistory`.
 - Finalized menu cutover to Firestore-backed event menus by removing wizard/runtime fallback to static `DEFAULT_MENU_SECTIONS` and retiring the legacy static menu editor in Admin Catalog.
 - Added admin-configurable labor rate types (bartender + staffing), with quote-time manual override support and persisted applied-rate snapshots in quote data.
