@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { createDepositCheckout } from "../lib/commerceOps";
 import { currency } from "../lib/quoteCalculator";
+import { getEventTypes } from "../lib/menuService";
 import {
   BOOKING_CONFIRMATION_STATUSES,
   buildQuoteEmailTemplate,
   convertQuoteToContract,
+  deleteQuote,
   getAllowedStatusTransitions,
   getQuoteHistory,
   PAYMENT_STATUSES,
+  reopenQuote,
   updateQuoteBookingConfirmation,
   updateQuotePaymentStatus,
   updateQuoteStatus
@@ -30,7 +33,8 @@ export default function QuoteHistoryModal({
   open,
   onClose,
   basePortalUrl = "",
-  currentUserEmail = ""
+  currentUserEmail = "",
+  onEditQuote
 }) {
   const [state, setState] = useState({
     loading: false,
@@ -40,6 +44,8 @@ export default function QuoteHistoryModal({
     quotes: []
   });
   const [query, setQuery] = useState("");
+  const [eventTypeFilter, setEventTypeFilter] = useState("all");
+  const [eventTypes, setEventTypes] = useState([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [updatingId, setUpdatingId] = useState("");
   const [updatingPaymentId, setUpdatingPaymentId] = useState("");
@@ -50,7 +56,10 @@ export default function QuoteHistoryModal({
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "", feedback: "" }));
     try {
-      const result = await getQuoteHistory();
+      const result = await getQuoteHistory({
+        eventTypeId: eventTypeFilter === "all" ? "" : eventTypeFilter,
+        customerName: query
+      });
       setState({
         loading: false,
         error: "",
@@ -69,37 +78,54 @@ export default function QuoteHistoryModal({
   };
 
   useEffect(() => {
-    if (open) {
-      load();
-    }
+    if (!open) return;
+    let alive = true;
+    getEventTypes()
+      .then((items) => {
+        if (!alive) return;
+        setEventTypes(items);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setEventTypes([]);
+      });
+    return () => {
+      alive = false;
+    };
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      load();
+    }, query.trim() ? 220 : 0);
+    return () => clearTimeout(timer);
+  }, [open, eventTypeFilter, query]);
+
   if (!open) return null;
+
+  const normalizedCustomerQuery = query.trim().toLowerCase();
+  const eventTypeNameById = new Map(
+    (eventTypes || []).map((item) => [String(item.id), item.name])
+  );
 
   const filteredQuotes = state.quotes.filter((quote) => {
     const statusMatch = statusFilter === "all" || (quote.status || "draft") === statusFilter;
     if (!statusMatch) return false;
 
-    const q = query.trim().toLowerCase();
-    if (!q) return true;
+    const quoteEventType = String(quote.eventTypeId || quote.selection?.eventTypeId || "").trim();
+    const eventTypeMatch = eventTypeFilter === "all" || quoteEventType === eventTypeFilter;
+    if (!eventTypeMatch) return false;
 
-    const haystack = [
-      quote.quoteNumber,
-      quote.customer?.name,
-      quote.customer?.phone,
-      quote.customer?.email,
-      quote.event?.name,
-      quote.event?.date,
-      quote.event?.venue,
-      quote.payment?.depositStatus,
-      quote.booking?.contractNumber,
-      quote.booking?.confirmationStatus
+    if (!normalizedCustomerQuery) return true;
+    const customerHaystack = [
+      quote.customerNameKey,
+      quote.customer?.name
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-
-    return haystack.includes(q);
+    return customerHaystack.includes(normalizedCustomerQuery);
   });
 
   const applyQuoteLocally = (quoteId, updater) => {
@@ -168,6 +194,48 @@ export default function QuoteHistoryModal({
       }));
     } finally {
       setUpdatingPaymentId("");
+    }
+  };
+
+  const handleReopenQuote = async (quoteId) => {
+    setUpdatingId(quoteId);
+    setState((prev) => ({ ...prev, error: "" }));
+    try {
+      await reopenQuote(quoteId);
+      applyQuoteLocally(quoteId, (quote) => ({
+        ...quote,
+        status: "draft",
+        deletedAtISO: ""
+      }));
+      setState((prev) => ({ ...prev, feedback: "Quote reopened to draft." }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "Failed to reopen quote."
+      }));
+    } finally {
+      setUpdatingId("");
+    }
+  };
+
+  const handleDeleteQuote = async (quoteId) => {
+    setUpdatingId(quoteId);
+    setState((prev) => ({ ...prev, error: "" }));
+    try {
+      await deleteQuote(quoteId);
+      applyQuoteLocally(quoteId, (quote) => ({
+        ...quote,
+        status: "deleted",
+        deletedAtISO: new Date().toISOString()
+      }));
+      setState((prev) => ({ ...prev, feedback: "Quote soft-deleted." }));
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "Failed to delete quote."
+      }));
+    } finally {
+      setUpdatingId("");
     }
   };
 
@@ -331,6 +399,11 @@ export default function QuoteHistoryModal({
     }
   };
 
+  const handleEditQuote = (quote) => {
+    if (typeof onEditQuote !== "function") return;
+    onEditQuote(quote);
+  };
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal-card history-card">
@@ -350,10 +423,16 @@ export default function QuoteHistoryModal({
         <div className="history-controls">
           <input
             type="text"
-            placeholder="Search quote #, customer, date, venue"
+            placeholder="Search customer name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value)}>
+            <option value="all">All event types</option>
+            {eventTypes.map((eventType) => (
+              <option key={eventType.id} value={eventType.id}>{eventType.name}</option>
+            ))}
+          </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="all">All statuses</option>
             <option value="draft">Draft</option>
@@ -363,6 +442,7 @@ export default function QuoteHistoryModal({
             <option value="booked">Booked</option>
             <option value="declined">Declined</option>
             <option value="expired">Expired</option>
+            <option value="deleted">Deleted</option>
           </select>
         </div>
 
@@ -372,6 +452,7 @@ export default function QuoteHistoryModal({
               <tr>
                 <th>Quote #</th>
                 <th>Customer</th>
+                <th>Event Type</th>
                 <th>Event Date</th>
                 <th>Guests</th>
                 <th>Total</th>
@@ -388,23 +469,30 @@ export default function QuoteHistoryModal({
             <tbody>
               {!state.loading && filteredQuotes.length === 0 && (
                 <tr>
-                  <td colSpan="13">No quotes saved yet.</td>
+                  <td colSpan="14">No quotes saved yet.</td>
                 </tr>
               )}
               {filteredQuotes.map((quote) => {
-                const statusTransitions = getAllowedStatusTransitions(quote.status).filter((status) => status !== "booked");
-                const statusOptions = statusTransitions.length
-                  ? statusTransitions
-                  : [String(quote.status || "draft")];
+                const statusTransitions = getAllowedStatusTransitions(quote.status)
+                  .filter((status) => status !== "booked" && status !== "deleted");
+                const statusOptions =
+                  quote.status === "deleted"
+                    ? ["deleted"]
+                    : statusTransitions.length
+                      ? statusTransitions
+                      : [String(quote.status || "draft")];
                 const booking = quote.booking || {};
                 const contractNumber = booking.contractNumber || "";
                 const confirmationStatus = booking.confirmationStatus || "pending";
                 const canConvert = canConvertToContract(quote);
                 const canTrackConfirmation = quote.status === "booked" && Boolean(contractNumber);
+                const quoteEventTypeId = String(quote.eventTypeId || quote.selection?.eventTypeId || "");
+                const quoteEventTypeLabel = eventTypeNameById.get(quoteEventTypeId) || quoteEventTypeId || "-";
                 return (
                   <tr key={quote.id}>
                     <td>{quote.quoteNumber || "-"}</td>
                     <td>{quote.customer?.name || quote.customer?.email || "-"}</td>
+                    <td>{quoteEventTypeLabel}</td>
                     <td>{quote.event?.date || "-"}</td>
                     <td>{quote.event?.guests ?? "-"}</td>
                     <td>{currency(quote.totals?.total || 0)}</td>
@@ -413,7 +501,7 @@ export default function QuoteHistoryModal({
                       <select
                         value={quote.status || "draft"}
                         onChange={(e) => handleStatusUpdate(quote.id, e.target.value)}
-                        disabled={updatingId === quote.id || statusTransitions.length === 0}
+                        disabled={updatingId === quote.id || statusTransitions.length === 0 || quote.status === "deleted"}
                       >
                         {statusOptions.map((status) => (
                           <option key={status} value={status}>{status}</option>
@@ -479,6 +567,11 @@ export default function QuoteHistoryModal({
                             Confirm
                           </button>
                         )}
+                        {quote.status !== "deleted" && (
+                          <button type="button" className="ghost compact" onClick={() => handleEditQuote(quote)}>
+                            Edit
+                          </button>
+                        )}
                         <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
@@ -491,6 +584,25 @@ export default function QuoteHistoryModal({
                         >
                           {creatingCheckoutId === quote.id ? "Creating..." : "Create Stripe Link"}
                         </button>
+                        {quote.status === "deleted" ? (
+                          <button
+                            type="button"
+                            className="ghost compact"
+                            onClick={() => handleReopenQuote(quote.id)}
+                            disabled={updatingId === quote.id}
+                          >
+                            {updatingId === quote.id ? "Reopening..." : "Reopen"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="ghost compact"
+                            onClick={() => handleDeleteQuote(quote.id)}
+                            disabled={updatingId === quote.id}
+                          >
+                            {updatingId === quote.id ? "Deleting..." : "Delete"}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

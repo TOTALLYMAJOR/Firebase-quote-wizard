@@ -15,8 +15,18 @@ const rawFixtureCatalog = {
     longDistancePerMileRate: 2,
     deliveryThresholdMiles: 20,
     bartenderRate: 30,
+    bartenderRateTypes: [
+      { id: "standard", name: "Standard Bartender", rate: 30 },
+      { id: "premium", name: "Premium Bartender", rate: 45 }
+    ],
+    defaultBartenderRateType: "standard",
     serverRate: 20,
     chefRate: 40,
+    staffingRateTypes: [
+      { id: "standard", name: "Standard Staffing", serverRate: 20, chefRate: 40 },
+      { id: "premium", name: "Premium Staffing", serverRate: 30, chefRate: 55 }
+    ],
+    defaultStaffingRateType: "standard",
     serviceFeePct: 0.1,
     serviceFeeTiers: [{ id: "flat", minGuests: 0, maxGuests: 9999, pct: 0.1 }],
     taxRate: 0.05,
@@ -76,6 +86,11 @@ export const baseFixtureForm = {
   hours: 0,
   style: "Buffet",
   bartenders: 0,
+  bartenderRateTypeId: "",
+  staffingRateTypeId: "",
+  bartenderRateOverride: "",
+  serverRateOverride: "",
+  chefRateOverride: "",
   pkg: "basic",
   addons: [],
   rentals: [],
@@ -140,6 +155,28 @@ export const quoteCalculationFixtures = [
       chefs: 3,
       bartenderLabor: 300,
       labor: 1900
+    }
+  },
+  {
+    id: "labor-pricing-with-rate-types-and-overrides",
+    form: {
+      ...baseFixtureForm,
+      guests: 120,
+      hours: 5,
+      style: "Plated",
+      bartenders: 2,
+      bartenderRateTypeId: "premium",
+      staffingRateTypeId: "premium",
+      bartenderRateOverride: 50,
+      serverRateOverride: 33,
+      chefRateOverride: 60
+    },
+    expected: {
+      bartenderRateApplied: 50,
+      serverRateApplied: 33,
+      chefRateApplied: 60,
+      bartenderLabor: 500,
+      labor: 3050
     }
   },
   {

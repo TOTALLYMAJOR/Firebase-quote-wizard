@@ -279,6 +279,16 @@ export const DEFAULT_BRAND_CREW = [
   { label: "Grill Master Ervin", imageUrl: "/brand/grillmaster-irvin.png" }
 ];
 
+export const DEFAULT_BARTENDER_RATE_TYPES = [
+  { id: "standard", name: "Standard Bartender", rate: 30 },
+  { id: "premium", name: "Premium Bartender", rate: 40 }
+];
+
+export const DEFAULT_STAFFING_RATE_TYPES = [
+  { id: "standard", name: "Standard Staffing", serverRate: 22, chefRate: 28 },
+  { id: "senior", name: "Senior Staffing", serverRate: 26, chefRate: 34 }
+];
+
 export const DEFAULT_UPSELL_RULES = [
   {
     id: "upsell-dessert",
@@ -328,16 +338,20 @@ export const DEFAULT_SETTINGS = {
   deliveryThresholdMiles: 30,
   capacityLimit: 400,
   bartenderRate: 30,
+  bartenderRateTypes: DEFAULT_BARTENDER_RATE_TYPES,
+  defaultBartenderRateType: "standard",
   serviceFeePct: 0.2,
   serviceFeeTiers: DEFAULT_SERVICE_FEE_TIERS,
   taxRate: 0.1,
   taxRegions: DEFAULT_TAX_REGIONS,
   defaultTaxRegion: "local",
-  menuSections: DEFAULT_MENU_SECTIONS,
+  menuSections: [],
   depositPct: 0.3,
   quoteValidityDays: 30,
   serverRate: 22,
   chefRate: 28,
+  staffingRateTypes: DEFAULT_STAFFING_RATE_TYPES,
+  defaultStaffingRateType: "standard",
   quotePreparedBy: "Chef Toni North",
   brandName: "Tasteful Touch Catering",
   brandTagline: "Chef Toni and Grill Master Ervin",
@@ -432,7 +446,22 @@ function normalizeTemplate(item, idx) {
     milesRT: toNumber(item.milesRT, 0, 0),
     payMethod: item.payMethod === "ach" ? "ach" : "card",
     taxRegion: String(item.taxRegion || ""),
-    seasonProfileId: String(item.seasonProfileId || "auto")
+    seasonProfileId: String(item.seasonProfileId || "auto"),
+    eventTypeId: String(item.eventTypeId || ""),
+    bartenderRateTypeId: String(item.bartenderRateTypeId || ""),
+    staffingRateTypeId: String(item.staffingRateTypeId || ""),
+    bartenderRateOverride:
+      item.bartenderRateOverride === "" || item.bartenderRateOverride === null || item.bartenderRateOverride === undefined
+        ? ""
+        : toNumber(item.bartenderRateOverride, 0, 0),
+    serverRateOverride:
+      item.serverRateOverride === "" || item.serverRateOverride === null || item.serverRateOverride === undefined
+        ? ""
+        : toNumber(item.serverRateOverride, 0, 0),
+    chefRateOverride:
+      item.chefRateOverride === "" || item.chefRateOverride === null || item.chefRateOverride === undefined
+        ? ""
+        : toNumber(item.chefRateOverride, 0, 0)
   };
 }
 
@@ -441,8 +470,48 @@ function normalizeEventTemplates(input) {
   return source.map((item, idx) => normalizeTemplate(item, idx));
 }
 
+function normalizeBartenderRateTypes(input, fallbackRate = DEFAULT_SETTINGS.bartenderRate) {
+  const source = Array.isArray(input) && input.length
+    ? input
+    : [{ id: "default", name: "Default Bartender", rate: fallbackRate }];
+  const seen = new Set();
+  return source
+    .map((item, idx) => ({
+      id: normalizeId(item?.id, `bartender-rate-${idx + 1}`),
+      name: toText(item?.name, `Bartender Type ${idx + 1}`),
+      rate: toNumber(item?.rate, fallbackRate, 0)
+    }))
+    .filter((item) => {
+      if (!item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+}
+
+function normalizeStaffingRateTypes(input, {
+  fallbackServerRate = DEFAULT_SETTINGS.serverRate,
+  fallbackChefRate = DEFAULT_SETTINGS.chefRate
+} = {}) {
+  const source = Array.isArray(input) && input.length
+    ? input
+    : [{ id: "default", name: "Default Staffing", serverRate: fallbackServerRate, chefRate: fallbackChefRate }];
+  const seen = new Set();
+  return source
+    .map((item, idx) => ({
+      id: normalizeId(item?.id, `staffing-rate-${idx + 1}`),
+      name: toText(item?.name, `Staffing Type ${idx + 1}`),
+      serverRate: toNumber(item?.serverRate, fallbackServerRate, 0),
+      chefRate: toNumber(item?.chefRate, fallbackChefRate, 0)
+    }))
+    .filter((item) => {
+      if (!item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+}
+
 function normalizeMenuSections(input) {
-  const source = Array.isArray(input) && input.length ? input : DEFAULT_MENU_SECTIONS;
+  const source = Array.isArray(input) ? input : [];
   return source.map((section, idx) => {
     const sectionId = normalizeId(section.id, `menu-${idx + 1}`);
     const rawItems = Array.isArray(section.items) ? section.items : [];
@@ -600,9 +669,10 @@ export function normalizeRental(item) {
 }
 
 export function normalizeCatalog(raw) {
+  const inputSettings = raw.settings && typeof raw.settings === "object" ? raw.settings : {};
   const rawSettings = {
     ...DEFAULT_SETTINGS,
-    ...(raw.settings || {})
+    ...inputSettings
   };
   const packages = (raw.packages || DEFAULT_PACKAGES).map((p) => ({
     id: p.id,
@@ -628,6 +698,11 @@ export function normalizeCatalog(raw) {
   const eventTemplates = normalizeEventTemplates(rawSettings.eventTemplates);
   const menuSections = normalizeMenuSections(rawSettings.menuSections);
   const seasonalProfiles = normalizeSeasonalProfiles(rawSettings.seasonalProfiles);
+  const bartenderRateTypes = normalizeBartenderRateTypes(inputSettings.bartenderRateTypes, rawSettings.bartenderRate);
+  const staffingRateTypes = normalizeStaffingRateTypes(inputSettings.staffingRateTypes, {
+    fallbackServerRate: rawSettings.serverRate,
+    fallbackChefRate: rawSettings.chefRate
+  });
   const brandCrew = normalizeBrandCrew(rawSettings.brandCrew);
   const upsellRules = normalizeUpsellRules(rawSettings.upsellRules, { packages, addons, rentals });
   const defaultTaxRegion = taxRegions.some((region) => region.id === rawSettings.defaultTaxRegion)
@@ -639,6 +714,20 @@ export function normalizeCatalog(raw) {
       ? rawSettings.defaultSeasonProfile
       : "auto";
   const fallbackTaxRate = taxRegions.find((region) => region.id === defaultTaxRegion)?.rate;
+  const requestedDefaultBartenderRateType = toText(
+    inputSettings.defaultBartenderRateType,
+    rawSettings.defaultBartenderRateType
+  );
+  const requestedDefaultStaffingRateType = toText(
+    inputSettings.defaultStaffingRateType,
+    rawSettings.defaultStaffingRateType
+  );
+  const defaultBartenderRateType = bartenderRateTypes.some((item) => item.id === requestedDefaultBartenderRateType)
+    ? requestedDefaultBartenderRateType
+    : bartenderRateTypes[0]?.id || "";
+  const defaultStaffingRateType = staffingRateTypes.some((item) => item.id === requestedDefaultStaffingRateType)
+    ? requestedDefaultStaffingRateType
+    : staffingRateTypes[0]?.id || "";
 
   return {
     packages,
@@ -659,6 +748,8 @@ export function normalizeCatalog(raw) {
       ),
       capacityLimit: toNumber(rawSettings.capacityLimit, DEFAULT_SETTINGS.capacityLimit, 1),
       bartenderRate: toNumber(rawSettings.bartenderRate, DEFAULT_SETTINGS.bartenderRate, 0),
+      bartenderRateTypes,
+      defaultBartenderRateType,
       serviceFeePct: toNumber(rawSettings.serviceFeePct, DEFAULT_SETTINGS.serviceFeePct, 0, 1),
       serviceFeeTiers,
       taxRate: toNumber(rawSettings.taxRate, fallbackTaxRate ?? DEFAULT_SETTINGS.taxRate, 0, 1),
@@ -669,6 +760,8 @@ export function normalizeCatalog(raw) {
       quoteValidityDays: toNumber(rawSettings.quoteValidityDays, DEFAULT_SETTINGS.quoteValidityDays, 1),
       serverRate: toNumber(rawSettings.serverRate, DEFAULT_SETTINGS.serverRate, 0),
       chefRate: toNumber(rawSettings.chefRate, DEFAULT_SETTINGS.chefRate, 0),
+      staffingRateTypes,
+      defaultStaffingRateType,
       quotePreparedBy: toText(rawSettings.quotePreparedBy, DEFAULT_SETTINGS.quotePreparedBy),
       brandName: toText(rawSettings.brandName, DEFAULT_SETTINGS.brandName),
       brandTagline: toText(rawSettings.brandTagline, DEFAULT_SETTINGS.brandTagline),

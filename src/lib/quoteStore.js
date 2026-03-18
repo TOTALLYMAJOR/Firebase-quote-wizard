@@ -8,13 +8,16 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  updateDoc
+  updateDoc,
+  where
 } from "firebase/firestore";
 import { db, firebaseReady } from "./firebase";
 import { buildQuoteEmailPayload } from "./proposalPayload";
 
 const LOCAL_QUOTES_KEY = "quoteWizard.quotes";
+const LOCAL_QUOTE_HISTORY_KEY = "quoteWizard.quoteHistory";
 const PORTAL_COLLECTION = "customerPortalQuotes";
+const QUOTE_HISTORY_COLLECTION = "quoteHistory";
 const DEFAULT_VALIDITY_DAYS = 30;
 const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
 const AVAILABILITY_CONFLICT_STATUSES = new Set(["accepted", "booked"]);
@@ -29,16 +32,18 @@ const STATUS_LIFECYCLE_FIELD = {
   accepted: "acceptedAtISO",
   booked: "bookedAtISO",
   declined: "declinedAtISO",
-  expired: "expiredAtISO"
+  expired: "expiredAtISO",
+  deleted: "deletedAtISO"
 };
 const STATUS_FLOW = {
-  draft: ["draft", "sent", "declined", "expired"],
-  sent: ["sent", "viewed", "accepted", "declined", "expired"],
-  viewed: ["viewed", "accepted", "declined", "expired"],
-  accepted: ["accepted", "booked", "declined"],
-  booked: ["booked"],
-  declined: ["declined"],
-  expired: ["expired", "draft", "sent"]
+  draft: ["draft", "sent", "declined", "expired", "deleted"],
+  sent: ["sent", "viewed", "accepted", "declined", "expired", "deleted"],
+  viewed: ["viewed", "accepted", "declined", "expired", "deleted"],
+  accepted: ["accepted", "booked", "declined", "deleted"],
+  booked: ["booked", "deleted"],
+  declined: ["declined", "deleted"],
+  expired: ["expired", "draft", "sent", "deleted"],
+  deleted: ["deleted", "draft"]
 };
 
 export const QUOTE_STATUSES = Object.keys(STATUS_FLOW);
@@ -64,6 +69,10 @@ function normalizeEmail(value) {
 }
 
 function normalizeVenueKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function normalizeCustomerNameKey(value) {
   return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
@@ -283,9 +292,14 @@ function hydrateQuote(item, nowISO = isoNow()) {
   const status = normalizeStatus(item.status);
   const integrationPayload = item.integrations || {};
   const integrationLogs = Array.isArray(integrationPayload.logs) ? integrationPayload.logs : [];
+  const eventTypeId = String(item.eventTypeId || item.selection?.eventTypeId || item.event?.eventTypeId || "").trim();
+  const customerNameKey = normalizeCustomerNameKey(item.customerNameKey || item.customer?.name || "");
   return {
     ...item,
     status,
+    eventTypeId,
+    customerNameKey,
+    deletedAtISO: item.deletedAtISO || "",
     createdAtISO,
     expiresAtISO,
     payment: hydratePayment(item.payment),
@@ -301,7 +315,7 @@ function hydrateQuote(item, nowISO = isoNow()) {
 }
 
 function applyExpiry(quote, nowISO = isoNow()) {
-  if (!EXPIRABLE_STATUSES.has(quote.status)) return quote;
+  if (!EXPIRABLE_STATUSES.has(quote.status) || quote.status === "deleted") return quote;
   const expiresAt = parseSafe(quote.expiresAtISO, nowISO);
   const now = parseSafe(nowISO, nowISO);
   if (expiresAt.getTime() >= now.getTime()) return quote;
@@ -328,20 +342,26 @@ function resolveMenuItemDetails(menuItemIds, settings) {
   if (!selected.size) return [];
 
   const sections = Array.isArray(settings?.menuSections) ? settings.menuSections : [];
-  const details = [];
+  const byId = new Map();
   sections.forEach((section) => {
     (section.items || []).forEach((item) => {
-      if (selected.has(item.id)) {
-        details.push({
-          id: item.id,
-          name: item.name,
-          type: item.type || "per_event",
-          price: Number(item.price || 0)
-        });
-      }
+      const id = String(item?.id || "").trim();
+      if (!id || !selected.has(id) || byId.has(id)) return;
+      byId.set(id, {
+        id,
+        name: String(item?.name || "").trim() || id,
+        type: item?.type === "per_person" ? "per_person" : "per_event",
+        price: Number(item?.price || 0)
+      });
     });
   });
-  return details;
+
+  return Array.from(selected).map((id) => byId.get(id) || {
+    id,
+    name: id,
+    type: "per_event",
+    price: 0
+  });
 }
 
 export function getAllowedStatusTransitions(status) {
@@ -488,6 +508,31 @@ async function readQuoteById(quoteId) {
   return hydrateQuote(match, nowISO);
 }
 
+export async function saveQuoteVersion(quoteId) {
+  const quote = await readQuoteById(quoteId);
+  const timestamp = isoNow();
+  const snapshot = JSON.parse(JSON.stringify(quote));
+
+  if (firebaseReady) {
+    await addDoc(collection(db, QUOTE_HISTORY_COLLECTION), {
+      quoteId: quote.id,
+      snapshot,
+      timestamp
+    });
+    return { ok: true, storage: "firebase", timestamp };
+  }
+
+  const history = JSON.parse(localStorage.getItem(LOCAL_QUOTE_HISTORY_KEY) || "[]");
+  history.unshift({
+    id: buildPortalKey(),
+    quoteId: quote.id,
+    snapshot,
+    timestamp
+  });
+  localStorage.setItem(LOCAL_QUOTE_HISTORY_KEY, JSON.stringify(history));
+  return { ok: true, storage: "local", timestamp };
+}
+
 export async function convertQuoteToContract({
   quoteId,
   actorEmail = "",
@@ -530,6 +575,8 @@ export async function convertQuoteToContract({
     availabilityCheckedAtISO: nowISO,
     availabilitySummary: buildAvailabilitySummary(availability)
   };
+
+  await saveQuoteVersion(id);
 
   if (firebaseReady) {
     await updateDoc(doc(db, "quotes", id), {
@@ -622,6 +669,8 @@ export async function updateQuoteBookingConfirmation({
     nextBooking.confirmedAtISO = "";
   }
 
+  await saveQuoteVersion(id);
+
   if (firebaseReady) {
     await updateDoc(doc(db, "quotes", id), {
       booking: nextBooking,
@@ -673,6 +722,8 @@ export async function recordQuoteIntegrationSync({
     attempt,
     payloadRef
   });
+
+  await saveQuoteVersion(id);
 
   if (firebaseReady) {
     const quoteRef = doc(db, "quotes", id);
@@ -764,6 +815,8 @@ export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } =
   const nowISO = isoNow();
   const nextLead = String(staffLead || "").trim();
 
+  await saveQuoteVersion(id);
+
   if (firebaseReady) {
     await updateDoc(doc(db, "quotes", id), {
       "booking.staffLead": nextLead,
@@ -802,6 +855,8 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
   const quoteNumber = buildQuoteNumber();
   const portalKey = buildPortalKey();
   const normalizedCustomerEmail = normalizeEmail(form.email);
+  const customerNameKey = normalizeCustomerNameKey(form.name);
+  const eventTypeId = String(form.eventTypeId || "").trim();
   const validityDays = Math.max(1, Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS));
   const expiresAtISO = addDaysISO(nowISO, validityDays);
   const menuItems = Array.isArray(form.menuItems) ? form.menuItems : [];
@@ -816,6 +871,9 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       organization: form.clientOrg || ""
     },
     customerEmailKey: normalizedCustomerEmail,
+    customerNameKey,
+    eventTypeId,
+    deletedAtISO: "",
     ownerUid: ownerUid || "",
     ownerEmail: normalizeEmail(ownerEmail),
     portalKey,
@@ -828,7 +886,8 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       guests: Number(form.guests || 0),
       hours: Number(form.hours || 0),
       bartenders: Number(form.bartenders || 0),
-      style: form.style || ""
+      style: form.style || "",
+      eventTypeId
     },
     selection: {
       packageId: form.pkg,
@@ -836,13 +895,42 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       addons: form.addons,
       rentals: form.rentals,
       menuItems,
+      menuItemsSnapshot: menuItemDetails.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price || 0)
+      })),
       menuItemNames,
       menuItemDetails,
       milesRT: Number(form.milesRT || 0),
       payMethod: form.payMethod,
       eventTemplateId: form.eventTemplateId || "custom",
+      eventTypeId,
       taxRegion: form.taxRegion || settings?.defaultTaxRegion || "",
-      seasonProfileId: form.seasonProfileId || settings?.defaultSeasonProfile || "auto"
+      seasonProfileId: form.seasonProfileId || settings?.defaultSeasonProfile || "auto",
+      laborRateSnapshot: {
+        bartenderRateApplied: totals.bartenderRateApplied,
+        serverRateApplied: totals.serverRateApplied,
+        chefRateApplied: totals.chefRateApplied,
+        bartenderRateTypeId: totals.bartenderRateTypeId || "",
+        bartenderRateTypeName: totals.bartenderRateTypeName || "",
+        staffingRateTypeId: totals.staffingRateTypeId || "",
+        staffingRateTypeName: totals.staffingRateTypeName || ""
+      },
+      bartenderRateTypeId: String(form.bartenderRateTypeId || ""),
+      staffingRateTypeId: String(form.staffingRateTypeId || ""),
+      bartenderRateOverride:
+        form.bartenderRateOverride === "" || form.bartenderRateOverride === null || form.bartenderRateOverride === undefined
+          ? ""
+          : toNumber(form.bartenderRateOverride, 0),
+      serverRateOverride:
+        form.serverRateOverride === "" || form.serverRateOverride === null || form.serverRateOverride === undefined
+          ? ""
+          : toNumber(form.serverRateOverride, 0),
+      chefRateOverride:
+        form.chefRateOverride === "" || form.chefRateOverride === null || form.chefRateOverride === undefined
+          ? ""
+          : toNumber(form.chefRateOverride, 0)
     },
     payment: {
       depositLink: (form.depositLink || "").trim(),
@@ -885,6 +973,13 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
       menu: totals.menu,
       labor: totals.labor,
       bartenderLabor: totals.bartenderLabor,
+      bartenderRateApplied: totals.bartenderRateApplied,
+      serverRateApplied: totals.serverRateApplied,
+      chefRateApplied: totals.chefRateApplied,
+      bartenderRateTypeId: totals.bartenderRateTypeId || "",
+      bartenderRateTypeName: totals.bartenderRateTypeName || "",
+      staffingRateTypeId: totals.staffingRateTypeId || "",
+      staffingRateTypeName: totals.staffingRateTypeName || "",
       travel: totals.travel,
       serviceFee: totals.serviceFee,
       tax: totals.tax,
@@ -954,22 +1049,281 @@ export async function submitQuote({ form, totals, catalogSource, settings, owner
   return { id: existing[0].id, quoteNumber, portalKey, storage: "local" };
 }
 
-export async function getQuoteHistory() {
+export async function updateQuote({
+  quoteId,
+  form,
+  totals,
+  catalogSource,
+  settings,
+  ownerUid = "",
+  ownerEmail = ""
+}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  const existing = await readQuoteById(id);
   const nowISO = isoNow();
+  const normalizedCustomerEmail = normalizeEmail(form.email);
+  const customerNameKey = normalizeCustomerNameKey(form.name);
+  const eventTypeId = String(form.eventTypeId || "").trim();
+  const validityDays = Math.max(1, Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS));
+  const expiresAtISO = addDaysISO(nowISO, validityDays);
+  const menuItems = Array.isArray(form.menuItems) ? form.menuItems : [];
+  const menuItemDetails = resolveMenuItemDetails(menuItems, settings);
+  const menuItemNames = menuItemDetails.map((item) => item.name);
+  const lifecycle = lifecycleObject("draft", nowISO, existing.lifecycle);
+
+  const existingPayment = hydratePayment(existing.payment);
+  const nextDepositLink = String(form.depositLink || "").trim();
+  let nextDepositStatus = normalizePaymentStatus(existingPayment.depositStatus || "unpaid");
+  if (nextDepositLink && nextDepositStatus === "unpaid") {
+    nextDepositStatus = "sent";
+  }
+  if (!nextDepositLink && nextDepositStatus === "sent") {
+    nextDepositStatus = "unpaid";
+  }
+
+  const patch = {
+    customer: {
+      name: form.name || "",
+      email: normalizedCustomerEmail,
+      phone: form.phone || "",
+      organization: form.clientOrg || ""
+    },
+    customerEmailKey: normalizedCustomerEmail,
+    customerNameKey,
+    eventTypeId,
+    deletedAtISO: "",
+    ownerUid: ownerUid || existing.ownerUid || "",
+    ownerEmail: normalizeEmail(ownerEmail) || existing.ownerEmail || "",
+    event: {
+      name: form.eventName || "",
+      date: form.date || "",
+      time: form.time || "",
+      venue: form.venue || "",
+      venueAddress: form.venueAddress || "",
+      guests: Number(form.guests || 0),
+      hours: Number(form.hours || 0),
+      bartenders: Number(form.bartenders || 0),
+      style: form.style || "",
+      eventTypeId
+    },
+    selection: {
+      packageId: form.pkg,
+      packageName: totals.selectedPkg?.name || "",
+      addons: form.addons,
+      rentals: form.rentals,
+      menuItems,
+      menuItemsSnapshot: menuItemDetails.map((item) => ({
+        id: item.id,
+        name: item.name,
+        price: Number(item.price || 0)
+      })),
+      menuItemNames,
+      menuItemDetails,
+      milesRT: Number(form.milesRT || 0),
+      payMethod: form.payMethod,
+      eventTemplateId: form.eventTemplateId || "custom",
+      eventTypeId,
+      taxRegion: form.taxRegion || settings?.defaultTaxRegion || "",
+      seasonProfileId: form.seasonProfileId || settings?.defaultSeasonProfile || "auto",
+      laborRateSnapshot: {
+        bartenderRateApplied: totals.bartenderRateApplied,
+        serverRateApplied: totals.serverRateApplied,
+        chefRateApplied: totals.chefRateApplied,
+        bartenderRateTypeId: totals.bartenderRateTypeId || "",
+        bartenderRateTypeName: totals.bartenderRateTypeName || "",
+        staffingRateTypeId: totals.staffingRateTypeId || "",
+        staffingRateTypeName: totals.staffingRateTypeName || ""
+      },
+      bartenderRateTypeId: String(form.bartenderRateTypeId || ""),
+      staffingRateTypeId: String(form.staffingRateTypeId || ""),
+      bartenderRateOverride:
+        form.bartenderRateOverride === "" || form.bartenderRateOverride === null || form.bartenderRateOverride === undefined
+          ? ""
+          : toNumber(form.bartenderRateOverride, 0),
+      serverRateOverride:
+        form.serverRateOverride === "" || form.serverRateOverride === null || form.serverRateOverride === undefined
+          ? ""
+          : toNumber(form.serverRateOverride, 0),
+      chefRateOverride:
+        form.chefRateOverride === "" || form.chefRateOverride === null || form.chefRateOverride === undefined
+          ? ""
+          : toNumber(form.chefRateOverride, 0)
+    },
+    payment: {
+      ...existingPayment,
+      depositLink: nextDepositLink,
+      depositStatus: nextDepositStatus
+    },
+    totals: {
+      base: totals.base,
+      addons: totals.addons,
+      rentals: totals.rentals,
+      menu: totals.menu,
+      labor: totals.labor,
+      bartenderLabor: totals.bartenderLabor,
+      bartenderRateApplied: totals.bartenderRateApplied,
+      serverRateApplied: totals.serverRateApplied,
+      chefRateApplied: totals.chefRateApplied,
+      bartenderRateTypeId: totals.bartenderRateTypeId || "",
+      bartenderRateTypeName: totals.bartenderRateTypeName || "",
+      staffingRateTypeId: totals.staffingRateTypeId || "",
+      staffingRateTypeName: totals.staffingRateTypeName || "",
+      travel: totals.travel,
+      serviceFee: totals.serviceFee,
+      tax: totals.tax,
+      total: totals.total,
+      deposit: totals.deposit,
+      serviceFeePctApplied: totals.serviceFeePctApplied,
+      taxRateApplied: totals.taxRateApplied,
+      taxRegionId: totals.taxRegionId,
+      taxRegionName: totals.taxRegionName,
+      seasonProfileId: totals.seasonProfileId,
+      seasonProfileName: totals.seasonProfileName,
+      packageMultiplier: totals.packageMultiplier,
+      addonMultiplier: totals.addonMultiplier,
+      rentalMultiplier: totals.rentalMultiplier
+    },
+    quoteMeta: {
+      quotePreparedBy: settings?.quotePreparedBy || "",
+      brandName: settings?.brandName || "",
+      brandTagline: settings?.brandTagline || "",
+      brandLogoUrl: settings?.brandLogoUrl || "",
+      brandPrimaryColor: settings?.brandPrimaryColor || "",
+      brandAccentColor: settings?.brandAccentColor || "",
+      brandDarkAccentColor: settings?.brandDarkAccentColor || "",
+      brandCrew: Array.isArray(settings?.brandCrew) ? settings.brandCrew : [],
+      businessPhone: settings?.businessPhone || "",
+      businessEmail: settings?.businessEmail || "",
+      businessAddress: settings?.businessAddress || "",
+      acceptanceEmail: settings?.acceptanceEmail || "",
+      includeDisposables: form.includeDisposables !== false,
+      disposablesNote: settings?.disposablesNote || "",
+      depositNotice: settings?.depositNotice || "",
+      quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
+      crmEnabled: Boolean(settings?.crmEnabled),
+      crmProvider: settings?.crmProvider || "webhook",
+      crmWebhookUrl: settings?.crmWebhookUrl || "",
+      crmAutoSyncOnSent: Boolean(settings?.crmAutoSyncOnSent),
+      crmAutoSyncOnBooked: Boolean(settings?.crmAutoSyncOnBooked),
+      integrationRetryLimit: Math.max(1, Number(settings?.integrationRetryLimit || 3)),
+      integrationAuditRetention: Math.max(10, Number(settings?.integrationAuditRetention || 50))
+    },
+    status: "draft",
+    source: catalogSource,
+    expiresAtISO,
+    lifecycle,
+    updatedAtISO: nowISO
+  };
+
+  await saveQuoteVersion(id);
+
   if (firebaseReady) {
-    const snap = await getDocs(query(collection(db, "quotes"), orderBy("createdAt", "desc")));
-    const quotes = snap.docs.map((docSnap) => {
-      const data = docSnap.data();
-      const createdAtISO = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAtISO;
-      return hydrateQuote(
-        {
-          id: docSnap.id,
-          ...data,
-          createdAtISO: createdAtISO || nowISO
-        },
-        nowISO
-      );
-    });
+    await updateDoc(doc(db, "quotes", id), patch);
+    await syncPortalSnapshotFromQuoteDoc(id);
+    return {
+      id,
+      quoteNumber: existing.quoteNumber || "",
+      portalKey: existing.portalKey || "",
+      storage: "firebase"
+    };
+  }
+
+  const existingQuotes = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  let found = false;
+  const next = existingQuotes.map((item) => {
+    if (item.id !== id) return item;
+    found = true;
+    return {
+      ...item,
+      ...patch
+    };
+  });
+  if (!found) {
+    throw new Error("Quote not found.");
+  }
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return {
+    id,
+    quoteNumber: existing.quoteNumber || "",
+    portalKey: existing.portalKey || "",
+    storage: "local"
+  };
+}
+
+function applyQuoteHistoryFilters(quotes, { eventTypeId = "", customerName = "" } = {}) {
+  const normalizedEventTypeId = String(eventTypeId || "").trim();
+  const normalizedCustomerName = normalizeCustomerNameKey(customerName);
+
+  return quotes.filter((quote) => {
+    const quoteEventTypeId = String(quote?.eventTypeId || quote?.selection?.eventTypeId || "").trim();
+    if (normalizedEventTypeId && quoteEventTypeId !== normalizedEventTypeId) {
+      return false;
+    }
+
+    if (!normalizedCustomerName) {
+      return true;
+    }
+
+    const nameKey = normalizeCustomerNameKey(quote?.customerNameKey || quote?.customer?.name || "");
+    return nameKey.includes(normalizedCustomerName);
+  });
+}
+
+export async function getQuoteHistory(filters = {}) {
+  const normalizedEventTypeId = String(filters?.eventTypeId || "").trim();
+  const normalizedCustomerName = normalizeCustomerNameKey(filters?.customerName || "");
+  const nowISO = isoNow();
+
+  if (firebaseReady) {
+    const quoteCollection = collection(db, "quotes");
+    let snap;
+    let usedServerCustomerPrefix = false;
+
+    if (normalizedCustomerName) {
+      const prefixConstraints = [
+        where("customerNameKey", ">=", normalizedCustomerName),
+        where("customerNameKey", "<=", `${normalizedCustomerName}\uf8ff`),
+        orderBy("customerNameKey")
+      ];
+      if (normalizedEventTypeId) {
+        prefixConstraints.unshift(where("eventTypeId", "==", normalizedEventTypeId));
+      }
+      try {
+        snap = await getDocs(query(quoteCollection, ...prefixConstraints));
+        usedServerCustomerPrefix = true;
+      } catch {
+        const fallbackConstraints = [orderBy("createdAt", "desc")];
+        if (normalizedEventTypeId) {
+          fallbackConstraints.unshift(where("eventTypeId", "==", normalizedEventTypeId));
+        }
+        snap = await getDocs(query(quoteCollection, ...fallbackConstraints));
+      }
+    } else {
+      const constraints = [orderBy("createdAt", "desc")];
+      if (normalizedEventTypeId) {
+        constraints.unshift(where("eventTypeId", "==", normalizedEventTypeId));
+      }
+      snap = await getDocs(query(quoteCollection, ...constraints));
+    }
+
+    const quotes = sortQuotesDesc(
+      snap.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const createdAtISO = data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAtISO;
+        return hydrateQuote(
+          {
+            id: docSnap.id,
+            ...data,
+            createdAtISO: createdAtISO || nowISO
+          },
+          nowISO
+        );
+      })
+    );
 
     const nextQuotes = quotes.map((quote) => applyExpiry(quote, nowISO));
     const autoExpired = nextQuotes.filter(
@@ -979,6 +1333,7 @@ export async function getQuoteHistory() {
     if (autoExpired.length) {
       await Promise.all(
         autoExpired.map(async (quote) => {
+          await saveQuoteVersion(quote.id);
           await updateDoc(doc(db, "quotes", quote.id), {
             status: "expired",
             updatedAtISO: nowISO,
@@ -989,9 +1344,14 @@ export async function getQuoteHistory() {
       );
     }
 
+    const filteredQuotes = applyQuoteHistoryFilters(nextQuotes, {
+      eventTypeId: normalizedEventTypeId,
+      customerName: usedServerCustomerPrefix ? "" : normalizedCustomerName
+    });
+
     return {
       source: "firebase",
-      quotes: nextQuotes
+      quotes: filteredQuotes
     };
   }
 
@@ -999,14 +1359,23 @@ export async function getQuoteHistory() {
   const hydrated = sortQuotesDesc(existing).map((quote) => hydrateQuote(quote, nowISO));
   const nextQuotes = hydrated.map((quote) => applyExpiry(quote, nowISO));
 
-  const changed = nextQuotes.some((quote, idx) => quote.status !== hydrated[idx].status);
-  if (changed) {
+  const autoExpiredIds = nextQuotes
+    .map((quote, idx) => (quote.status !== hydrated[idx].status ? quote.id : ""))
+    .filter(Boolean);
+
+  if (autoExpiredIds.length) {
+    for (const quoteId of autoExpiredIds) {
+      await saveQuoteVersion(quoteId);
+    }
     localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(nextQuotes));
   }
 
   return {
     source: "local",
-    quotes: nextQuotes
+    quotes: applyQuoteHistoryFilters(nextQuotes, {
+      eventTypeId: normalizedEventTypeId,
+      customerName: normalizedCustomerName
+    })
   };
 }
 
@@ -1019,12 +1388,15 @@ export async function updateQuoteStatus(quoteId, status) {
   const nextStatus = normalizeStatus(status);
   const statusPayload = {
     status: nextStatus,
+    deletedAtISO: nextStatus === "deleted" ? nowISO : "",
     updatedAtISO: nowISO,
     ...lifecyclePatch(nextStatus, nowISO)
   };
   if (nextStatus === "booked") {
     statusPayload["booking.bookedAtISO"] = nowISO;
   }
+
+  await saveQuoteVersion(quoteId);
 
   if (firebaseReady) {
     await updateDoc(doc(db, "quotes", quoteId), statusPayload);
@@ -1039,6 +1411,7 @@ export async function updateQuoteStatus(quoteId, status) {
     return {
       ...quote,
       status: nextStatus,
+      deletedAtISO: nextStatus === "deleted" ? nowISO : "",
       updatedAtISO: nowISO,
       booking:
         nextStatus === "booked"
@@ -1073,6 +1446,8 @@ export async function updateQuotePaymentStatus(quoteId, paymentStatus) {
     paymentPatch["payment.depositConfirmedAtISO"] = "";
   }
 
+  await saveQuoteVersion(quoteId);
+
   if (firebaseReady) {
     await updateDoc(doc(db, "quotes", quoteId), paymentPatch);
     await syncPortalSnapshotFromQuoteDoc(quoteId);
@@ -1099,6 +1474,82 @@ export async function updateQuotePaymentStatus(quoteId, paymentStatus) {
     };
   });
 
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return { ok: true, storage: "local" };
+}
+
+export async function reopenQuote(id) {
+  const quoteId = String(id || "").trim();
+  if (!quoteId) {
+    throw new Error("Quote id is required.");
+  }
+
+  const quote = await readQuoteById(quoteId);
+  const nowISO = isoNow();
+  const lifecycle = lifecycleObject("draft", nowISO, quote.lifecycle);
+
+  await saveQuoteVersion(quoteId);
+
+  if (firebaseReady) {
+    await updateDoc(doc(db, "quotes", quoteId), {
+      status: "draft",
+      deletedAtISO: "",
+      updatedAtISO: nowISO,
+      lifecycle
+    });
+    await syncPortalSnapshotFromQuoteDoc(quoteId);
+    return { ok: true, storage: "firebase" };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const next = existing.map((item) => {
+    if (item.id !== quoteId) return item;
+    return {
+      ...item,
+      status: "draft",
+      deletedAtISO: "",
+      updatedAtISO: nowISO,
+      lifecycle
+    };
+  });
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  return { ok: true, storage: "local" };
+}
+
+export async function deleteQuote(id) {
+  const quoteId = String(id || "").trim();
+  if (!quoteId) {
+    throw new Error("Quote id is required.");
+  }
+
+  const quote = await readQuoteById(quoteId);
+  const nowISO = isoNow();
+  const lifecycle = lifecycleObject("deleted", nowISO, quote.lifecycle);
+
+  await saveQuoteVersion(quoteId);
+
+  if (firebaseReady) {
+    await updateDoc(doc(db, "quotes", quoteId), {
+      status: "deleted",
+      deletedAtISO: nowISO,
+      updatedAtISO: nowISO,
+      lifecycle
+    });
+    await syncPortalSnapshotFromQuoteDoc(quoteId);
+    return { ok: true, storage: "firebase" };
+  }
+
+  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const next = existing.map((item) => {
+    if (item.id !== quoteId) return item;
+    return {
+      ...item,
+      status: "deleted",
+      deletedAtISO: nowISO,
+      updatedAtISO: nowISO,
+      lifecycle
+    };
+  });
   localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
   return { ok: true, storage: "local" };
 }
@@ -1151,6 +1602,9 @@ export async function updatePortalQuoteStatus(portalKey, status) {
     if (normalizeStatus(portalData.status) === "booked") {
       throw new Error("This quote is already booked and can no longer be changed from the portal.");
     }
+    if (portalData.quoteId) {
+      await saveQuoteVersion(portalData.quoteId);
+    }
     const lifecycle = lifecycleObject(nextStatus, nowISO, portalData.lifecycle);
     await updateDoc(portalRef, {
       status: nextStatus,
@@ -1172,6 +1626,10 @@ export async function updatePortalQuoteStatus(portalKey, status) {
   const locked = existing.find((quote) => quote.portalKey === key && normalizeStatus(quote.status) === "booked");
   if (locked) {
     throw new Error("This quote is already booked and can no longer be changed from the portal.");
+  }
+  const localTarget = existing.find((quote) => quote.portalKey === key);
+  if (localTarget?.id) {
+    await saveQuoteVersion(localTarget.id);
   }
   const next = existing.map((quote) => {
     if (quote.portalKey !== key) return quote;

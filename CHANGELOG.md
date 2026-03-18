@@ -9,6 +9,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 ### Added
 
 - Booking workflow upgrades: availability-aware proposal-to-contract conversion and confirmation tracking in quote history.
+- Firestore dynamic menu seed script (`scripts/seed-firestore-menu.mjs`) and npm entrypoint (`seed:menu:firestore`) for idempotent creation of `eventTypes`, `menuCategories`, and `menuItems`.
 - Unit tests for booking conversion and confirmation lifecycle in local fallback mode.
 - Visual snapshot tests covering Event/Menu/Review wizard states and the proposal sheet output.
 - Session diagnostics module with runtime error capture (`window.error` and `unhandledrejection`) and a staff diagnostics modal with export/clear tools.
@@ -20,6 +21,10 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ### Changed
 
+- Completed the parallel migration rollout: Firestore-backed event menus (`eventTypes/menuCategories/menuItems`), quote-history filtering, soft delete/reopen controls, immutable menu snapshots, and pre-mutation version history in `quoteHistory`.
+- Finalized menu cutover to Firestore-backed event menus by removing wizard/runtime fallback to static `DEFAULT_MENU_SECTIONS` and retiring the legacy static menu editor in Admin Catalog.
+- Added admin-configurable labor rate types (bartender + staffing), with quote-time manual override support and persisted applied-rate snapshots in quote data.
+- Added quote-history Edit workflow that reloads quotes into the wizard and updates the same quote with pre-save version snapshots plus labor-rate lock snapshots.
 - Event schedule cards now surface contract number and confirmation state for accepted/booked events.
 - Fixed header crew chip spacing so staff image/name badges no longer overlap the brand text on narrower desktop widths.
 - Production deploy workflow is now gated on successful `CI Quality` completion for `main` pushes, with manual dispatch preserved for controlled operations.

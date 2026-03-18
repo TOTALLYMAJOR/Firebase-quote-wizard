@@ -9,7 +9,7 @@ import { useCatalogData } from "./hooks/useCatalogData";
 import { notifyOwnerNewQuote } from "./lib/commerceOps";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
-import { checkEventAvailability, submitQuote } from "./lib/quoteStore";
+import { checkEventAvailability, submitQuote, updateQuote } from "./lib/quoteStore";
 import { recordDiagnosticError, setDiagnosticsUserContext } from "./lib/sessionDiagnostics";
 
 const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
@@ -35,12 +35,26 @@ function copyText(text) {
   return navigator.clipboard.writeText(text);
 }
 
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toOptionalNumber(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const n = Number(value);
+  return Number.isFinite(n) ? n : "";
+}
+
 export default function App() {
   const wizardRef = useRef(null);
   const authSession = useAuthSession();
   const [portalKey, setPortalKey] = useState(() => readPortalKeyFromUrl());
   const [portalMode, setPortalMode] = useState(Boolean(portalKey));
   const catalog = useCatalogData({ enabled: authSession.isStaff });
+  const [dynamicMenuSections, setDynamicMenuSections] = useState([]);
+  const [dynamicMenuLoading, setDynamicMenuLoading] = useState(false);
+  const [dynamicMenuError, setDynamicMenuError] = useState("");
   const [step, setStep] = useState(1);
   const [adminOpen, setAdminOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -51,6 +65,7 @@ export default function App() {
   const [compareOpen, setCompareOpen] = useState(false);
   const [submitState, setSubmitState] = useState({ saving: false, message: "", portalLink: "" });
   const [availabilityNotice, setAvailabilityNotice] = useState("");
+  const [editingQuote, setEditingQuote] = useState({ id: "", quoteNumber: "" });
 
   const [form, setForm] = useState({
     date: "",
@@ -70,6 +85,12 @@ export default function App() {
     addons: [],
     rentals: [],
     menuItems: [],
+    eventTypeId: "",
+    bartenderRateTypeId: "",
+    staffingRateTypeId: "",
+    bartenderRateOverride: "",
+    serverRateOverride: "",
+    chefRateOverride: "",
     eventTemplateId: "custom",
     taxRegion: "",
     seasonProfileId: "auto",
@@ -79,15 +100,44 @@ export default function App() {
     payMethod: "card"
   });
 
+  const effectiveMenuSections = useMemo(
+    () => (Array.isArray(dynamicMenuSections) ? dynamicMenuSections : []),
+    [dynamicMenuSections]
+  );
+
+  const effectiveSettings = useMemo(
+    () => ({
+      ...catalog.settings,
+      menuSections: effectiveMenuSections
+    }),
+    [catalog.settings, effectiveMenuSections]
+  );
+
+  useEffect(() => {
+    if (catalog.loading) return;
+    const currentEventTypeId = String(form.eventTypeId || "").trim();
+    if (currentEventTypeId) return;
+    const fallbackEventTypeId = String(catalog.eventTypes?.[0]?.id || "").trim();
+    if (!fallbackEventTypeId) return;
+    setForm((prev) => {
+      if (String(prev.eventTypeId || "").trim()) return prev;
+      return {
+        ...prev,
+        eventTypeId: fallbackEventTypeId
+      };
+    });
+  }, [catalog.eventTypes, catalog.loading, form.eventTypeId]);
+
   const totals = useMemo(
-    () => calculateQuote(form, catalog, catalog.settings),
-    [form, catalog]
+    () => calculateQuote(form, catalog, effectiveSettings),
+    [form, catalog, effectiveSettings]
   );
 
   const recommendations = useMemo(
     () => buildUpsellRecommendations({ form, catalog, totals, settings: catalog.settings }),
     [form, catalog, totals]
   );
+  const isEditingQuote = Boolean(editingQuote.id);
   const brandName = catalog.settings?.brandName || "Tasteful Touch Catering";
   const brandTagline = catalog.settings?.brandTagline || "Chef Toni and Grill Master Ervin";
   const brandLogoUrl = catalog.settings?.brandLogoUrl || "/brand/logo.png";
@@ -117,12 +167,76 @@ export default function App() {
   };
 
   useEffect(() => {
+    let alive = true;
+
+    if (catalog.loading) {
+      return () => {
+        alive = false;
+      };
+    }
+
+    const nextEventTypeId = String(form.eventTypeId || "").trim();
+    if (!nextEventTypeId) {
+      setDynamicMenuSections([]);
+      setDynamicMenuLoading(false);
+      setDynamicMenuError("");
+      return () => {
+        alive = false;
+      };
+    }
+
+    async function loadMenu() {
+      setDynamicMenuLoading(true);
+      setDynamicMenuError("");
+      setDynamicMenuSections([]);
+      try {
+        const sections = await catalog.loadMenuByEvent(nextEventTypeId);
+        if (!alive) return;
+        setDynamicMenuSections(Array.isArray(sections) ? sections : []);
+      } catch (err) {
+        if (!alive) return;
+        setDynamicMenuSections([]);
+        setDynamicMenuError(err?.message || "Failed to load event type menu.");
+      } finally {
+        if (alive) {
+          setDynamicMenuLoading(false);
+        }
+      }
+    }
+
+    loadMenu();
+    return () => {
+      alive = false;
+    };
+  }, [catalog.loading, catalog.loadMenuByEvent, form.eventTypeId]);
+
+  useEffect(() => {
+    const availableMenuItemIds = new Set(
+      effectiveMenuSections.flatMap((section) => (section.items || []).map((item) => item.id))
+    );
+    setForm((prev) => {
+      const filtered = (prev.menuItems || []).filter((id) => availableMenuItemIds.has(id));
+      if (filtered.length === (prev.menuItems || []).length) {
+        return prev;
+      }
+      return {
+        ...prev,
+        menuItems: filtered
+      };
+    });
+  }, [effectiveMenuSections]);
+
+  useEffect(() => {
     if (catalog.loading) return;
     setForm((prev) => {
       let changed = false;
       const next = { ...prev };
       const defaultTaxRegion = catalog.settings?.defaultTaxRegion || catalog.settings?.taxRegions?.[0]?.id || "";
       const defaultSeasonProfile = catalog.settings?.defaultSeasonProfile || "auto";
+      const defaultBartenderRateType =
+        catalog.settings?.defaultBartenderRateType || catalog.settings?.bartenderRateTypes?.[0]?.id || "";
+      const defaultStaffingRateType =
+        catalog.settings?.defaultStaffingRateType || catalog.settings?.staffingRateTypes?.[0]?.id || "";
 
       if (!next.taxRegion && defaultTaxRegion) {
         next.taxRegion = defaultTaxRegion;
@@ -134,6 +248,14 @@ export default function App() {
       }
       if (!next.eventTemplateId) {
         next.eventTemplateId = "custom";
+        changed = true;
+      }
+      if (!next.bartenderRateTypeId && defaultBartenderRateType) {
+        next.bartenderRateTypeId = defaultBartenderRateType;
+        changed = true;
+      }
+      if (!next.staffingRateTypeId && defaultStaffingRateType) {
+        next.staffingRateTypeId = defaultStaffingRateType;
         changed = true;
       }
       return changed ? next : prev;
@@ -185,12 +307,13 @@ export default function App() {
     const addonIds = new Set(catalog.addons.map((item) => item.id));
     const rentalIds = new Set(catalog.rentals.map((item) => item.id));
     const menuItemIds = new Set(
-      (catalog.settings?.menuSections || []).flatMap((section) => (section.items || []).map((item) => item.id))
+      effectiveMenuSections.flatMap((section) => (section.items || []).map((item) => item.id))
     );
 
     setForm((prev) => ({
       ...prev,
       eventTemplateId: template.id,
+      eventTypeId: template.eventTypeId || prev.eventTypeId || "",
       style: template.style || prev.style,
       hours: Number(template.hours || prev.hours || 0),
       bartenders: Number(template.bartenders ?? prev.bartenders ?? 0),
@@ -201,7 +324,30 @@ export default function App() {
       milesRT: Number(template.milesRT || prev.milesRT || 0),
       payMethod: template.payMethod || prev.payMethod,
       taxRegion: template.taxRegion || prev.taxRegion || catalog.settings.defaultTaxRegion || "",
-      seasonProfileId: template.seasonProfileId || prev.seasonProfileId || "auto"
+      seasonProfileId: template.seasonProfileId || prev.seasonProfileId || "auto",
+      bartenderRateTypeId: template.bartenderRateTypeId || prev.bartenderRateTypeId || "",
+      staffingRateTypeId: template.staffingRateTypeId || prev.staffingRateTypeId || "",
+      bartenderRateOverride:
+        template.bartenderRateOverride === "" || template.bartenderRateOverride === null || template.bartenderRateOverride === undefined
+          ? prev.bartenderRateOverride
+          : Number(template.bartenderRateOverride),
+      serverRateOverride:
+        template.serverRateOverride === "" || template.serverRateOverride === null || template.serverRateOverride === undefined
+          ? prev.serverRateOverride
+          : Number(template.serverRateOverride),
+      chefRateOverride:
+        template.chefRateOverride === "" || template.chefRateOverride === null || template.chefRateOverride === undefined
+          ? prev.chefRateOverride
+          : Number(template.chefRateOverride)
+    }));
+  };
+
+  const handleEventTypeChange = (eventTypeId) => {
+    setForm((prev) => ({
+      ...prev,
+      eventTypeId: String(eventTypeId || ""),
+      eventTemplateId: "custom",
+      menuItems: []
     }));
   };
 
@@ -236,13 +382,15 @@ export default function App() {
             ? "Client email is required."
             : !/^\S+@\S+\.\S+$/.test(form.email.trim())
               ? "Client email format is invalid."
-              : !form.date
-                ? "Event date is required."
-                : !form.eventName.trim()
-                  ? "Event name is required."
-                  : !form.venue.trim()
-                    ? "Venue is required."
-                    : "";
+              : !form.eventTypeId
+                ? "Event type is required."
+                : !form.date
+                  ? "Event date is required."
+                  : !form.eventName.trim()
+                    ? "Event name is required."
+                    : !form.venue.trim()
+                      ? "Venue is required."
+                      : "";
 
     if (requiredError) {
       setSubmitState({ saving: false, message: requiredError, portalLink: "" });
@@ -257,7 +405,8 @@ export default function App() {
         eventTime: form.time,
         eventHours: form.hours,
         eventGuests: form.guests,
-        capacityLimit: scheduleCapacityLimit
+        capacityLimit: scheduleCapacityLimit,
+        excludeQuoteId: isEditingQuote ? editingQuote.id : ""
       });
       if (availability.hasBlockingConflict) {
         const conflictRefs = availability.conflicts
@@ -300,16 +449,37 @@ export default function App() {
         setAvailabilityNotice("");
       }
 
-      const result = await submitQuote({
-        form,
-        totals,
-        catalogSource: catalog.source,
-        settings: catalog.settings,
-        ownerUid: authSession.user?.uid || "",
-        ownerEmail: authSession.user?.email || ""
-      });
+      const result = isEditingQuote
+        ? await updateQuote({
+          quoteId: editingQuote.id,
+          form,
+          totals,
+          catalogSource: catalog.source,
+          settings: effectiveSettings,
+          ownerUid: authSession.user?.uid || "",
+          ownerEmail: authSession.user?.email || ""
+        })
+        : await submitQuote({
+          form,
+          totals,
+          catalogSource: catalog.source,
+          settings: effectiveSettings,
+          ownerUid: authSession.user?.uid || "",
+          ownerEmail: authSession.user?.email || ""
+        });
       const basePath = `${window.location.origin}${window.location.pathname}`;
       const portalLink = result.portalKey ? `${basePath}?portal=${result.portalKey}` : "";
+
+      if (isEditingQuote) {
+        setSubmitState({
+          saving: false,
+          message: `Quote ${result.quoteNumber} updated in ${result.storage}. Version snapshot saved and rates locked.`,
+          portalLink
+        });
+        setHistoryOpen(true);
+        return;
+      }
+
       let smsSuffix = "";
       if (result.storage === "firebase") {
         try {
@@ -348,6 +518,89 @@ export default function App() {
     }
   };
 
+  const handleEditQuote = (quote) => {
+    if (!quote?.id) return;
+
+    const selection = quote.selection || {};
+    const event = quote.event || {};
+    const customer = quote.customer || {};
+    const menuItemsFromSelection = Array.isArray(selection.menuItems) ? selection.menuItems : [];
+    const menuItemsFromDetails = Array.isArray(selection.menuItemDetails)
+      ? selection.menuItemDetails.map((item) => String(item?.id || "").trim()).filter(Boolean)
+      : [];
+    const menuItems = menuItemsFromSelection.length ? menuItemsFromSelection : menuItemsFromDetails;
+
+    // Lock labor rates during editing by defaulting overrides to the applied snapshot.
+    const laborRateSnapshot = selection.laborRateSnapshot || {};
+    const bartenderApplied = toOptionalNumber(
+      laborRateSnapshot.bartenderRateApplied ?? quote.totals?.bartenderRateApplied
+    );
+    const serverApplied = toOptionalNumber(
+      laborRateSnapshot.serverRateApplied ?? quote.totals?.serverRateApplied
+    );
+    const chefApplied = toOptionalNumber(
+      laborRateSnapshot.chefRateApplied ?? quote.totals?.chefRateApplied
+    );
+
+    setForm((prev) => ({
+      ...prev,
+      date: event.date || "",
+      time: event.time || "",
+      hours: toNumber(event.hours, 0),
+      bartenders: toNumber(event.bartenders, 0),
+      guests: toNumber(event.guests, 0),
+      venue: event.venue || "",
+      venueAddress: event.venueAddress || "",
+      eventName: event.name || "",
+      clientOrg: customer.organization || "",
+      style: event.style || prev.style,
+      name: customer.name || "",
+      phone: customer.phone || "",
+      email: customer.email || "",
+      pkg: selection.packageId || prev.pkg,
+      addons: Array.isArray(selection.addons) ? selection.addons : [],
+      rentals: Array.isArray(selection.rentals) ? selection.rentals : [],
+      menuItems,
+      eventTypeId: String(quote.eventTypeId || selection.eventTypeId || event.eventTypeId || ""),
+      bartenderRateTypeId:
+        String(selection.bartenderRateTypeId || laborRateSnapshot.bartenderRateTypeId || ""),
+      staffingRateTypeId:
+        String(selection.staffingRateTypeId || laborRateSnapshot.staffingRateTypeId || ""),
+      bartenderRateOverride:
+        selection.bartenderRateOverride !== "" && selection.bartenderRateOverride !== null && selection.bartenderRateOverride !== undefined
+          ? toOptionalNumber(selection.bartenderRateOverride)
+          : bartenderApplied,
+      serverRateOverride:
+        selection.serverRateOverride !== "" && selection.serverRateOverride !== null && selection.serverRateOverride !== undefined
+          ? toOptionalNumber(selection.serverRateOverride)
+          : serverApplied,
+      chefRateOverride:
+        selection.chefRateOverride !== "" && selection.chefRateOverride !== null && selection.chefRateOverride !== undefined
+          ? toOptionalNumber(selection.chefRateOverride)
+          : chefApplied,
+      eventTemplateId: selection.eventTemplateId || "custom",
+      taxRegion: selection.taxRegion || prev.taxRegion,
+      seasonProfileId: selection.seasonProfileId || prev.seasonProfileId || "auto",
+      milesRT: toNumber(selection.milesRT, 0),
+      includeDisposables: quote.quoteMeta?.includeDisposables !== false,
+      depositLink: quote.payment?.depositLink || "",
+      payMethod: selection.payMethod || prev.payMethod
+    }));
+
+    setEditingQuote({
+      id: quote.id,
+      quoteNumber: quote.quoteNumber || quote.id
+    });
+    setHistoryOpen(false);
+    setStep(1);
+    setSubmitState({
+      saving: false,
+      message: `Editing ${quote.quoteNumber || quote.id}. Save will update this quote and keep a version snapshot.`,
+      portalLink: ""
+    });
+    wizardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const handleCopyPortalLink = async () => {
     try {
       if (!submitState.portalLink) return;
@@ -366,6 +619,7 @@ export default function App() {
   };
 
   const handleGetInstantQuote = () => {
+    setEditingQuote({ id: "", quoteNumber: "" });
     setStep(1);
     wizardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -527,6 +781,8 @@ export default function App() {
                 styles={Object.keys(STAFF_RULES)}
                 settings={catalog.settings}
                 onTemplateChange={applyEventTemplate}
+                eventTypes={catalog.eventTypes || []}
+                onEventTypeChange={handleEventTypeChange}
               />
             )}
             {!catalog.loading && step === 2 && (
@@ -536,9 +792,11 @@ export default function App() {
                 catalog={catalog}
                 recommendations={recommendations}
                 onApplyRecommendation={applyRecommendation}
+                menuSections={effectiveMenuSections}
+                menuLoading={dynamicMenuLoading}
               />
             )}
-            {!catalog.loading && step === 3 && <StepReview form={form} totals={totals} settings={catalog.settings} />}
+            {!catalog.loading && step === 3 && <StepReview form={form} totals={totals} settings={effectiveSettings} />}
             {!catalog.loading && step === 3 && (
               <label className="field deposit-link-field">
                 <span>Deposit payment link (optional)</span>
@@ -566,12 +824,12 @@ export default function App() {
                     <option value="card">Pay by Card</option>
                     <option value="ach">Pay by ACH/Check</option>
                   </select>
-                  <button
-                    className="cta"
-                    onClick={handleSubmitQuote}
-                    disabled={submitState.saving || catalog.loading || totals.guests <= 0}
-                  >
-                    {submitState.saving ? "Saving..." : "Accept & Continue"}
+                <button
+                  className="cta"
+                  onClick={handleSubmitQuote}
+                  disabled={submitState.saving || catalog.loading || totals.guests <= 0}
+                >
+                    {submitState.saving ? (isEditingQuote ? "Saving Changes..." : "Saving...") : (isEditingQuote ? "Save Changes" : "Accept & Continue")}
                   </button>
                 </>
               )}
@@ -586,7 +844,13 @@ export default function App() {
           )}
 
           <p className="source-note">Quote validity: {Math.max(1, Number(catalog.settings?.quoteValidityDays || 30))} days</p>
+          {isEditingQuote && (
+            <p className="warning-note">
+              Editing quote {editingQuote.quoteNumber}. Saving updates this quote (with version history) and keeps labor rates locked by snapshot.
+            </p>
+          )}
           {catalog.error && <p className="error-note">{catalog.error}</p>}
+          {dynamicMenuError && <p className="warning-note">{dynamicMenuError}</p>}
           {availabilityNotice && <p className="warning-note">{availabilityNotice}</p>}
           {submitState.message && <p className="source-note">{submitState.message}</p>}
         </section>
@@ -610,6 +874,7 @@ export default function App() {
           onClose={() => setHistoryOpen(false)}
           basePortalUrl={`${window.location.origin}${window.location.pathname}`}
           currentUserEmail={authSession.user?.email || ""}
+          onEditQuote={handleEditQuote}
         />
 
         <EventScheduleModal
@@ -637,7 +902,7 @@ export default function App() {
           form={form}
           setForm={setForm}
           catalog={catalog}
-          settings={catalog.settings}
+          settings={effectiveSettings}
           styles={Object.keys(STAFF_RULES)}
           primaryTotals={totals}
         />

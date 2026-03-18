@@ -18,6 +18,9 @@ export default function LiveBreakdown({ form, totals, settings, catalog }) {
         <div><dt>Menu Picks</dt><dd>{(form.menuItems || []).length}</dd></div>
         <div><dt>Bartenders</dt><dd>{totals.bartenders}</dd></div>
         <div><dt>Staffing Labor</dt><dd>{staffingLaborEnabled ? "Enabled" : "Disabled"}</dd></div>
+        <div><dt>Bartender Rate</dt><dd>{currency(totals.bartenderRateApplied || 0)}</dd></div>
+        <div><dt>Server Rate</dt><dd>{currency(totals.serverRateApplied || 0)}</dd></div>
+        <div><dt>Chef Rate</dt><dd>{currency(totals.chefRateApplied || 0)}</dd></div>
         <div><dt>Travel</dt><dd>{form.milesRT} mi</dd></div>
         <div><dt>Tax Region</dt><dd>{totals.taxRegionName || "-"}</dd></div>
         <div><dt>Season</dt><dd>{totals.seasonProfileName || "Standard"}</dd></div>

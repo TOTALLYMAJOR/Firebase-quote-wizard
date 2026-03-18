@@ -950,6 +950,23 @@ hr {
   align-items: center;
 }
 
+.admin-menu-row-managed {
+  grid-template-columns: 1.15fr 1.5fr 1fr 1fr auto auto;
+}
+
+.admin-menu-management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.admin-inline-actions {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.8fr auto;
+  gap: 0.45rem;
+  align-items: end;
+}
+
 .admin-grid-settings {
   margin-top: 0.6rem;
   display: grid;
@@ -1057,7 +1074,7 @@ hr {
 .history-controls {
   margin-top: 0.6rem;
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: 1fr 220px 220px;
   gap: 0.5rem;
 }
 
@@ -1755,6 +1772,15 @@ hr {
   }
 
   .admin-menu-row {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-menu-row-managed {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-menu-management-grid,
+  .admin-inline-actions {
     grid-template-columns: 1fr;
   }
 

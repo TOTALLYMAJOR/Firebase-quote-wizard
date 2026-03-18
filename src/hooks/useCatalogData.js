@@ -9,6 +9,7 @@ import {
   toStorageCatalog
 } from "../data/mockCatalog";
 import { db, firebaseReady } from "../lib/firebase";
+import { getEventTypes, getMenuCategories, getMenuItems } from "../lib/menuService";
 import { recordDiagnosticError } from "../lib/sessionDiagnostics";
 
 const LOCAL_KEY = "quoteWizard.catalog";
@@ -19,6 +20,32 @@ function defaultCatalog() {
     addons: DEFAULT_ADDONS,
     rentals: DEFAULT_RENTALS,
     settings: DEFAULT_SETTINGS
+  });
+}
+
+function normalizeMenuSectionsFromEvent(categories = [], items = []) {
+  const itemLookup = new Map();
+  items.forEach((item) => {
+    const categoryId = String(item?.categoryId || "").trim();
+    if (!categoryId) return;
+    const nextItems = itemLookup.get(categoryId) || [];
+    nextItems.push({
+      id: String(item?.id || "").trim(),
+      name: String(item?.name || "").trim() || "Untitled Item",
+      type: item?.type === "per_person" ? "per_person" : "per_event",
+      price: Number(item?.price || 0)
+    });
+    itemLookup.set(categoryId, nextItems);
+  });
+
+  return categories.map((category) => {
+    const id = String(category?.id || "").trim();
+    const groupedItems = (itemLookup.get(id) || []).filter((item) => item.id);
+    return {
+      id,
+      name: String(category?.name || "").trim() || "Untitled Category",
+      items: groupedItems
+    };
   });
 }
 
@@ -93,6 +120,7 @@ export function useCatalogData({ enabled = true } = {}) {
     saving: false,
     source: enabled ? (firebaseReady ? "firebase" : "local-defaults") : "auth-required",
     error: "",
+    eventTypes: [],
     ...defaultCatalog()
   }));
 
@@ -107,6 +135,7 @@ export function useCatalogData({ enabled = true } = {}) {
         saving: false,
         source: "auth-required",
         error: "",
+        eventTypes: [],
         ...fallback
       }));
       return () => {
@@ -117,7 +146,10 @@ export function useCatalogData({ enabled = true } = {}) {
     async function load() {
       try {
         if (firebaseReady) {
-          const catalog = await loadFromFirebase();
+          const [catalog, eventTypes] = await Promise.all([
+            loadFromFirebase(),
+            getEventTypes()
+          ]);
           if (!alive) return;
           const hasRecords = catalog.packages.length || catalog.addons.length || catalog.rentals.length;
           if (!hasRecords) {
@@ -127,6 +159,7 @@ export function useCatalogData({ enabled = true } = {}) {
                 ...prev,
                 loading: false,
                 source: "firebase-empty-defaults",
+                eventTypes,
                 ...defaults
               }));
             }
@@ -137,6 +170,7 @@ export function useCatalogData({ enabled = true } = {}) {
             ...prev,
             loading: false,
             source: "firebase",
+            eventTypes,
             ...catalog
           }));
           return;
@@ -149,6 +183,7 @@ export function useCatalogData({ enabled = true } = {}) {
           ...prev,
           loading: false,
           source: cached ? "local-cache" : "local-defaults",
+          eventTypes: [],
           ...catalog
         }));
       } catch (err) {
@@ -163,6 +198,7 @@ export function useCatalogData({ enabled = true } = {}) {
           loading: false,
           source: "fallback-defaults",
           error: err?.message || "Failed to load catalog.",
+          eventTypes: [],
           ...fallback
         }));
       }
@@ -208,8 +244,26 @@ export function useCatalogData({ enabled = true } = {}) {
     }
   }, [enabled]);
 
+  const loadMenuByEvent = useCallback(async (eventTypeId) => {
+    const nextEventTypeId = String(eventTypeId || "").trim();
+    if (!nextEventTypeId) {
+      return [];
+    }
+
+    try {
+      const [categories, items] = await Promise.all([
+        getMenuCategories(nextEventTypeId),
+        getMenuItems(nextEventTypeId)
+      ]);
+      return normalizeMenuSectionsFromEvent(categories, items);
+    } catch {
+      return [];
+    }
+  }, []);
+
   return {
     ...state,
-    saveCatalog
+    saveCatalog,
+    loadMenuByEvent
   };
 }

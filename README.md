@@ -68,6 +68,24 @@ npm run check:perf:bundle
 npm run check:perf:cwv
 ```
 
+## Firestore Menu Seed
+Populate baseline dynamic menu collections (`eventTypes`, `menuCategories`, `menuItems`) without touching quotes or pricing.
+
+Dry run:
+```bash
+npm run seed:menu:firestore -- --project <your-project-id> --dry-run
+```
+
+Apply seed:
+```bash
+npm run seed:menu:firestore -- --project <your-project-id>
+```
+
+Notes:
+- The script is idempotent and only creates missing docs.
+- It never deletes or rewrites existing menu docs.
+- Auth uses Firebase Admin ADC/service credentials (`GOOGLE_APPLICATION_CREDENTIALS`) or emulator config.
+
 ## Deploy Entry Points
 - Firebase hosting/functions: `npm run deploy:firebase`
 - Firebase functions only: `npm run deploy:firebase:functions`

@@ -80,6 +80,21 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /eventTypes/{docId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    match /menuCategories/{docId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
+    match /menuItems/{docId} {
+      allow read: if isStaff();
+      allow write: if isAdmin();
+    }
+
     match /quotes/{quoteId} {
       allow create: if isStaff()
         && request.resource.data.ownerUid == request.auth.uid
@@ -95,6 +110,11 @@ service cloud.firestore {
       allow list: if false;
       allow create, delete: if isStaff();
       allow update: if isStaff() || statusPatchOnly();
+    }
+
+    match /quoteHistory/{historyId} {
+      allow read, create: if isStaff();
+      allow update, delete: if false;
     }
 
     match /{document=**} {

@@ -97,7 +97,21 @@ export function buildProposalPayload(quote) {
       payMethod: cleanText(quote.selection?.payMethod),
       taxRegion: cleanText(quote.selection?.taxRegion),
       seasonProfileId: cleanText(quote.selection?.seasonProfileId),
-      eventTemplateId: cleanText(quote.selection?.eventTemplateId, "custom")
+      eventTemplateId: cleanText(quote.selection?.eventTemplateId, "custom"),
+      laborRateSnapshot: {
+        bartenderRateApplied: toNumber(quote.selection?.laborRateSnapshot?.bartenderRateApplied, 0),
+        serverRateApplied: toNumber(quote.selection?.laborRateSnapshot?.serverRateApplied, 0),
+        chefRateApplied: toNumber(quote.selection?.laborRateSnapshot?.chefRateApplied, 0),
+        bartenderRateTypeId: cleanText(quote.selection?.laborRateSnapshot?.bartenderRateTypeId),
+        bartenderRateTypeName: cleanText(quote.selection?.laborRateSnapshot?.bartenderRateTypeName),
+        staffingRateTypeId: cleanText(quote.selection?.laborRateSnapshot?.staffingRateTypeId),
+        staffingRateTypeName: cleanText(quote.selection?.laborRateSnapshot?.staffingRateTypeName)
+      },
+      bartenderRateTypeId: cleanText(quote.selection?.bartenderRateTypeId),
+      staffingRateTypeId: cleanText(quote.selection?.staffingRateTypeId),
+      bartenderRateOverride: toNumber(quote.selection?.bartenderRateOverride, 0),
+      serverRateOverride: toNumber(quote.selection?.serverRateOverride, 0),
+      chefRateOverride: toNumber(quote.selection?.chefRateOverride, 0)
     },
     payment: {
       depositLink: cleanText(quote.payment?.depositLink),
@@ -110,6 +124,13 @@ export function buildProposalPayload(quote) {
       menu: toNumber(quote.totals?.menu, 0),
       labor: toNumber(quote.totals?.labor, 0),
       bartenderLabor: toNumber(quote.totals?.bartenderLabor, 0),
+      bartenderRateApplied: toNumber(quote.totals?.bartenderRateApplied, 0),
+      serverRateApplied: toNumber(quote.totals?.serverRateApplied, 0),
+      chefRateApplied: toNumber(quote.totals?.chefRateApplied, 0),
+      bartenderRateTypeId: cleanText(quote.totals?.bartenderRateTypeId),
+      bartenderRateTypeName: cleanText(quote.totals?.bartenderRateTypeName),
+      staffingRateTypeId: cleanText(quote.totals?.staffingRateTypeId),
+      staffingRateTypeName: cleanText(quote.totals?.staffingRateTypeName),
       travel: toNumber(quote.totals?.travel, 0),
       serviceFee: toNumber(quote.totals?.serviceFee, 0),
       tax: toNumber(quote.totals?.tax, 0),

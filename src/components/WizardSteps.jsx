@@ -9,10 +9,20 @@ function Field({ label, children }) {
   );
 }
 
-export function StepEvent({ form, setForm, styles, settings, onTemplateChange }) {
+export function StepEvent({
+  form,
+  setForm,
+  styles,
+  settings,
+  onTemplateChange,
+  eventTypes = [],
+  onEventTypeChange
+}) {
   const templates = Array.isArray(settings?.eventTemplates) ? settings.eventTemplates : [];
   const taxRegions = Array.isArray(settings?.taxRegions) ? settings.taxRegions : [];
   const seasonProfiles = Array.isArray(settings?.seasonalProfiles) ? settings.seasonalProfiles : [];
+  const bartenderRateTypes = Array.isArray(settings?.bartenderRateTypes) ? settings.bartenderRateTypes : [];
+  const staffingRateTypes = Array.isArray(settings?.staffingRateTypes) ? settings.staffingRateTypes : [];
 
   return (
     <div className="grid two-col">
@@ -22,10 +32,81 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
           {templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
         </select>
       </Field>
+      <Field label="Event type">
+        <select
+          value={form.eventTypeId || ""}
+          onChange={(e) => (typeof onEventTypeChange === "function"
+            ? onEventTypeChange(e.target.value)
+            : setForm((f) => ({ ...f, eventTypeId: e.target.value })))}
+        >
+          <option value="">
+            {eventTypes.length ? "Select event type" : "No event types available"}
+          </option>
+          {eventTypes.map((eventType) => (
+            <option key={eventType.id} value={eventType.id}>{eventType.name}</option>
+          ))}
+        </select>
+      </Field>
       <Field label="Event date"><input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} /></Field>
       <Field label="Start time"><input type="time" value={form.time} onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))} /></Field>
       <Field label="Event hours"><input type="number" min="1" max="12" value={form.hours} onChange={(e) => setForm((f) => ({ ...f, hours: Number(e.target.value) }))} /></Field>
       <Field label="Bartenders"><input type="number" min="0" max="10" value={form.bartenders} onChange={(e) => setForm((f) => ({ ...f, bartenders: Number(e.target.value) }))} /></Field>
+      <Field label="Bartender rate type">
+        <select
+          value={form.bartenderRateTypeId || ""}
+          onChange={(e) => setForm((f) => ({ ...f, bartenderRateTypeId: e.target.value }))}
+        >
+          <option value="">Default bartender rate</option>
+          {bartenderRateTypes.map((rateType) => (
+            <option key={rateType.id} value={rateType.id}>
+              {rateType.name} ({currency(rateType.rate)})
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Bartender rate override (optional)">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.bartenderRateOverride ?? ""}
+          onChange={(e) => setForm((f) => ({ ...f, bartenderRateOverride: e.target.value }))}
+          placeholder="Use selected/default bartender type"
+        />
+      </Field>
+      <Field label="Staffing rate type">
+        <select
+          value={form.staffingRateTypeId || ""}
+          onChange={(e) => setForm((f) => ({ ...f, staffingRateTypeId: e.target.value }))}
+        >
+          <option value="">Default staffing rate</option>
+          {staffingRateTypes.map((rateType) => (
+            <option key={rateType.id} value={rateType.id}>
+              {rateType.name} (Server {currency(rateType.serverRate)} / Chef {currency(rateType.chefRate)})
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Server rate override (optional)">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.serverRateOverride ?? ""}
+          onChange={(e) => setForm((f) => ({ ...f, serverRateOverride: e.target.value }))}
+          placeholder="Use selected/default staffing type"
+        />
+      </Field>
+      <Field label="Chef rate override (optional)">
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          value={form.chefRateOverride ?? ""}
+          onChange={(e) => setForm((f) => ({ ...f, chefRateOverride: e.target.value }))}
+          placeholder="Use selected/default staffing type"
+        />
+      </Field>
       <Field label="Guests (max 400)"><input type="number" min="1" max="400" value={form.guests} onChange={(e) => setForm((f) => ({ ...f, guests: Number(e.target.value) }))} /></Field>
       <Field label="Event name"><input type="text" value={form.eventName} onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value }))} /></Field>
       <Field label="Venue"><input type="text" value={form.venue} onChange={(e) => setForm((f) => ({ ...f, venue: e.target.value }))} /></Field>
@@ -70,8 +151,16 @@ export function StepEvent({ form, setForm, styles, settings, onTemplateChange })
   );
 }
 
-export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecommendation }) {
-  const menuSections = Array.isArray(catalog.settings?.menuSections) ? catalog.settings.menuSections : [];
+export function StepMenu({
+  form,
+  setForm,
+  catalog,
+  recommendations,
+  onApplyRecommendation,
+  menuSections,
+  menuLoading = false
+}) {
+  const resolvedMenuSections = Array.isArray(menuSections) ? menuSections : [];
   const guidedSellingEnabled = catalog.settings?.guidedSellingEnabled !== false;
 
   const toggle = (key, id, checked) => {
@@ -152,12 +241,13 @@ export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecom
         )}
       </div>
 
-      {menuSections.length > 0 && (
+      {resolvedMenuSections.length > 0 && (
         <div className="menu-library">
           <h4>Customized Cuisine Menu</h4>
+          {menuLoading && <p className="source-note">Loading menu for selected event type...</p>}
           <p className="source-note">Select menu items to include in this quote proposal.</p>
           <div className="menu-grid">
-            {menuSections.map((section) => (
+            {resolvedMenuSections.map((section) => (
               <section className="menu-category" key={section.id}>
                 <div className="menu-category-head">
                   <strong>{section.name}</strong>
@@ -183,6 +273,12 @@ export function StepMenu({ form, setForm, catalog, recommendations, onApplyRecom
               </section>
             ))}
           </div>
+        </div>
+      )}
+      {resolvedMenuSections.length === 0 && !menuLoading && (
+        <div className="menu-library">
+          <h4>Customized Cuisine Menu</h4>
+          <p className="source-note">Select an event type to load menu categories and items.</p>
         </div>
       )}
     </div>

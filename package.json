@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "check:env": "node ./scripts/check-env.mjs",
+    "seed:menu:firestore": "node ./scripts/seed-firestore-menu.mjs",
     "check:docs:governance": "node ./scripts/check-doc-governance.mjs",
     "check:perf:bundle": "node ./scripts/check-bundle-budget.mjs",
     "check:perf:cwv": "lhci autorun --config=./.lighthouserc.json",

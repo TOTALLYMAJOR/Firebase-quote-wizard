@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
 import { getDownloadURL, ref as storageRef, uploadBytes } from "firebase/storage";
 import { firebaseReady, storage } from "../lib/firebase";
+import {
+  createCategory,
+  createEventType,
+  createMenuItem,
+  deleteMenuItem,
+  getEventTypes,
+  getMenuCategories,
+  getMenuItems,
+  updateMenuItem
+} from "../lib/menuService";
 
 const JSON_FIELD_META = [
   {
@@ -79,6 +89,20 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
   const [status, setStatus] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [jsonDrafts, setJsonDrafts] = useState(() => buildJsonDrafts(catalog));
+  const [selectedEventType, setSelectedEventType] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [menuEventTypes, setMenuEventTypes] = useState([]);
+  const [menuCategories, setMenuCategories] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [menuLoading, setMenuLoading] = useState(false);
+  const [menuActionLoading, setMenuActionLoading] = useState(false);
+  const [newEventTypeName, setNewEventTypeName] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newItemDraft, setNewItemDraft] = useState({
+    name: "",
+    price: 0,
+    type: "per_event"
+  });
 
   useEffect(() => {
     if (open) {
@@ -86,8 +110,83 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       setJsonDrafts(buildJsonDrafts(catalog));
       setStatus("");
       setUploadingLogo(false);
+      setSelectedEventType("");
+      setSelectedCategory("");
+      setMenuEventTypes([]);
+      setMenuCategories([]);
+      setMenuItems([]);
+      setMenuLoading(false);
+      setMenuActionLoading(false);
+      setNewEventTypeName("");
+      setNewCategoryName("");
+      setNewItemDraft({ name: "", price: 0, type: "per_event" });
     }
   }, [open, catalog]);
+
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+
+    async function loadEventTypeOptions() {
+      setMenuLoading(true);
+      try {
+        const eventTypes = await getEventTypes();
+        if (!alive) return;
+        setMenuEventTypes(eventTypes);
+        setSelectedEventType((current) => current || eventTypes[0]?.id || "");
+      } catch (err) {
+        if (!alive) return;
+        setStatus(err?.message || "Failed to load menu event types.");
+      } finally {
+        if (alive) setMenuLoading(false);
+      }
+    }
+
+    loadEventTypeOptions();
+    return () => {
+      alive = false;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const eventTypeId = String(selectedEventType || "").trim();
+    if (!eventTypeId) {
+      setMenuCategories([]);
+      setMenuItems([]);
+      setSelectedCategory("");
+      return;
+    }
+
+    let alive = true;
+    async function loadEventMenuData() {
+      setMenuLoading(true);
+      try {
+        const [categories, items] = await Promise.all([
+          getMenuCategories(eventTypeId),
+          getMenuItems(eventTypeId)
+        ]);
+        if (!alive) return;
+        setMenuCategories(categories);
+        setMenuItems(items);
+        setSelectedCategory((current) => {
+          const keepCurrent = current && categories.some((category) => category.id === current);
+          if (keepCurrent) return current;
+          return categories[0]?.id || "";
+        });
+      } catch (err) {
+        if (!alive) return;
+        setStatus(err?.message || "Failed to load menu categories/items.");
+      } finally {
+        if (alive) setMenuLoading(false);
+      }
+    }
+
+    loadEventMenuData();
+    return () => {
+      alive = false;
+    };
+  }, [open, selectedEventType]);
 
   if (!open) return null;
 
@@ -113,82 +212,6 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
 
   const removeRow = (key, index) => {
     setDraft((prev) => ({ ...prev, [key]: prev[key].filter((_, i) => i !== index) }));
-  };
-
-  const patchMenuSection = (sectionIndex, field, value) => {
-    setDraft((prev) => {
-      const menuSections = [...(prev.settings?.menuSections || [])];
-      const section = { ...(menuSections[sectionIndex] || {}) };
-      section[field] = value;
-      menuSections[sectionIndex] = section;
-      return {
-        ...prev,
-        settings: {
-          ...prev.settings,
-          menuSections
-        }
-      };
-    });
-  };
-
-  const patchMenuItem = (sectionIndex, itemIndex, field, value) => {
-    setDraft((prev) => {
-      const menuSections = [...(prev.settings?.menuSections || [])];
-      const section = { ...(menuSections[sectionIndex] || {}) };
-      const items = [...(section.items || [])];
-      const item = { ...(items[itemIndex] || {}) };
-      item[field] = value;
-      items[itemIndex] = item;
-      section.items = items;
-      menuSections[sectionIndex] = section;
-      return {
-        ...prev,
-        settings: {
-          ...prev.settings,
-          menuSections
-        }
-      };
-    });
-  };
-
-  const addMenuItem = (sectionIndex) => {
-    const itemId = `menu-item-${Date.now()}`;
-    setDraft((prev) => {
-      const menuSections = [...(prev.settings?.menuSections || [])];
-      const section = { ...(menuSections[sectionIndex] || {}) };
-      const items = [...(section.items || [])];
-      items.push({
-        id: itemId,
-        name: "New Menu Item",
-        type: "per_event",
-        price: 0
-      });
-      section.items = items;
-      menuSections[sectionIndex] = section;
-      return {
-        ...prev,
-        settings: {
-          ...prev.settings,
-          menuSections
-        }
-      };
-    });
-  };
-
-  const removeMenuItem = (sectionIndex, itemIndex) => {
-    setDraft((prev) => {
-      const menuSections = [...(prev.settings?.menuSections || [])];
-      const section = { ...(menuSections[sectionIndex] || {}) };
-      section.items = (section.items || []).filter((_, i) => i !== itemIndex);
-      menuSections[sectionIndex] = section;
-      return {
-        ...prev,
-        settings: {
-          ...prev.settings,
-          menuSections
-        }
-      };
-    });
   };
 
   const patchNumericSetting = (field, value) => {
@@ -217,6 +240,93 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
       settings: {
         ...prev.settings,
         [field]: Boolean(checked)
+      }
+    }));
+  };
+
+  const patchBartenderRateType = (index, field, value) => {
+    setDraft((prev) => {
+      const rateTypes = [...(prev.settings?.bartenderRateTypes || [])];
+      const current = { ...(rateTypes[index] || {}) };
+      current[field] = field === "rate" ? Number(value || 0) : value;
+      rateTypes[index] = current;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          bartenderRateTypes: rateTypes
+        }
+      };
+    });
+  };
+
+  const patchStaffingRateType = (index, field, value) => {
+    setDraft((prev) => {
+      const rateTypes = [...(prev.settings?.staffingRateTypes || [])];
+      const current = { ...(rateTypes[index] || {}) };
+      if (field === "serverRate" || field === "chefRate") {
+        current[field] = Number(value || 0);
+      } else {
+        current[field] = value;
+      }
+      rateTypes[index] = current;
+      return {
+        ...prev,
+        settings: {
+          ...prev.settings,
+          staffingRateTypes: rateTypes
+        }
+      };
+    });
+  };
+
+  const addBartenderRateType = () => {
+    const nextType = {
+      id: `bartender-rate-${Date.now()}`,
+      name: "New Bartender Type",
+      rate: Number(draft.settings?.bartenderRate || 0)
+    };
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        bartenderRateTypes: [...(prev.settings?.bartenderRateTypes || []), nextType]
+      }
+    }));
+  };
+
+  const addStaffingRateType = () => {
+    const nextType = {
+      id: `staffing-rate-${Date.now()}`,
+      name: "New Staffing Type",
+      serverRate: Number(draft.settings?.serverRate || 0),
+      chefRate: Number(draft.settings?.chefRate || 0)
+    };
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        staffingRateTypes: [...(prev.settings?.staffingRateTypes || []), nextType]
+      }
+    }));
+  };
+
+  const removeBartenderRateType = (index) => {
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        bartenderRateTypes: (prev.settings?.bartenderRateTypes || []).filter((_, idx) => idx !== index)
+      }
+    }));
+  };
+
+  const removeStaffingRateType = (index) => {
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        staffingRateTypes: (prev.settings?.staffingRateTypes || []).filter((_, idx) => idx !== index)
       }
     }));
   };
@@ -300,6 +410,147 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     setJsonDrafts((prev) => ({ ...prev, [field]: value }));
   };
 
+  const refreshEventTypes = async (preferredId = "") => {
+    const items = await getEventTypes();
+    setMenuEventTypes(items);
+    setSelectedEventType((current) => {
+      if (preferredId && items.some((item) => item.id === preferredId)) return preferredId;
+      if (current && items.some((item) => item.id === current)) return current;
+      return items[0]?.id || "";
+    });
+    return items;
+  };
+
+  const refreshEventMenuData = async (eventTypeId = selectedEventType) => {
+    const nextEventTypeId = String(eventTypeId || "").trim();
+    if (!nextEventTypeId) {
+      setMenuCategories([]);
+      setMenuItems([]);
+      setSelectedCategory("");
+      return;
+    }
+    const [categories, items] = await Promise.all([
+      getMenuCategories(nextEventTypeId),
+      getMenuItems(nextEventTypeId)
+    ]);
+    setMenuCategories(categories);
+    setMenuItems(items);
+    setSelectedCategory((current) => {
+      if (current && categories.some((category) => category.id === current)) return current;
+      return categories[0]?.id || "";
+    });
+  };
+
+  const handleCreateEventType = async () => {
+    const name = String(newEventTypeName || "").trim();
+    if (!name) {
+      setStatus("Enter an event type name first.");
+      return;
+    }
+    setMenuActionLoading(true);
+    try {
+      const created = await createEventType({ name });
+      setNewEventTypeName("");
+      await refreshEventTypes(created.id);
+      await refreshEventMenuData(created.id);
+      setStatus(`Event type "${created.name}" added.`);
+    } catch (err) {
+      setStatus(err?.message || "Failed to create event type.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    const name = String(newCategoryName || "").trim();
+    if (!selectedEventType) {
+      setStatus("Choose an event type before adding a category.");
+      return;
+    }
+    if (!name) {
+      setStatus("Enter a category name first.");
+      return;
+    }
+    setMenuActionLoading(true);
+    try {
+      const created = await createCategory({
+        eventTypeId: selectedEventType,
+        name
+      });
+      setNewCategoryName("");
+      await refreshEventMenuData(selectedEventType);
+      setSelectedCategory(created.id);
+      setStatus(`Category "${created.name}" added.`);
+    } catch (err) {
+      setStatus(err?.message || "Failed to create category.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
+  const handleCreateMenuItem = async () => {
+    const name = String(newItemDraft.name || "").trim();
+    if (!selectedEventType || !selectedCategory) {
+      setStatus("Choose event type and category before adding an item.");
+      return;
+    }
+    if (!name) {
+      setStatus("Enter a menu item name first.");
+      return;
+    }
+    setMenuActionLoading(true);
+    try {
+      await createMenuItem({
+        eventTypeId: selectedEventType,
+        categoryId: selectedCategory,
+        name,
+        price: Number(newItemDraft.price || 0),
+        type: newItemDraft.type
+      });
+      setNewItemDraft({ name: "", price: 0, type: "per_event" });
+      await refreshEventMenuData(selectedEventType);
+      setStatus("Menu item added.");
+    } catch (err) {
+      setStatus(err?.message || "Failed to add menu item.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
+  const patchManagedMenuItem = (id, field, value) => {
+    setMenuItems((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  };
+
+  const handleUpdateManagedMenuItem = async (item) => {
+    setMenuActionLoading(true);
+    try {
+      await updateMenuItem(item.id, {
+        name: item.name,
+        price: Number(item.price || 0),
+        type: item.type
+      });
+      setStatus("Menu item updated.");
+      await refreshEventMenuData(selectedEventType);
+    } catch (err) {
+      setStatus(err?.message || "Failed to update menu item.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
+  const handleDeleteManagedMenuItem = async (id) => {
+    setMenuActionLoading(true);
+    try {
+      await deleteMenuItem(id);
+      setStatus("Menu item deleted.");
+      await refreshEventMenuData(selectedEventType);
+    } catch (err) {
+      setStatus(err?.message || "Failed to delete menu item.");
+    } finally {
+      setMenuActionLoading(false);
+    }
+  };
+
   const handleLogoUpload = async (file) => {
     if (!file) return;
     if (!String(file.type || "").startsWith("image/")) {
@@ -372,6 +623,8 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
     }
   };
 
+  const selectedCategoryItems = menuItems.filter((item) => item.categoryId === selectedCategory);
+
   return (
     <div className="modal-overlay" role="dialog" aria-modal="true">
       <div className="modal-card">
@@ -419,45 +672,133 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
         </Section>
 
         <section className="admin-section">
-          <div className="admin-section-head"><h3>Menu Item Pricing</h3></div>
+          <div className="admin-section-head"><h3>Menu Management</h3></div>
           <div className="admin-section-body">
-            {(draft.settings?.menuSections || []).map((section, sectionIndex) => (
-              <div className="admin-menu-section" key={section.id || sectionIndex}>
-                <div className="admin-menu-head">
-                  <input
-                    type="text"
-                    value={section.name || ""}
-                    onChange={(e) => patchMenuSection(sectionIndex, "name", e.target.value)}
-                  />
-                  <button type="button" className="ghost compact" onClick={() => addMenuItem(sectionIndex)}>Add Menu Item</button>
-                </div>
-
-                <div className="admin-section-body">
-                  {(section.items || []).map((item, itemIndex) => (
-                    <div className="admin-menu-row" key={item.id || itemIndex}>
-                      <input value={item.id || ""} disabled />
-                      <input
-                        type="text"
-                        value={item.name || ""}
-                        onChange={(e) => patchMenuItem(sectionIndex, itemIndex, "name", e.target.value)}
-                      />
-                      <select
-                        value={item.type || "per_event"}
-                        onChange={(e) => patchMenuItem(sectionIndex, itemIndex, "type", e.target.value)}
-                      >
-                        <option value="per_event">per_event</option>
-                        <option value="per_person">per_person</option>
-                      </select>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={Number(item.price || 0)}
-                        onChange={(e) => patchMenuItem(sectionIndex, itemIndex, "price", Number(e.target.value))}
-                      />
-                      <button type="button" className="ghost compact" onClick={() => removeMenuItem(sectionIndex, itemIndex)}>Delete</button>
-                    </div>
+            <div className="admin-menu-management-grid">
+              <label>
+                Event type
+                <select
+                  value={selectedEventType}
+                  onChange={(e) => setSelectedEventType(e.target.value)}
+                  disabled={menuLoading}
+                >
+                  <option value="">Choose event type</option>
+                  {menuEventTypes.map((eventType) => (
+                    <option key={eventType.id} value={eventType.id}>{eventType.name}</option>
                   ))}
-                </div>
+                </select>
+              </label>
+              <div className="admin-inline-actions">
+                <input
+                  type="text"
+                  placeholder="New event type"
+                  value={newEventTypeName}
+                  onChange={(e) => setNewEventTypeName(e.target.value)}
+                />
+                <button type="button" className="ghost compact" onClick={handleCreateEventType} disabled={menuActionLoading}>
+                  {menuActionLoading ? "Saving..." : "Add Event Type"}
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-menu-management-grid">
+              <label>
+                Category
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  disabled={!selectedEventType || menuLoading}
+                >
+                  <option value="">Choose category</option>
+                  {menuCategories.map((category) => (
+                    <option key={category.id} value={category.id}>{category.name}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="admin-inline-actions">
+                <input
+                  type="text"
+                  placeholder="New category"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  disabled={!selectedEventType}
+                />
+                <button type="button" className="ghost compact" onClick={handleCreateCategory} disabled={menuActionLoading || !selectedEventType}>
+                  {menuActionLoading ? "Saving..." : "Add Category"}
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-inline-actions">
+              <input
+                type="text"
+                placeholder="New item name"
+                value={newItemDraft.name}
+                onChange={(e) => setNewItemDraft((prev) => ({ ...prev, name: e.target.value }))}
+                disabled={!selectedCategory}
+              />
+              <input
+                type="number"
+                step="0.01"
+                value={Number(newItemDraft.price || 0)}
+                onChange={(e) => setNewItemDraft((prev) => ({ ...prev, price: Number(e.target.value) }))}
+                disabled={!selectedCategory}
+              />
+              <select
+                value={newItemDraft.type}
+                onChange={(e) => setNewItemDraft((prev) => ({ ...prev, type: e.target.value }))}
+                disabled={!selectedCategory}
+              >
+                <option value="per_event">per_event</option>
+                <option value="per_person">per_person</option>
+              </select>
+              <button type="button" className="ghost compact" onClick={handleCreateMenuItem} disabled={menuActionLoading || !selectedCategory}>
+                {menuActionLoading ? "Saving..." : "Add Item"}
+              </button>
+            </div>
+
+            {menuLoading && <p className="source-note">Loading menu data...</p>}
+            {!menuLoading && selectedCategory && selectedCategoryItems.length === 0 && (
+              <p className="source-note">No menu items in this category yet.</p>
+            )}
+
+            {!menuLoading && selectedCategoryItems.map((item) => (
+              <div className="admin-menu-row admin-menu-row-managed" key={item.id}>
+                <input value={item.id || ""} disabled />
+                <input
+                  type="text"
+                  value={item.name || ""}
+                  onChange={(e) => patchManagedMenuItem(item.id, "name", e.target.value)}
+                />
+                <select
+                  value={item.type || "per_event"}
+                  onChange={(e) => patchManagedMenuItem(item.id, "type", e.target.value)}
+                >
+                  <option value="per_event">per_event</option>
+                  <option value="per_person">per_person</option>
+                </select>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={Number(item.price || 0)}
+                  onChange={(e) => patchManagedMenuItem(item.id, "price", Number(e.target.value))}
+                />
+                <button
+                  type="button"
+                  className="ghost compact"
+                  onClick={() => handleUpdateManagedMenuItem(item)}
+                  disabled={menuActionLoading}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  className="ghost compact"
+                  onClick={() => handleDeleteManagedMenuItem(item.id)}
+                  disabled={menuActionLoading}
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>
@@ -479,6 +820,102 @@ export default function AdminCatalogModal({ open, catalog, onClose, onSave, savi
             <label>Chef rate<input type="number" step="0.01" value={draft.settings.chefRate} onChange={(e) => patchNumericSetting("chefRate", e.target.value)} /></label>
             <label>Integration retry limit<input type="number" step="1" min="1" max="10" value={draft.settings.integrationRetryLimit || 3} onChange={(e) => patchNumericSetting("integrationRetryLimit", e.target.value)} /></label>
             <label>Integration audit retention<input type="number" step="1" min="10" max="200" value={draft.settings.integrationAuditRetention || 50} onChange={(e) => patchNumericSetting("integrationAuditRetention", e.target.value)} /></label>
+          </div>
+        </section>
+
+        <section className="admin-section">
+          <div className="admin-section-head">
+            <h3>Labor Rate Types</h3>
+            <div className="admin-inline-actions">
+              <button type="button" className="ghost compact" onClick={addBartenderRateType}>Add Bartender Type</button>
+              <button type="button" className="ghost compact" onClick={addStaffingRateType}>Add Staffing Type</button>
+            </div>
+          </div>
+          <div className="admin-section-body">
+            <h4>Bartender Rate Types</h4>
+            {(draft.settings?.bartenderRateTypes || []).map((rateType, index) => (
+              <div className="admin-row" key={rateType.id || `bartender-rate-${index}`}>
+                <input
+                  value={rateType.id || ""}
+                  onChange={(e) => patchBartenderRateType(index, "id", e.target.value)}
+                />
+                <input
+                  value={rateType.name || ""}
+                  onChange={(e) => patchBartenderRateType(index, "name", e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={Number(rateType.rate || 0)}
+                  onChange={(e) => patchBartenderRateType(index, "rate", e.target.value)}
+                />
+                <button type="button" className="ghost compact" onClick={() => removeBartenderRateType(index)}>Delete</button>
+              </div>
+            ))}
+            {(draft.settings?.bartenderRateTypes || []).length === 0 && (
+              <p className="source-note">No bartender rate types configured. Use the button above to add one.</p>
+            )}
+            <label>
+              Default bartender type
+              <select
+                value={draft.settings?.defaultBartenderRateType || ""}
+                onChange={(e) => patchTextSetting("defaultBartenderRateType", e.target.value)}
+              >
+                <option value="">Use numeric fallback</option>
+                {(draft.settings?.bartenderRateTypes || []).map((rateType) => (
+                  <option key={rateType.id} value={rateType.id}>
+                    {rateType.name || rateType.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <h4>Staffing Rate Types</h4>
+            {(draft.settings?.staffingRateTypes || []).map((rateType, index) => (
+              <div className="admin-row" key={rateType.id || `staffing-rate-${index}`}>
+                <input
+                  value={rateType.id || ""}
+                  onChange={(e) => patchStaffingRateType(index, "id", e.target.value)}
+                />
+                <input
+                  value={rateType.name || ""}
+                  onChange={(e) => patchStaffingRateType(index, "name", e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={Number(rateType.serverRate || 0)}
+                  onChange={(e) => patchStaffingRateType(index, "serverRate", e.target.value)}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={Number(rateType.chefRate || 0)}
+                  onChange={(e) => patchStaffingRateType(index, "chefRate", e.target.value)}
+                />
+                <button type="button" className="ghost compact" onClick={() => removeStaffingRateType(index)}>Delete</button>
+              </div>
+            ))}
+            {(draft.settings?.staffingRateTypes || []).length === 0 && (
+              <p className="source-note">No staffing rate types configured. Use the button above to add one.</p>
+            )}
+            <label>
+              Default staffing type
+              <select
+                value={draft.settings?.defaultStaffingRateType || ""}
+                onChange={(e) => patchTextSetting("defaultStaffingRateType", e.target.value)}
+              >
+                <option value="">Use numeric fallback</option>
+                {(draft.settings?.staffingRateTypes || []).map((rateType) => (
+                  <option key={rateType.id} value={rateType.id}>
+                    {rateType.name || rateType.id}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </section>
 
