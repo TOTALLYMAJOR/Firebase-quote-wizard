@@ -1156,6 +1156,35 @@ hr {
 .history-card td {
   white-space: nowrap;
   vertical-align: middle;
+  padding: 0.58rem 0.7rem;
+}
+
+.history-card th:nth-child(7),
+.history-card td:nth-child(7) {
+  min-width: 120px;
+}
+
+.history-card th:nth-child(8),
+.history-card td:nth-child(8) {
+  min-width: 136px;
+}
+
+.history-card th:nth-child(9),
+.history-card td:nth-child(9) {
+  min-width: 128px;
+}
+
+.history-card th:nth-child(10),
+.history-card td:nth-child(10) {
+  min-width: 132px;
+}
+
+.history-card tbody td:nth-child(8) select {
+  min-width: 112px;
+}
+
+.history-card tbody td:nth-child(9) select {
+  min-width: 94px;
 }
 
 .history-controls {
