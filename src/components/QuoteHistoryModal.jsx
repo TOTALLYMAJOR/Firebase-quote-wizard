@@ -70,6 +70,7 @@ export default function QuoteHistoryModal({
   const [updatingConfirmationId, setUpdatingConfirmationId] = useState("");
   const [creatingCheckoutId, setCreatingCheckoutId] = useState("");
   const [duplicatingId, setDuplicatingId] = useState("");
+  const [exportingPdfId, setExportingPdfId] = useState("");
   const [pendingDeleteQuote, setPendingDeleteQuote] = useState(null);
 
   const pushToast = (message, tone = "info") => {
@@ -390,13 +391,16 @@ export default function QuoteHistoryModal({
   };
 
   const handleExportPdf = async (quote) => {
+    setExportingPdfId(quote.id);
     try {
       const { exportQuoteProposal } = await import("../lib/proposalExport");
-      await exportQuoteProposal(quote);
+      await exportQuoteProposal(quote, { basePortalUrl });
       setState((prev) => ({ ...prev, feedback: `Downloaded PDF for ${quote.quoteNumber}.` }));
       pushToast(`Downloaded PDF for ${quote.quoteNumber}.`, "success");
     } catch (err) {
       setState((prev) => ({ ...prev, error: err?.message || "Failed to export proposal PDF." }));
+    } finally {
+      setExportingPdfId("");
     }
   };
 
@@ -652,7 +656,14 @@ export default function QuoteHistoryModal({
                         >
                           {duplicatingId === quote.id ? "Duplicating..." : "Duplicate"}
                         </button>
-                        <button type="button" className="ghost compact" onClick={() => handleExportPdf(quote)}>PDF</button>
+                        <button
+                          type="button"
+                          className="ghost compact"
+                          onClick={() => handleExportPdf(quote)}
+                          disabled={exportingPdfId === quote.id}
+                        >
+                          {exportingPdfId === quote.id ? "Generating PDF..." : "PDF"}
+                        </button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>

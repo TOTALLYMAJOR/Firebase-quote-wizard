@@ -151,6 +151,37 @@ function summarizeList(items, limit = 5) {
   return safeItems.length > limit ? `${preview}...` : preview;
 }
 
+function resolvePortalLink(quote, basePortalUrl = "") {
+  const portalKey = String(quote?.portalKey || "").trim();
+  if (!portalKey) return "";
+  const base = String(basePortalUrl || "").trim() || (
+    typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}` : ""
+  );
+  if (!base) return "";
+  return `${base}?portal=${encodeURIComponent(portalKey)}`;
+}
+
+function appendFooterToAllPages({
+  doc,
+  palette,
+  proposal,
+  left,
+  right,
+  pageHeight
+}) {
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page += 1) {
+    doc.setPage(page);
+    doc.setDrawColor(...palette.line);
+    doc.line(left, pageHeight - 34, right, pageHeight - 34);
+    doc.setTextColor(...palette.muted);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.text(`${text(proposal.branding.brandName)} • Quote ${text(proposal.quoteNumber)}`, left, pageHeight - 22);
+    doc.text(`Page ${page} of ${pageCount}`, right, pageHeight - 22, { align: "right" });
+  }
+}
+
 function renderHeader({
   doc,
   palette,
@@ -218,7 +249,7 @@ function renderHeader({
   return y + 56;
 }
 
-export async function exportQuoteProposal(quote) {
+export async function exportQuoteProposal(quote, { basePortalUrl = "" } = {}) {
   if (!quote) {
     throw new Error("Missing quote data for PDF export.");
   }
@@ -234,10 +265,19 @@ export async function exportQuoteProposal(quote) {
   const maxWidth = right - left;
   const lineGap = 17;
   const palette = resolvePalette(meta);
+  const portalLink = resolvePortalLink(quote, basePortalUrl);
   const showDisposablesNote = meta.includeDisposables !== false;
   const perPersonRate = proposal.event.guests > 0 ? proposal.totals.base / proposal.event.guests : 0;
   const headerHeight = 124;
   let y = headerHeight + 18;
+
+  doc.setProperties({
+    title: `${text(proposal.quoteNumber)} Proposal`,
+    subject: `${text(proposal.branding.brandName)} Catering Proposal`,
+    author: text(meta.quotePreparedBy || proposal.branding.brandName),
+    creator: "Quote Wizard",
+    keywords: "proposal, catering, quote"
+  });
 
   const ensureSpace = (needed = 24) => {
     if (y + needed <= pageHeight - 48) return;
@@ -337,6 +377,12 @@ export async function exportQuoteProposal(quote) {
   row("Season Profile", proposal.totals.seasonProfileName || proposal.selection.seasonProfileId);
   row("Payment Method", proposal.selection.payMethod);
   row("Deposit Link", proposal.payment.depositLink || "-");
+
+  section("Action and Acceptance");
+  row("Acceptance Contact", meta.acceptanceEmail || meta.businessEmail || "-");
+  row("Customer Portal", portalLink || (quote.portalKey ? `Portal Key: ${quote.portalKey}` : "-"));
+  row("Deposit Payment Link", proposal.payment.depositLink || "-");
+  row("Deposit Status", proposal.payment.depositStatus || "unpaid");
 
   section("Pricing");
 
@@ -444,7 +490,24 @@ export async function exportQuoteProposal(quote) {
     left,
     y
   );
+  appendFooterToAllPages({
+    doc,
+    palette,
+    proposal,
+    left,
+    right,
+    pageHeight
+  });
 
-  const filename = `${text(proposal.quoteNumber || "quote")}-proposal.pdf`.replace(/[^\w.-]/g, "_");
+  const filename = [
+    text(proposal.quoteNumber || "quote"),
+    text(proposal.event.date || ""),
+    text(proposal.customer.name || "")
+  ]
+    .filter(Boolean)
+    .join("-")
+    .replace(/[^\w.-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^-+|-+$/g, "");
   doc.save(filename);
 }
