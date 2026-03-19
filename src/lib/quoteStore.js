@@ -12,6 +12,7 @@ import {
   where
 } from "firebase/firestore";
 import { db, firebaseReady } from "./firebase";
+import { buildCrmAdapterRequest, resolveCrmProvider } from "./crmAdapters";
 import { buildQuoteEmailPayload } from "./proposalPayload";
 
 const LOCAL_QUOTES_KEY = "quoteWizard.quotes";
@@ -23,8 +24,9 @@ const EXPIRABLE_STATUSES = new Set(["draft", "sent", "viewed"]);
 const AVAILABILITY_CONFLICT_STATUSES = new Set(["accepted", "booked"]);
 const PAYMENT_STATUSES = ["unpaid", "sent", "paid", "refunded"];
 const BOOKING_CONFIRMATION_STATUSES = ["pending", "sent", "confirmed", "cancelled"];
-const INTEGRATION_PROVIDER_SET = new Set(["crm"]);
+const INTEGRATION_PROVIDER_SET = new Set(["crm", "webhook", "webhook_bridge", "hubspot", "salesforce"]);
 const INTEGRATION_STATE_SET = new Set(["queued", "success", "error", "retrying", "skipped"]);
+const DEFAULT_CRM_SYNC_TIMEOUT_MS = 12000;
 const STATUS_LIFECYCLE_FIELD = {
   draft: "draftAtISO",
   sent: "sentAtISO",
@@ -132,8 +134,51 @@ function windowsOverlap(a, b) {
 }
 
 function normalizeIntegrationProvider(value) {
-  const provider = String(value || "").trim().toLowerCase();
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "crm") return "crm";
+  if (raw === "webhook-bridge") return "webhook_bridge";
+  const provider = resolveCrmProvider(raw, "webhook");
   return INTEGRATION_PROVIDER_SET.has(provider) ? provider : "crm";
+}
+
+function toText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function normalizeFeatureFlags(input) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    crmSync: source.crmSync !== false
+  };
+}
+
+function resolveQuoteCrmSettings(quote = {}) {
+  const quoteMeta = quote?.quoteMeta || {};
+  const integrationsProvider = quote?.integrations?.providers?.crm?.provider;
+  return {
+    crmEnabled: Boolean(quoteMeta.crmEnabled),
+    crmProvider: resolveCrmProvider(quoteMeta.crmProvider || integrationsProvider || "webhook", "webhook"),
+    crmWebhookUrl: toText(quoteMeta.crmWebhookUrl),
+    crmWebhookBridgeUrl: toText(quoteMeta.crmWebhookBridgeUrl),
+    crmHubspotBridgeUrl: toText(quoteMeta.crmHubspotBridgeUrl),
+    crmSalesforceBridgeUrl: toText(quoteMeta.crmSalesforceBridgeUrl),
+    crmBridgeAuthToken: toText(quoteMeta.crmBridgeAuthToken),
+    crmAutoSyncOnSent: Boolean(quoteMeta.crmAutoSyncOnSent),
+    crmAutoSyncOnBooked: Boolean(quoteMeta.crmAutoSyncOnBooked),
+    featureFlags: normalizeFeatureFlags(quoteMeta.featureFlags)
+  };
+}
+
+function isCrmSyncEnabled(settings = {}) {
+  return Boolean(settings.crmEnabled) && settings.featureFlags?.crmSync !== false;
+}
+
+function shouldAutoSyncCrmForStatus(settings, status) {
+  if (!isCrmSyncEnabled(settings)) return false;
+  if (status === "sent") return Boolean(settings.crmAutoSyncOnSent);
+  if (status === "booked") return Boolean(settings.crmAutoSyncOnBooked);
+  return false;
 }
 
 function normalizeIntegrationState(value) {
@@ -872,6 +917,151 @@ export async function recordQuoteIntegrationSync({
   return { ok: true, storage: "local", entry };
 }
 
+export async function syncQuoteToCrm({
+  quoteId,
+  provider = "",
+  actorEmail = "",
+  trigger = "manual"
+} = {}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  const quote = await readQuoteById(id);
+  const crmSettings = resolveQuoteCrmSettings(quote);
+  const requestedProvider = String(provider || "").trim().toLowerCase();
+  const resolvedProvider = resolveCrmProvider(requestedProvider || crmSettings.crmProvider || "webhook", "webhook");
+  const providerKey = normalizeIntegrationProvider(resolvedProvider);
+  const currentAttempt = toNumber(quote.integrations?.providers?.[providerKey]?.attempt, 0);
+  const attempt = Math.max(1, Math.round(currentAttempt + 1));
+
+  if (!isCrmSyncEnabled(crmSettings)) {
+    const reason = crmSettings.crmEnabled ? "CRM sync module is disabled by feature flag." : "CRM sync is disabled.";
+    const log = await recordQuoteIntegrationSync({
+      quoteId: id,
+      provider: providerKey,
+      state: "skipped",
+      message: reason,
+      actorEmail,
+      attempt,
+      payloadRef: trigger
+    });
+    return { ok: false, skipped: true, reason, entry: log.entry };
+  }
+
+  if (typeof fetch !== "function") {
+    const reason = "CRM sync unavailable: fetch API is not supported in this runtime.";
+    await recordQuoteIntegrationSync({
+      quoteId: id,
+      provider: providerKey,
+      state: "error",
+      message: reason,
+      actorEmail,
+      attempt,
+      payloadRef: trigger
+    });
+    throw new Error(reason);
+  }
+
+  let loggedError = false;
+  try {
+    const request = buildCrmAdapterRequest({
+      quote,
+      settings: crmSettings,
+      provider: resolvedProvider,
+      trigger
+    });
+    const timeoutMs = Math.max(1000, toNumber(quote.quoteMeta?.integrationTimeoutMs, DEFAULT_CRM_SYNC_TIMEOUT_MS));
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeout = controller
+      ? globalThis.setTimeout(() => {
+        controller.abort();
+      }, timeoutMs)
+      : null;
+
+    let response;
+    try {
+      response = await fetch(request.endpoint, {
+        method: request.method || "POST",
+        headers: request.headers || { "Content-Type": "application/json" },
+        body: JSON.stringify(request.body || {}),
+        signal: controller?.signal
+      });
+    } finally {
+      if (timeout) {
+        globalThis.clearTimeout(timeout);
+      }
+    }
+
+    let responseText = "";
+    try {
+      responseText = String(await response.text());
+    } catch {
+      responseText = "";
+    }
+
+    const payloadRef =
+      response.headers.get("x-request-id") ||
+      response.headers.get("x-correlation-id") ||
+      response.headers.get("x-amzn-requestid") ||
+      "";
+
+    if (!response.ok) {
+      const detail = responseText.trim().slice(0, 180);
+      const message = `CRM sync failed (${response.status})${detail ? `: ${detail}` : ""}`;
+      await recordQuoteIntegrationSync({
+        quoteId: id,
+        provider: providerKey,
+        state: "error",
+        message,
+        actorEmail,
+        attempt,
+        payloadRef: payloadRef || trigger
+      });
+      loggedError = true;
+      throw new Error(message);
+    }
+
+    const successMessage = `CRM sync success (${response.status})`;
+    const log = await recordQuoteIntegrationSync({
+      quoteId: id,
+      provider: providerKey,
+      state: "success",
+      message: successMessage,
+      actorEmail,
+      attempt,
+      payloadRef: payloadRef || trigger
+    });
+
+    return {
+      ok: true,
+      quoteId: id,
+      provider: providerKey,
+      endpoint: request.endpoint,
+      status: response.status,
+      entry: log.entry
+    };
+  } catch (err) {
+    if (!loggedError) {
+      const message = err?.name === "AbortError"
+        ? `CRM sync timed out after ${DEFAULT_CRM_SYNC_TIMEOUT_MS}ms.`
+        : String(err?.message || "CRM sync failed.");
+      await recordQuoteIntegrationSync({
+        quoteId: id,
+        provider: providerKey,
+        state: "error",
+        message,
+        actorEmail,
+        attempt,
+        payloadRef: trigger
+      });
+      throw new Error(message);
+    }
+    throw err;
+  }
+}
+
 export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } = {}) {
   const id = String(quoteId || "").trim();
   if (!id) {
@@ -939,6 +1129,16 @@ export async function submitQuote({ form, totals, catalogSource, settings, catal
     guests,
     defaultPricingType: "per_item"
   });
+  const crmProvider = resolveCrmProvider(settings?.crmProvider || "webhook", "webhook");
+  const featureFlags = settings?.featureFlags && typeof settings.featureFlags === "object"
+    ? { ...settings.featureFlags }
+    : {};
+  const crmProviderConfig = {
+    enabled: Boolean(settings?.crmEnabled),
+    state: "idle",
+    occurredAtISO: "",
+    provider: crmProvider
+  };
   const payload = {
     quoteNumber,
     customer: {
@@ -1041,12 +1241,8 @@ export async function submitQuote({ form, totals, catalogSource, settings, catal
       retention: Math.max(10, Number(settings?.integrationAuditRetention || 50)),
       lastSyncAtISO: "",
       providers: {
-        crm: {
-          enabled: Boolean(settings?.crmEnabled),
-          state: "idle",
-          occurredAtISO: "",
-          provider: settings?.crmProvider || "webhook"
-        }
+        crm: { ...crmProviderConfig },
+        [crmProvider]: { ...crmProviderConfig }
       },
       logs: []
     },
@@ -1097,10 +1293,15 @@ export async function submitQuote({ form, totals, catalogSource, settings, catal
       depositNotice: settings?.depositNotice || "",
       quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
       crmEnabled: Boolean(settings?.crmEnabled),
-      crmProvider: settings?.crmProvider || "webhook",
+      crmProvider,
       crmWebhookUrl: settings?.crmWebhookUrl || "",
+      crmWebhookBridgeUrl: settings?.crmWebhookBridgeUrl || "",
+      crmHubspotBridgeUrl: settings?.crmHubspotBridgeUrl || "",
+      crmSalesforceBridgeUrl: settings?.crmSalesforceBridgeUrl || "",
+      crmBridgeAuthToken: settings?.crmBridgeAuthToken || "",
       crmAutoSyncOnSent: Boolean(settings?.crmAutoSyncOnSent),
       crmAutoSyncOnBooked: Boolean(settings?.crmAutoSyncOnBooked),
+      featureFlags,
       integrationRetryLimit: Math.max(1, Number(settings?.integrationRetryLimit || 3)),
       integrationAuditRetention: Math.max(10, Number(settings?.integrationAuditRetention || 50))
     },
@@ -1170,6 +1371,10 @@ export async function updateQuote({
     guests,
     defaultPricingType: "per_item"
   });
+  const crmProvider = resolveCrmProvider(settings?.crmProvider || "webhook", "webhook");
+  const featureFlags = settings?.featureFlags && typeof settings.featureFlags === "object"
+    ? { ...settings.featureFlags }
+    : {};
   const lifecycle = lifecycleObject("draft", nowISO, existing.lifecycle);
 
   const existingPayment = hydratePayment(existing.payment);
@@ -1309,10 +1514,15 @@ export async function updateQuote({
       depositNotice: settings?.depositNotice || "",
       quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
       crmEnabled: Boolean(settings?.crmEnabled),
-      crmProvider: settings?.crmProvider || "webhook",
+      crmProvider,
       crmWebhookUrl: settings?.crmWebhookUrl || "",
+      crmWebhookBridgeUrl: settings?.crmWebhookBridgeUrl || "",
+      crmHubspotBridgeUrl: settings?.crmHubspotBridgeUrl || "",
+      crmSalesforceBridgeUrl: settings?.crmSalesforceBridgeUrl || "",
+      crmBridgeAuthToken: settings?.crmBridgeAuthToken || "",
       crmAutoSyncOnSent: Boolean(settings?.crmAutoSyncOnSent),
       crmAutoSyncOnBooked: Boolean(settings?.crmAutoSyncOnBooked),
+      featureFlags,
       integrationRetryLimit: Math.max(1, Number(settings?.integrationRetryLimit || 3)),
       integrationAuditRetention: Math.max(10, Number(settings?.integrationAuditRetention || 50))
     },
@@ -1587,6 +1797,10 @@ export async function updateQuoteStatus(quoteId, status) {
     throw new Error("Quote id is required.");
   }
 
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
   const nowISO = isoNow();
   const nextStatus = normalizeStatus(status);
   const statusPayload = {
@@ -1599,35 +1813,62 @@ export async function updateQuoteStatus(quoteId, status) {
     statusPayload["booking.bookedAtISO"] = nowISO;
   }
 
-  await saveQuoteVersion(quoteId);
+  await saveQuoteVersion(id);
 
   if (firebaseReady) {
-    await updateDoc(doc(db, "quotes", quoteId), statusPayload);
-    await syncPortalSnapshotFromQuoteDoc(quoteId);
-    return { ok: true, storage: "firebase" };
+    await updateDoc(doc(db, "quotes", id), statusPayload);
+    await syncPortalSnapshotFromQuoteDoc(id);
+  } else {
+    const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+    const next = existing.map((quote) => {
+      if (quote.id !== id) return quote;
+      const booking = hydrateBooking(quote.booking);
+      return {
+        ...quote,
+        status: nextStatus,
+        deletedAtISO: nextStatus === "deleted" ? nowISO : "",
+        updatedAtISO: nowISO,
+        booking:
+          nextStatus === "booked"
+            ? {
+              ...booking,
+              bookedAtISO: booking.bookedAtISO || nowISO
+            }
+            : booking,
+        lifecycle: lifecycleObject(nextStatus, nowISO, quote.lifecycle)
+      };
+    });
+    localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
   }
 
-  const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
-  const next = existing.map((quote) => {
-    if (quote.id !== quoteId) return quote;
-    const booking = hydrateBooking(quote.booking);
-    return {
-      ...quote,
-      status: nextStatus,
-      deletedAtISO: nextStatus === "deleted" ? nowISO : "",
-      updatedAtISO: nowISO,
-      booking:
-        nextStatus === "booked"
-          ? {
-            ...booking,
-            bookedAtISO: booking.bookedAtISO || nowISO
-          }
-          : booking,
-      lifecycle: lifecycleObject(nextStatus, nowISO, quote.lifecycle)
-    };
-  });
-  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
-  return { ok: true, storage: "local" };
+  let crmSync = null;
+  if (nextStatus === "sent" || nextStatus === "booked") {
+    try {
+      const updatedQuote = await readQuoteById(id);
+      const crmSettings = resolveQuoteCrmSettings(updatedQuote);
+      if (shouldAutoSyncCrmForStatus(crmSettings, nextStatus)) {
+        try {
+          crmSync = await syncQuoteToCrm({
+            quoteId: id,
+            provider: crmSettings.crmProvider,
+            trigger: `status:${nextStatus}`
+          });
+        } catch (err) {
+          crmSync = {
+            ok: false,
+            error: err?.message || "CRM auto-sync failed."
+          };
+        }
+      }
+    } catch {
+      crmSync = {
+        ok: false,
+        error: "CRM auto-sync skipped: quote refresh failed."
+      };
+    }
+  }
+
+  return { ok: true, storage: firebaseReady ? "firebase" : "local", crmSync };
 }
 
 export async function updateQuotePaymentStatus(quoteId, paymentStatus) {

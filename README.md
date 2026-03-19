@@ -7,6 +7,7 @@ Production-ready catering quote application built with React, Vite, Firebase, an
 - Repository: https://github.com/TOTALLYMAJOR/Firebase-quote-wizard
 - Launch runbook: [docs/LAUNCH_RUNBOOK.md](docs/LAUNCH_RUNBOOK.md)
 - User manual: [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
+- Feature matrix: [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)
 - Canonical doc system: [docs/DOC_SYSTEM.md](docs/DOC_SYSTEM.md)
 
 ## Product Scope
@@ -98,6 +99,7 @@ Notes:
 - Agent governance: [docs/AGENT_GOVERNANCE.md](docs/AGENT_GOVERNANCE.md)
 - Skill index: [docs/SKILLS.md](docs/SKILLS.md)
 - Staff/admin operations guide: [docs/USER_MANUAL.md](docs/USER_MANUAL.md)
+- Feature checklist mapping: [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)
 - Performance guardrails: [docs/PERFORMANCE_GUARDRAILS.md](docs/PERFORMANCE_GUARDRAILS.md)
 - Current operational state: [PROJECT_STATUS.md](PROJECT_STATUS.md)
 - Prioritized backlog: [DEV_TASKS.md](DEV_TASKS.md)

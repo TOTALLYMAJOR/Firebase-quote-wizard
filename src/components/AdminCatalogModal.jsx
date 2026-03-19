@@ -56,9 +56,35 @@ const ADMIN_TABS = [
   { id: "pricing", label: "Pricing" }
 ];
 
+const CRM_PROVIDER_OPTIONS = [
+  { value: "webhook", label: "Webhook" },
+  { value: "webhook_bridge", label: "Webhook Bridge" },
+  { value: "hubspot", label: "HubSpot Bridge" },
+  { value: "salesforce", label: "Salesforce Bridge" }
+];
+
+const FEATURE_FLAG_META = [
+  { id: "customerPortal", label: "Customer Portal" },
+  { id: "eventSchedule", label: "Event Schedule" },
+  { id: "integrationsOps", label: "Integrations Ops" },
+  { id: "diagnostics", label: "Diagnostics" },
+  { id: "reportingDashboard", label: "Reporting Dashboard" },
+  { id: "quoteCompare", label: "Quote Compare" },
+  { id: "crmSync", label: "CRM Sync" },
+  { id: "guidedSelling", label: "Guided Selling" }
+];
+
 function normalizePricingType(value, fallback = "per_event") {
   const raw = String(value || fallback).trim().toLowerCase();
   if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;
+  return fallback;
+}
+
+function normalizeCrmProvider(value, fallback = "webhook") {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (raw === "crm") return "webhook";
+  if (raw === "webhook-bridge") return "webhook_bridge";
+  if (raw === "webhook" || raw === "webhook_bridge" || raw === "hubspot" || raw === "salesforce") return raw;
   return fallback;
 }
 
@@ -178,7 +204,13 @@ export default function AdminCatalogModal({
 
   useEffect(() => {
     if (open) {
-      setDraft(catalog);
+      setDraft({
+        ...catalog,
+        settings: {
+          ...(catalog?.settings || {}),
+          featureFlags: { ...(catalog?.settings?.featureFlags || {}) }
+        }
+      });
       setJsonDrafts(buildJsonDrafts(catalog));
       setStatus("");
       setUploadingLogo(false);
@@ -332,6 +364,19 @@ export default function AdminCatalogModal({
       settings: {
         ...prev.settings,
         [field]: Boolean(checked)
+      }
+    }));
+  };
+
+  const patchFeatureFlag = (flagId, checked) => {
+    setDraft((prev) => ({
+      ...prev,
+      settings: {
+        ...prev.settings,
+        featureFlags: {
+          ...(prev.settings?.featureFlags || {}),
+          [flagId]: Boolean(checked)
+        }
       }
     }));
   };
@@ -1386,6 +1431,22 @@ export default function AdminCatalogModal({
             </section>
 
             <section className="admin-section">
+          <div className="admin-section-head"><h3>Optional Modules</h3></div>
+          <div className="admin-grid-settings">
+            {FEATURE_FLAG_META.map((flag) => (
+              <label key={flag.id}>
+                <span>{flag.label}</span>
+                <input
+                  type="checkbox"
+                  checked={draft.settings?.featureFlags?.[flag.id] !== false}
+                  onChange={(e) => patchFeatureFlag(flag.id, e.target.checked)}
+                />
+              </label>
+            ))}
+          </div>
+            </section>
+
+            <section className="admin-section">
           <div className="admin-section-head"><h3>Quote Meta</h3></div>
           <div className="admin-grid-settings">
             <label>
@@ -1452,11 +1513,14 @@ export default function AdminCatalogModal({
           <div className="admin-grid-settings">
             <label>
               CRM provider
-              <input
-                type="text"
-                value={draft.settings.crmProvider || "webhook"}
-                onChange={(e) => patchTextSetting("crmProvider", e.target.value)}
-              />
+              <select
+                value={normalizeCrmProvider(draft.settings.crmProvider || "webhook")}
+                onChange={(e) => patchTextSetting("crmProvider", normalizeCrmProvider(e.target.value, "webhook"))}
+              >
+                {CRM_PROVIDER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </label>
             <label>
               CRM webhook URL
@@ -1464,6 +1528,38 @@ export default function AdminCatalogModal({
                 type="url"
                 value={draft.settings.crmWebhookUrl || ""}
                 onChange={(e) => patchTextSetting("crmWebhookUrl", e.target.value)}
+              />
+            </label>
+            <label>
+              CRM webhook bridge URL
+              <input
+                type="url"
+                value={draft.settings.crmWebhookBridgeUrl || ""}
+                onChange={(e) => patchTextSetting("crmWebhookBridgeUrl", e.target.value)}
+              />
+            </label>
+            <label>
+              CRM HubSpot bridge URL
+              <input
+                type="url"
+                value={draft.settings.crmHubspotBridgeUrl || ""}
+                onChange={(e) => patchTextSetting("crmHubspotBridgeUrl", e.target.value)}
+              />
+            </label>
+            <label>
+              CRM Salesforce bridge URL
+              <input
+                type="url"
+                value={draft.settings.crmSalesforceBridgeUrl || ""}
+                onChange={(e) => patchTextSetting("crmSalesforceBridgeUrl", e.target.value)}
+              />
+            </label>
+            <label>
+              CRM bridge bearer token (optional)
+              <input
+                type="password"
+                value={draft.settings.crmBridgeAuthToken || ""}
+                onChange={(e) => patchTextSetting("crmBridgeAuthToken", e.target.value)}
               />
             </label>
             <label>

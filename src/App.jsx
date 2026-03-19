@@ -4,7 +4,7 @@ import CustomerPortalView from "./components/CustomerPortalView";
 import LiveBreakdown from "./components/LiveBreakdown";
 import { StepEvent, StepMenu, StepReview, StepServices } from "./components/WizardSteps";
 import { useEventType } from "./context/EventTypeContext";
-import { STAFF_RULES } from "./data/mockCatalog";
+import { DEFAULT_FEATURE_FLAGS, STAFF_RULES } from "./data/mockCatalog";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
 import { notifyOwnerNewQuote } from "./lib/commerceOps";
@@ -45,6 +45,20 @@ function toOptionalNumber(value) {
   if (value === null || value === undefined || value === "") return "";
   const n = Number(value);
   return Number.isFinite(n) ? n : "";
+}
+
+function normalizeFeatureFlags(input) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    customerPortal: source.customerPortal !== false,
+    eventSchedule: source.eventSchedule !== false,
+    integrationsOps: source.integrationsOps !== false,
+    diagnostics: source.diagnostics !== false,
+    reportingDashboard: source.reportingDashboard !== false,
+    quoteCompare: source.quoteCompare !== false,
+    crmSync: source.crmSync !== false,
+    guidedSelling: source.guidedSelling !== false
+  };
 }
 
 export default function App() {
@@ -119,13 +133,25 @@ export default function App() {
     [dynamicMenuSections]
   );
 
-  const effectiveSettings = useMemo(
-    () => ({
+  const effectiveSettings = useMemo(() => {
+    const featureFlags = {
+      ...DEFAULT_FEATURE_FLAGS,
+      ...normalizeFeatureFlags(catalog.settings?.featureFlags)
+    };
+    return {
       ...catalog.settings,
-      menuSections: effectiveMenuSections
-    }),
-    [catalog.settings, effectiveMenuSections]
-  );
+      menuSections: effectiveMenuSections,
+      featureFlags,
+      guidedSellingEnabled: (catalog.settings?.guidedSellingEnabled !== false) && featureFlags.guidedSelling
+    };
+  }, [catalog.settings, effectiveMenuSections]);
+  const featureFlags = effectiveSettings.featureFlags || DEFAULT_FEATURE_FLAGS;
+  const customerPortalEnabled = featureFlags.customerPortal !== false;
+  const eventScheduleEnabled = featureFlags.eventSchedule !== false;
+  const integrationsEnabled = featureFlags.integrationsOps !== false;
+  const diagnosticsEnabled = featureFlags.diagnostics !== false;
+  const dashboardEnabled = featureFlags.reportingDashboard !== false;
+  const quoteCompareEnabled = featureFlags.quoteCompare !== false;
 
   useEffect(() => {
     if (catalog.loading) return;
@@ -161,8 +187,8 @@ export default function App() {
   );
 
   const recommendations = useMemo(
-    () => buildUpsellRecommendations({ form, catalog, totals, settings: catalog.settings }),
-    [form, catalog, totals]
+    () => buildUpsellRecommendations({ form, catalog, totals, settings: effectiveSettings }),
+    [form, catalog, totals, effectiveSettings]
   );
   const isEditingQuote = Boolean(editingQuote.id);
   const brandName = catalog.settings?.brandName || "Tasteful Touch Catering";
@@ -298,6 +324,21 @@ export default function App() {
       return changed ? next : prev;
     });
   }, [catalog.loading, catalog.settings]);
+
+  useEffect(() => {
+    if (!eventScheduleEnabled) setScheduleOpen(false);
+    if (!integrationsEnabled) setIntegrationsOpen(false);
+    if (!diagnosticsEnabled) setDiagnosticsOpen(false);
+    if (!dashboardEnabled) setDashboardOpen(false);
+    if (!quoteCompareEnabled) setCompareOpen(false);
+  }, [eventScheduleEnabled, integrationsEnabled, diagnosticsEnabled, dashboardEnabled, quoteCompareEnabled]);
+
+  useEffect(() => {
+    if (!customerPortalEnabled) {
+      setPortalMode(false);
+      setPortalKey("");
+    }
+  }, [customerPortalEnabled]);
 
   useEffect(() => {
     setAvailabilityNotice("");
@@ -726,6 +767,7 @@ export default function App() {
   };
 
   const openPortalMode = () => {
+    if (!customerPortalEnabled) return;
     setPortalKey("");
     setPortalMode(true);
   };
@@ -737,7 +779,7 @@ export default function App() {
     window.history.replaceState({}, "", nextUrl);
   };
 
-  if (portalMode) {
+  if (portalMode && customerPortalEnabled) {
     return (
       <div className="app-shell" style={appThemeVars}>
         <CustomerPortalView initialPortalKey={portalKey} onBackToStaff={closePortalMode} />
@@ -770,7 +812,7 @@ export default function App() {
           </p>
           <p className="source-note">Ask an admin to set your role to `sales` or `admin` in `userRoles/{authSession.user.uid}`.</p>
           <div className="auth-actions">
-            <button type="button" className="ghost" onClick={openPortalMode}>Open Customer Portal</button>
+            {customerPortalEnabled && <button type="button" className="ghost" onClick={openPortalMode}>Open Customer Portal</button>}
             <button type="button" className="cta" onClick={handleSignOut}>Sign Out</button>
           </div>
         </section>
@@ -827,13 +869,13 @@ export default function App() {
             </div>
           )}
           <div className="right-actions header-actions">
-            <button className="ghost" onClick={() => setScheduleOpen(true)}>Schedule</button>
-            <button className="ghost" onClick={() => setIntegrationsOpen(true)}>Integrations</button>
-            <button className="ghost" onClick={() => setDiagnosticsOpen(true)}>Diagnostics</button>
-            <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>
+            {eventScheduleEnabled && <button className="ghost" onClick={() => setScheduleOpen(true)}>Schedule</button>}
+            {integrationsEnabled && <button className="ghost" onClick={() => setIntegrationsOpen(true)}>Integrations</button>}
+            {diagnosticsEnabled && <button className="ghost" onClick={() => setDiagnosticsOpen(true)}>Diagnostics</button>}
+            {dashboardEnabled && <button className="ghost" onClick={() => setDashboardOpen(true)}>Dashboard</button>}
             <button className="ghost" onClick={() => setHistoryOpen(true)}>Quote History</button>
             {authSession.isAdmin && <button className="ghost" onClick={() => setAdminOpen(true)}>Admin Catalog</button>}
-            <button className="ghost" onClick={openPortalMode}>Customer Portal</button>
+            {customerPortalEnabled && <button className="ghost" onClick={openPortalMode}>Customer Portal</button>}
             <button className="cta" onClick={handleGetInstantQuote}>Get Instant Quote</button>
             <button className="ghost" onClick={handleSignOut}>Sign Out</button>
           </div>
@@ -885,7 +927,7 @@ export default function App() {
                 form={form}
                 setForm={setForm}
                 styles={Object.keys(STAFF_RULES)}
-                settings={catalog.settings}
+                settings={effectiveSettings}
                 onTemplateChange={applyEventTemplate}
                 eventTypes={catalog.eventTypes || []}
                 onEventTypeChange={handleEventTypeChange}
@@ -905,6 +947,7 @@ export default function App() {
                 setForm={setForm}
                 catalog={catalog}
                 recommendations={recommendations}
+                guidedSellingEnabled={effectiveSettings.guidedSellingEnabled !== false}
                 onApplyRecommendation={applyRecommendation}
               />
             )}
@@ -939,7 +982,11 @@ export default function App() {
           <div className="wizard-actions">
             <div className="right-actions">
               <button className="ghost" onClick={() => setStep((s) => Math.max(1, s - 1))} disabled={step === 1 || catalog.loading}>Back</button>
-              <button className="ghost" onClick={() => setCompareOpen(true)} disabled={catalog.loading || step < 2}>Compare Scenario</button>
+              {quoteCompareEnabled && (
+                <button className="ghost" onClick={() => setCompareOpen(true)} disabled={catalog.loading || step < 2}>
+                  Compare Scenario
+                </button>
+              )}
             </div>
             <div className="right-actions">
               {step < 5 ? (
@@ -1014,40 +1061,50 @@ export default function App() {
           onToast={pushToast}
         />
 
-        <EventScheduleModal
-          open={scheduleOpen}
-          onClose={() => setScheduleOpen(false)}
-          staffLeads={scheduleStaffLeads}
-          capacityLimit={scheduleCapacityLimit}
-        />
+        {eventScheduleEnabled && (
+          <EventScheduleModal
+            open={scheduleOpen}
+            onClose={() => setScheduleOpen(false)}
+            staffLeads={scheduleStaffLeads}
+            capacityLimit={scheduleCapacityLimit}
+          />
+        )}
 
-        <IntegrationOpsModal
-          open={integrationsOpen}
-          onClose={() => setIntegrationsOpen(false)}
-          settings={catalog.settings}
-          currentUserEmail={authSession.user?.email || ""}
-        />
+        {integrationsEnabled && (
+          <IntegrationOpsModal
+            open={integrationsOpen}
+            onClose={() => setIntegrationsOpen(false)}
+            settings={effectiveSettings}
+            currentUserEmail={authSession.user?.email || ""}
+          />
+        )}
 
-        <DiagnosticsModal
-          open={diagnosticsOpen}
-          onClose={() => setDiagnosticsOpen(false)}
-        />
+        {diagnosticsEnabled && (
+          <DiagnosticsModal
+            open={diagnosticsOpen}
+            onClose={() => setDiagnosticsOpen(false)}
+          />
+        )}
 
-        <QuoteCompareModal
-          open={compareOpen}
-          onClose={() => setCompareOpen(false)}
-          form={form}
-          setForm={setForm}
-          catalog={catalog}
-          settings={effectiveSettings}
-          styles={Object.keys(STAFF_RULES)}
-          primaryTotals={totals}
-        />
+        {quoteCompareEnabled && (
+          <QuoteCompareModal
+            open={compareOpen}
+            onClose={() => setCompareOpen(false)}
+            form={form}
+            setForm={setForm}
+            catalog={catalog}
+            settings={effectiveSettings}
+            styles={Object.keys(STAFF_RULES)}
+            primaryTotals={totals}
+          />
+        )}
 
-        <ReportingDashboardModal
-          open={dashboardOpen}
-          onClose={() => setDashboardOpen(false)}
-        />
+        {dashboardEnabled && (
+          <ReportingDashboardModal
+            open={dashboardOpen}
+            onClose={() => setDashboardOpen(false)}
+          />
+        )}
       </Suspense>
     </div>
   );

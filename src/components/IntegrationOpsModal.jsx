@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { getIntegrationSetupStatus, sendIntegrationTestSms } from "../lib/commerceOps";
 import { currency } from "../lib/quoteCalculator";
-import { getQuoteHistory, recordQuoteIntegrationSync } from "../lib/quoteStore";
+import { getQuoteHistory, recordQuoteIntegrationSync, syncQuoteToCrm } from "../lib/quoteStore";
 
-const PROVIDERS = ["crm"];
+const PROVIDERS = ["crm", "webhook", "webhook_bridge", "hubspot", "salesforce"];
 const STATES = ["queued", "success", "error", "retrying", "skipped"];
 const DIRECTIONS = ["push", "pull"];
 
@@ -20,7 +20,8 @@ function formatDateTime(value) {
 }
 
 function toProvider(value) {
-  const provider = String(value || "").trim().toLowerCase();
+  const provider = String(value || "").trim().toLowerCase().replace("-", "_");
+  if (provider === "webhookbridge") return "webhook_bridge";
   return PROVIDERS.includes(provider) ? provider : "crm";
 }
 
@@ -93,6 +94,7 @@ export default function IntegrationOpsModal({
   settings = {},
   currentUserEmail = ""
 }) {
+  const defaultProvider = toProvider(settings.crmProvider || "crm");
   const [state, setState] = useState({
     loading: false,
     error: "",
@@ -104,6 +106,7 @@ export default function IntegrationOpsModal({
   const [providerFilter, setProviderFilter] = useState("all");
   const [syncStateFilter, setSyncStateFilter] = useState("all");
   const [saving, setSaving] = useState(false);
+  const [runningSync, setRunningSync] = useState(false);
   const [setupState, setSetupState] = useState({
     loading: false,
     testing: false,
@@ -119,7 +122,7 @@ export default function IntegrationOpsModal({
   });
   const [form, setForm] = useState({
     quoteId: "",
-    provider: "crm",
+    provider: defaultProvider,
     state: "queued",
     direction: "push",
     attempt: 1,
@@ -209,13 +212,14 @@ export default function IntegrationOpsModal({
   useEffect(() => {
     if (!open) return;
     setFeedback("");
+    setForm((prev) => ({ ...prev, provider: toProvider(settings.crmProvider || prev.provider || "crm") }));
     load();
     refreshSetupStatus();
     setSetupForm((prev) => ({
       ...prev,
       appBaseUrl: prev.appBaseUrl || getWindowBaseUrl()
     }));
-  }, [open]);
+  }, [open, settings.crmProvider]);
 
   const activityRows = useMemo(() => flattenLogs(state.quotes), [state.quotes]);
 
@@ -241,6 +245,18 @@ export default function IntegrationOpsModal({
       return haystack.includes(q);
     });
   }, [activityRows, providerFilter, syncStateFilter, search]);
+
+  const selectedQuote = useMemo(
+    () => state.quotes.find((quote) => quote.id === form.quoteId) || null,
+    [state.quotes, form.quoteId]
+  );
+
+  const providerEndpoints = useMemo(() => ([
+    { id: "webhook", label: "Webhook URL", value: String(settings.crmWebhookUrl || "").trim() },
+    { id: "webhook_bridge", label: "Webhook bridge URL", value: String(settings.crmWebhookBridgeUrl || "").trim() },
+    { id: "hubspot", label: "HubSpot bridge URL", value: String(settings.crmHubspotBridgeUrl || "").trim() },
+    { id: "salesforce", label: "Salesforce bridge URL", value: String(settings.crmSalesforceBridgeUrl || "").trim() }
+  ]), [settings.crmWebhookUrl, settings.crmWebhookBridgeUrl, settings.crmHubspotBridgeUrl, settings.crmSalesforceBridgeUrl]);
 
   const integrationStatus = setupState.status || {};
   const twilioStatus = integrationStatus.twilio || {};
@@ -302,6 +318,39 @@ export default function IntegrationOpsModal({
     }
   };
 
+  const handleRunSync = async () => {
+    if (!form.quoteId) {
+      setState((prev) => ({ ...prev, error: "Choose a quote before running CRM sync." }));
+      return;
+    }
+
+    setRunningSync(true);
+    setFeedback("");
+    setState((prev) => ({ ...prev, error: "" }));
+    try {
+      const result = await syncQuoteToCrm({
+        quoteId: form.quoteId,
+        provider: form.provider,
+        actorEmail: currentUserEmail,
+        trigger: "manual"
+      });
+      if (result?.skipped) {
+        setFeedback(result.reason || "CRM sync skipped.");
+      } else {
+        const providerLabel = result?.provider || form.provider;
+        setFeedback(`CRM sync completed via ${providerLabel}.`);
+      }
+      await load();
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message || "CRM sync failed."
+      }));
+    } finally {
+      setRunningSync(false);
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -333,8 +382,17 @@ export default function IntegrationOpsModal({
               CRM: <strong>{settings.crmEnabled ? "enabled" : "disabled"}</strong>
             </span>
             <span>Provider: <strong>{settings.crmProvider || "webhook"}</strong></span>
+            <span>CRM module: <strong>{settings.featureFlags?.crmSync === false ? "disabled" : "enabled"}</strong></span>
             <span>Retry limit: <strong>{Math.max(1, Number(settings.integrationRetryLimit || 3))}</strong></span>
             <span>Audit retention: <strong>{Math.max(10, Number(settings.integrationAuditRetention || 50))}</strong></span>
+          </div>
+          <div className="admin-grid-settings integration-form-grid">
+            {providerEndpoints.map((endpoint) => (
+              <label key={endpoint.id}>
+                {endpoint.label}
+                <input type="text" readOnly value={endpoint.value || "Not configured"} />
+              </label>
+            ))}
           </div>
         </section>
 
@@ -432,7 +490,7 @@ export default function IntegrationOpsModal({
 
         <section className="admin-section">
           <div className="admin-section-head">
-            <h3>Record Sync Event</h3>
+            <h3>Run CRM Sync / Record Event</h3>
           </div>
           <div className="admin-grid-settings integration-form-grid">
             <label>
@@ -511,7 +569,20 @@ export default function IntegrationOpsModal({
               />
             </label>
           </div>
+          {selectedQuote && (
+            <p className="source-note">
+              Selected quote: {selectedQuote.quoteNumber || selectedQuote.id} • {selectedQuote.customer?.name || selectedQuote.customer?.email || "-"}
+            </p>
+          )}
           <div className="right-actions">
+            <button
+              type="button"
+              className="cta"
+              onClick={handleRunSync}
+              disabled={runningSync || state.loading}
+            >
+              {runningSync ? "Syncing..." : "Run CRM Sync"}
+            </button>
             <button type="button" className="cta" onClick={handleRecord} disabled={saving || state.loading}>
               {saving ? "Recording..." : "Record Event"}
             </button>

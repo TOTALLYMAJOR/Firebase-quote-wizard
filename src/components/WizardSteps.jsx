@@ -267,9 +267,13 @@ export function StepServices({
   setForm,
   catalog,
   recommendations,
-  onApplyRecommendation
+  onApplyRecommendation,
+  guidedSellingEnabled: guidedSellingEnabledProp
 }) {
-  const guidedSellingEnabled = catalog.settings?.guidedSellingEnabled !== false;
+  const guidedSellingEnabled =
+    guidedSellingEnabledProp !== undefined
+      ? guidedSellingEnabledProp !== false
+      : catalog.settings?.guidedSellingEnabled !== false;
   const resolvePricingType = (item, fallback = "per_event") => {
     const raw = String(item?.pricingType || item?.type || "").trim().toLowerCase();
     if (raw === "per_person" || raw === "per_item" || raw === "per_event") return raw;

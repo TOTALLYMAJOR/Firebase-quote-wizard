@@ -332,6 +332,17 @@ export const DEFAULT_UPSELL_RULES = [
   }
 ];
 
+export const DEFAULT_FEATURE_FLAGS = {
+  customerPortal: true,
+  eventSchedule: true,
+  integrationsOps: true,
+  diagnostics: true,
+  reportingDashboard: true,
+  quoteCompare: true,
+  crmSync: true,
+  guidedSelling: true
+};
+
 export const DEFAULT_SETTINGS = {
   perMileRate: 0.7,
   longDistancePerMileRate: 1.1,
@@ -376,10 +387,15 @@ export const DEFAULT_SETTINGS = {
   crmEnabled: false,
   crmProvider: "webhook",
   crmWebhookUrl: "",
+  crmWebhookBridgeUrl: "",
+  crmHubspotBridgeUrl: "",
+  crmSalesforceBridgeUrl: "",
+  crmBridgeAuthToken: "",
   crmAutoSyncOnSent: true,
   crmAutoSyncOnBooked: true,
   integrationRetryLimit: 3,
   integrationAuditRetention: 50,
+  featureFlags: { ...DEFAULT_FEATURE_FLAGS },
   guidedSellingEnabled: true,
   staffingLaborEnabled: true,
   upsellRules: DEFAULT_UPSELL_RULES,
@@ -413,6 +429,15 @@ function normalizePricingType(value, fallback = "per_event") {
     return raw;
   }
   return fallback;
+}
+
+const CRM_PROVIDER_SET = new Set(["webhook", "webhook_bridge", "hubspot", "salesforce"]);
+
+function normalizeCrmProvider(value, fallback = "webhook") {
+  const raw = String(value || fallback).trim().toLowerCase();
+  if (!raw || raw === "crm") return "webhook";
+  if (raw === "webhook-bridge") return "webhook_bridge";
+  return CRM_PROVIDER_SET.has(raw) ? raw : fallback;
 }
 
 function normalizeServiceFeeTiers(input) {
@@ -658,6 +683,23 @@ function toBoolean(value, fallback = false) {
   return fallback;
 }
 
+function normalizeFeatureFlags(input, legacySettings = {}) {
+  const source = input && typeof input === "object" ? input : {};
+  return {
+    customerPortal: toBoolean(source.customerPortal, DEFAULT_FEATURE_FLAGS.customerPortal),
+    eventSchedule: toBoolean(source.eventSchedule, DEFAULT_FEATURE_FLAGS.eventSchedule),
+    integrationsOps: toBoolean(source.integrationsOps, DEFAULT_FEATURE_FLAGS.integrationsOps),
+    diagnostics: toBoolean(source.diagnostics, DEFAULT_FEATURE_FLAGS.diagnostics),
+    reportingDashboard: toBoolean(source.reportingDashboard, DEFAULT_FEATURE_FLAGS.reportingDashboard),
+    quoteCompare: toBoolean(source.quoteCompare, DEFAULT_FEATURE_FLAGS.quoteCompare),
+    crmSync: toBoolean(source.crmSync, toBoolean(legacySettings.crmEnabled, DEFAULT_FEATURE_FLAGS.crmSync)),
+    guidedSelling: toBoolean(
+      source.guidedSelling,
+      toBoolean(legacySettings.guidedSellingEnabled, DEFAULT_FEATURE_FLAGS.guidedSelling)
+    )
+  };
+}
+
 function normalizeHexColor(value, fallback) {
   const raw = String(value || "").trim();
   if (/^#[\da-fA-F]{6}$/.test(raw)) {
@@ -725,6 +767,7 @@ export function normalizeCatalog(raw) {
   });
   const brandCrew = normalizeBrandCrew(rawSettings.brandCrew);
   const upsellRules = normalizeUpsellRules(rawSettings.upsellRules, { packages, addons, rentals });
+  const featureFlags = normalizeFeatureFlags(rawSettings.featureFlags, rawSettings);
   const defaultTaxRegion = taxRegions.some((region) => region.id === rawSettings.defaultTaxRegion)
     ? rawSettings.defaultTaxRegion
     : taxRegions[0]?.id || DEFAULT_SETTINGS.defaultTaxRegion;
@@ -803,8 +846,12 @@ export function normalizeCatalog(raw) {
       disposablesNote: toText(rawSettings.disposablesNote, DEFAULT_SETTINGS.disposablesNote),
       depositNotice: toText(rawSettings.depositNotice, DEFAULT_SETTINGS.depositNotice),
       crmEnabled: toBoolean(rawSettings.crmEnabled, DEFAULT_SETTINGS.crmEnabled),
-      crmProvider: toText(rawSettings.crmProvider, DEFAULT_SETTINGS.crmProvider),
+      crmProvider: normalizeCrmProvider(rawSettings.crmProvider, DEFAULT_SETTINGS.crmProvider),
       crmWebhookUrl: toText(rawSettings.crmWebhookUrl, DEFAULT_SETTINGS.crmWebhookUrl),
+      crmWebhookBridgeUrl: toText(rawSettings.crmWebhookBridgeUrl, DEFAULT_SETTINGS.crmWebhookBridgeUrl),
+      crmHubspotBridgeUrl: toText(rawSettings.crmHubspotBridgeUrl, DEFAULT_SETTINGS.crmHubspotBridgeUrl),
+      crmSalesforceBridgeUrl: toText(rawSettings.crmSalesforceBridgeUrl, DEFAULT_SETTINGS.crmSalesforceBridgeUrl),
+      crmBridgeAuthToken: toText(rawSettings.crmBridgeAuthToken, DEFAULT_SETTINGS.crmBridgeAuthToken),
       crmAutoSyncOnSent: toBoolean(rawSettings.crmAutoSyncOnSent, DEFAULT_SETTINGS.crmAutoSyncOnSent),
       crmAutoSyncOnBooked: toBoolean(rawSettings.crmAutoSyncOnBooked, DEFAULT_SETTINGS.crmAutoSyncOnBooked),
       integrationRetryLimit: toNumber(rawSettings.integrationRetryLimit, DEFAULT_SETTINGS.integrationRetryLimit, 1, 10),
@@ -814,7 +861,10 @@ export function normalizeCatalog(raw) {
         10,
         200
       ),
-      guidedSellingEnabled: toBoolean(rawSettings.guidedSellingEnabled, DEFAULT_SETTINGS.guidedSellingEnabled),
+      featureFlags,
+      guidedSellingEnabled:
+        toBoolean(rawSettings.guidedSellingEnabled, DEFAULT_SETTINGS.guidedSellingEnabled) &&
+        featureFlags.guidedSelling,
       staffingLaborEnabled: toBoolean(rawSettings.staffingLaborEnabled, DEFAULT_SETTINGS.staffingLaborEnabled),
       upsellRules,
       eventTemplates,
