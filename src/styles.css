@@ -1148,6 +1148,16 @@ hr {
   overflow: auto;
 }
 
+.history-card table {
+  min-width: 1500px;
+}
+
+.history-card th,
+.history-card td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .history-controls {
   margin-top: 0.6rem;
   display: grid;
@@ -1163,6 +1173,12 @@ hr {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+}
+
+.history-card .row-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
 }
 
 .history-meta-stack {
