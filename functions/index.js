@@ -2,6 +2,10 @@ const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const Stripe = require("stripe");
 const twilio = require("twilio");
+const {
+  PricingEngineError,
+  calculateQuotePricingAuthoritative
+} = require("./pricingEngine");
 
 admin.initializeApp();
 
@@ -590,6 +594,40 @@ exports.ensureOrganizationBootstrap = functions.region(REGION).https.onCall(asyn
     organizationId: bootstrap.organizationId,
     createdOrganization: Boolean(bootstrap.createdOrganization)
   };
+});
+
+exports.calculateQuotePricing = functions.region(REGION).https.onCall(async (data, context) => {
+  const staff = await assertStaff(context);
+  const actorEmail = normalizeEmail(context?.auth?.token?.email || "");
+  const pricingStaff = {
+    ...staff,
+    email: actorEmail
+  };
+
+  try {
+    const result = await calculateQuotePricingAuthoritative({
+      db,
+      data,
+      staff: pricingStaff,
+      organizationsCollection: ORGANIZATIONS_COLLECTION
+    });
+    return {
+      ok: true,
+      organizationId: result.organizationId,
+      catalogSource: result.catalogSource,
+      pricing: result.pricing
+    };
+  } catch (err) {
+    if (err instanceof PricingEngineError) {
+      throw new functions.https.HttpsError(err.code, err.message);
+    }
+    functions.logger.error("calculateQuotePricing failed", {
+      actorUid: staff.uid,
+      organizationId: staff.organizationId,
+      error: normalizeText(err?.message)
+    });
+    throw new functions.https.HttpsError("internal", "Failed to calculate quote pricing.");
+  }
 });
 
 exports.notifyOwnerNewQuote = functions.region(REGION).https.onCall(async (data, context) => {

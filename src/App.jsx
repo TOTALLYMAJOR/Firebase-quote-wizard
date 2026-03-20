@@ -8,7 +8,7 @@ import { useOrganization } from "./context/OrganizationContext";
 import { DEFAULT_FEATURE_FLAGS, STAFF_RULES } from "./data/mockCatalog";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
-import { notifyOwnerNewQuote, sendQuoteToCustomerEmail } from "./lib/commerceOps";
+import { calculateQuotePricing, notifyOwnerNewQuote, sendQuoteToCustomerEmail } from "./lib/commerceOps";
 import { setActiveOrganizationId } from "./lib/organizationService";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
@@ -67,6 +67,84 @@ function normalizeFeatureFlags(input) {
     quoteCompare: source.quoteCompare !== false,
     crmSync: source.crmSync !== false,
     guidedSelling: source.guidedSelling !== false
+  };
+}
+
+function normalizePricingLineCategory(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function sumPricingLineTotals(lineItems, categories = []) {
+  const categorySet = new Set(categories.map((category) => normalizePricingLineCategory(category)));
+  const source = Array.isArray(lineItems) ? lineItems : [];
+  return source.reduce((sum, item) => {
+    const category = normalizePricingLineCategory(item?.category);
+    if (!categorySet.has(category)) return sum;
+    return sum + toNumber(item?.total, 0);
+  }, 0);
+}
+
+function buildTotalsFromPricingSnapshot(pricingSnapshot = {}, fallbackTotals = {}) {
+  const lineItems = Array.isArray(pricingSnapshot?.lineItems) ? pricingSnapshot.lineItems : [];
+  const rules = pricingSnapshot?.rulesSnapshot && typeof pricingSnapshot.rulesSnapshot === "object"
+    ? pricingSnapshot.rulesSnapshot
+    : {};
+  const laborSnapshot = rules.laborRateSnapshot && typeof rules.laborRateSnapshot === "object"
+    ? rules.laborRateSnapshot
+    : {};
+  const selectedPackage = pricingSnapshot?.inputs?.selection?.package || {};
+
+  const base = toNumber(
+    sumPricingLineTotals(lineItems, ["package"]),
+    toNumber(fallbackTotals.base, 0)
+  );
+  const addons = toNumber(
+    sumPricingLineTotals(lineItems, ["addon", "addons"]),
+    toNumber(fallbackTotals.addons, 0)
+  );
+  const rentals = toNumber(
+    sumPricingLineTotals(lineItems, ["rental", "rentals"]),
+    toNumber(fallbackTotals.rentals, 0)
+  );
+  const menu = toNumber(
+    sumPricingLineTotals(lineItems, ["menu_item", "menu_items", "menu"]),
+    toNumber(fallbackTotals.menu, 0)
+  );
+
+  return {
+    ...fallbackTotals,
+    selectedPkg: {
+      ...(fallbackTotals.selectedPkg || {}),
+      id: String(selectedPackage?.id || fallbackTotals.selectedPkg?.id || "").trim(),
+      name: String(selectedPackage?.name || fallbackTotals.selectedPkg?.name || "").trim()
+    },
+    base,
+    addons,
+    rentals,
+    menu,
+    labor: toNumber(pricingSnapshot?.fees?.labor, toNumber(fallbackTotals.labor, 0)),
+    bartenderLabor: toNumber(pricingSnapshot?.fees?.bartenderLabor, toNumber(fallbackTotals.bartenderLabor, 0)),
+    bartenderRateApplied: toNumber(laborSnapshot.bartenderRateApplied, toNumber(fallbackTotals.bartenderRateApplied, 0)),
+    serverRateApplied: toNumber(laborSnapshot.serverRateApplied, toNumber(fallbackTotals.serverRateApplied, 0)),
+    chefRateApplied: toNumber(laborSnapshot.chefRateApplied, toNumber(fallbackTotals.chefRateApplied, 0)),
+    bartenderRateTypeId: String(laborSnapshot.bartenderRateTypeId || fallbackTotals.bartenderRateTypeId || ""),
+    bartenderRateTypeName: String(laborSnapshot.bartenderRateTypeName || fallbackTotals.bartenderRateTypeName || ""),
+    staffingRateTypeId: String(laborSnapshot.staffingRateTypeId || fallbackTotals.staffingRateTypeId || ""),
+    staffingRateTypeName: String(laborSnapshot.staffingRateTypeName || fallbackTotals.staffingRateTypeName || ""),
+    travel: toNumber(pricingSnapshot?.fees?.travel, toNumber(fallbackTotals.travel, 0)),
+    serviceFee: toNumber(pricingSnapshot?.fees?.serviceFee, toNumber(fallbackTotals.serviceFee, 0)),
+    tax: toNumber(pricingSnapshot?.tax?.amount, toNumber(fallbackTotals.tax, 0)),
+    total: toNumber(pricingSnapshot?.grandTotal, toNumber(fallbackTotals.total, 0)),
+    deposit: toNumber(pricingSnapshot?.deposit?.amount, toNumber(fallbackTotals.deposit, 0)),
+    serviceFeePctApplied: toNumber(rules.serviceFeePctApplied, toNumber(fallbackTotals.serviceFeePctApplied, 0)),
+    taxRateApplied: toNumber(pricingSnapshot?.tax?.rate, toNumber(fallbackTotals.taxRateApplied, 0)),
+    taxRegionId: String(pricingSnapshot?.tax?.regionId || fallbackTotals.taxRegionId || ""),
+    taxRegionName: String(pricingSnapshot?.tax?.regionName || fallbackTotals.taxRegionName || ""),
+    seasonProfileId: String(rules.seasonProfileId || fallbackTotals.seasonProfileId || ""),
+    seasonProfileName: String(rules.seasonProfileName || fallbackTotals.seasonProfileName || ""),
+    packageMultiplier: toNumber(rules.packageMultiplier, toNumber(fallbackTotals.packageMultiplier, 1)),
+    addonMultiplier: toNumber(rules.addonMultiplier, toNumber(fallbackTotals.addonMultiplier, 1)),
+    rentalMultiplier: toNumber(rules.rentalMultiplier, toNumber(fallbackTotals.rentalMultiplier, 1))
   };
 }
 
@@ -592,11 +670,56 @@ export default function App() {
         setAvailabilityNotice("");
       }
 
+      const requiresAuthoritativePricing = String(catalog.source || "").trim().toLowerCase().startsWith("firebase");
+      const pricingInput = {
+        organizationId: authSession.organizationId || "",
+        quoteId: isEditingQuote ? editingQuote.id : "",
+        quoteNumber: isEditingQuote ? editingQuote.quoteNumber || "" : "",
+        actor: {
+          uid: authSession.user?.uid || "",
+          email: authSession.user?.email || "",
+          role: authSession.role || "sales"
+        },
+        form,
+        metadata: {
+          source: catalog.source || "",
+          generatedAt: new Date().toISOString()
+        }
+      };
+      let totalsForPersistence = totals;
+      let pricingSnapshot = null;
+      let pricingAdjustmentNote = "";
+
+      try {
+        const pricingResult = await calculateQuotePricing({
+          organizationId: authSession.organizationId || "",
+          pricingInput
+        });
+        const authoritativePricing = pricingResult?.pricing && typeof pricingResult.pricing === "object"
+          ? pricingResult.pricing
+          : null;
+        if (!authoritativePricing) {
+          throw new Error("Authoritative pricing response was empty.");
+        }
+        pricingSnapshot = authoritativePricing;
+        totalsForPersistence = buildTotalsFromPricingSnapshot(authoritativePricing, totals);
+        const previewTotal = toNumber(totals.total, 0);
+        const authoritativeTotal = toNumber(totalsForPersistence.total, previewTotal);
+        if (Math.abs(authoritativeTotal - previewTotal) >= 0.01) {
+          pricingAdjustmentNote = ` Server pricing adjusted total from ${currency(previewTotal)} to ${currency(authoritativeTotal)}.`;
+        }
+      } catch (pricingErr) {
+        if (requiresAuthoritativePricing) {
+          throw new Error(pricingErr?.message || "Failed to calculate authoritative quote pricing.");
+        }
+      }
+
       const result = isEditingQuote
         ? await updateQuote({
           quoteId: editingQuote.id,
           form,
-          totals,
+          totals: totalsForPersistence,
+          pricingSnapshot,
           catalogSource: catalog.source,
           settings: effectiveSettings,
           catalog,
@@ -606,7 +729,8 @@ export default function App() {
         })
         : await submitQuote({
           form,
-          totals,
+          totals: totalsForPersistence,
+          pricingSnapshot,
           catalogSource: catalog.source,
           settings: effectiveSettings,
           catalog,
@@ -621,7 +745,7 @@ export default function App() {
         setSubmitState({
           saving: false,
           sendingQuoteEmail: false,
-          message: `Quote ${result.quoteNumber} updated in ${result.storage}. Version snapshot saved and rates locked.`,
+          message: `Quote ${result.quoteNumber} updated in ${result.storage}. Version snapshot saved and rates locked.${pricingAdjustmentNote}`,
           portalLink,
           quoteId: result.id,
           quoteNumber: result.quoteNumber || ""
@@ -654,7 +778,7 @@ export default function App() {
       setSubmitState({
         saving: false,
         sendingQuoteEmail: false,
-        message: `Quote ${result.quoteNumber} saved to ${result.storage}.${smsSuffix}`,
+        message: `Quote ${result.quoteNumber} saved to ${result.storage}.${smsSuffix}${pricingAdjustmentNote}`,
         portalLink,
         quoteId: result.id,
         quoteNumber: result.quoteNumber || ""
@@ -823,7 +947,8 @@ export default function App() {
       const basePortalUrl = `${window.location.origin}${window.location.pathname}`;
       const attachment = await exportQuoteProposal(quote, {
         basePortalUrl,
-        output: "base64"
+        output: "base64",
+        compact: true
       });
       const fallbackPortalLink = quote.portalKey ? `${basePortalUrl}?portal=${quote.portalKey}` : "";
       const portalLink = submitState.portalLink || fallbackPortalLink;

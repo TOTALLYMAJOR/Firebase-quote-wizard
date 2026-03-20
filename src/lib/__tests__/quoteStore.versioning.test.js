@@ -8,6 +8,8 @@ vi.mock("../firebase", () => ({
 import {
   deleteQuote,
   getQuoteHistory,
+  resolveQuotePricingSnapshot,
+  resolveQuoteVersionMetadata,
   reopenQuote,
   updateQuote,
   updateQuoteStatus
@@ -276,5 +278,58 @@ describe("quoteStore versioning and soft delete", () => {
     expect(updated.totals.bartenderRateApplied).toBe(42);
     expect(updated.totals.serverRateApplied).toBe(31);
     expect(updated.totals.chefRateApplied).toBe(53);
+  });
+
+  test("resolves legacy pricing snapshot when quote.pricing is missing", () => {
+    const legacyQuote = makeQuote({
+      id: "q-legacy-pricing",
+      totals: {
+        base: 2100,
+        addons: 300,
+        rentals: 120,
+        menu: 180,
+        labor: 760,
+        travel: 20,
+        serviceFee: 626.4,
+        tax: 332.64,
+        total: 4439.04,
+        deposit: 1331.712,
+        serviceFeePctApplied: 0.18,
+        taxRateApplied: 0.08,
+        taxRegionId: "local",
+        taxRegionName: "Local",
+        seasonProfileId: "standard",
+        seasonProfileName: "Standard"
+      },
+      selection: {
+        packageId: "classic",
+        packageName: "Classic",
+        taxRegion: "local",
+        seasonProfileId: "standard"
+      }
+    });
+
+    const snapshot = resolveQuotePricingSnapshot(legacyQuote);
+    expect(snapshot.authority).toBe("legacy_derived");
+    expect(snapshot.grandTotal).toBeCloseTo(4439.04, 6);
+    expect(snapshot.discountTotal).toBe(0);
+    expect(snapshot.lineItems.length).toBeGreaterThanOrEqual(9);
+    expect(snapshot.tax.regionName).toBe("Local");
+  });
+
+  test("resolves legacy-safe version metadata defaults", () => {
+    const quote = makeQuote({
+      id: "q-version-meta",
+      ownerUid: "staff-9",
+      ownerEmail: "ops@example.com",
+      createdAtISO: "2026-03-10T12:00:00.000Z"
+    });
+
+    const metadata = resolveQuoteVersionMetadata(quote);
+    expect(metadata.versionNumber).toBe(1);
+    expect(metadata.createdAt).toBe("2026-03-10T12:00:00.000Z");
+    expect(metadata.createdBy.uid).toBe("staff-9");
+    expect(metadata.createdBy.email).toBe("ops@example.com");
+    expect(metadata.reason).toBe("unspecified");
   });
 });

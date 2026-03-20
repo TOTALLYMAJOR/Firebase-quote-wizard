@@ -500,7 +500,8 @@ export default function QuoteHistoryModal({
       const { exportQuoteProposal } = await import("../lib/proposalExport");
       const attachment = await exportQuoteProposal(quote, {
         basePortalUrl,
-        output: "base64"
+        output: "base64",
+        compact: true
       });
       const portalLink = resolveQuotePortalLink(quote);
 
@@ -540,7 +541,8 @@ export default function QuoteHistoryModal({
       const { exportQuoteProposal } = await import("../lib/proposalExport");
       const attachment = await exportQuoteProposal(quote, {
         basePortalUrl,
-        output: "base64"
+        output: "base64",
+        compact: true
       });
       const portalLink = resolveQuotePortalLink(quote);
 

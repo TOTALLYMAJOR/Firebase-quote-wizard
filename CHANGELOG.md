@@ -8,6 +8,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ### Added
 
+- VS Code devcontainer config (`.devcontainer/devcontainer.json`) for isolated development using the existing Docker Compose `web-dev` service.
 - End-user operations guide for staff/admin workflows (`docs/USER_MANUAL.md`).
 - Global event-type context provider for cross-surface event-type synchronization (wizard + admin).
 - Duplicate quote action in Quote History, creating new draft quotes with copied snapshots and pricing details.

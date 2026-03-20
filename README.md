@@ -17,7 +17,7 @@ The app supports a 5-step quote wizard, dynamic event-type menus, pricing config
 - Frontend: React 18 + Vite 7
 - Data/Auth: Firebase Firestore + Firebase Auth
 - Deploy target: Firebase Hosting (primary), Vercel (optional)
-- Local runtime options: Node (`npm run dev`) or Docker Compose (`web-dev` / `web`)
+- Local runtime options: VS Code Dev Container (recommended), Node (`npm run dev`), or Docker Compose (`web-dev` / `web`)
 
 ## Local Setup
 ### Prerequisites
@@ -34,6 +34,22 @@ npm run check:env
 ```bash
 npm run dev
 ```
+
+### Run (VS Code Dev Container, isolated)
+Prerequisites:
+- Docker Desktop
+- VS Code with Dev Containers extension
+
+Steps:
+1. Open the `react-firebase-quote-wizard` folder in VS Code.
+2. Run `Dev Containers: Reopen in Container`.
+3. In the container terminal, run:
+
+```bash
+npm run dev
+```
+
+The app is served on `http://localhost:5173`.
 
 ### Run (Docker)
 Dev server:

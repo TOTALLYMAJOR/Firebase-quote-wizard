@@ -1,0 +1,1284 @@
+const PRICING_VERSION = "pricing-v1";
+const PRICING_AUTHORITY = "server_authoritative";
+const PRICING_MODES = new Set(["per_person", "per_item", "per_event"]);
+
+const DEFAULT_SERVICE_FEE_TIERS = [
+  { id: "tier-small", minGuests: 0, maxGuests: 99, pct: 0.2 },
+  { id: "tier-mid", minGuests: 100, maxGuests: 249, pct: 0.18 },
+  { id: "tier-large", minGuests: 250, maxGuests: 9999, pct: 0.16 }
+];
+
+const DEFAULT_TAX_REGIONS = [
+  { id: "local", name: "Local", rate: 0.1 },
+  { id: "reduced", name: "Reduced District", rate: 0.085 },
+  { id: "out_of_state", name: "Out of State", rate: 0 }
+];
+
+const DEFAULT_SEASONAL_PROFILES = [
+  {
+    id: "standard",
+    name: "Standard",
+    startMonth: 1,
+    startDay: 1,
+    endMonth: 12,
+    endDay: 31,
+    packageMultiplier: 1,
+    addonMultiplier: 1,
+    rentalMultiplier: 1
+  },
+  {
+    id: "summer_peak",
+    name: "Summer Peak",
+    startMonth: 5,
+    startDay: 20,
+    endMonth: 9,
+    endDay: 5,
+    packageMultiplier: 1.04,
+    addonMultiplier: 1.03,
+    rentalMultiplier: 1.02
+  },
+  {
+    id: "holiday_peak",
+    name: "Holiday Peak",
+    startMonth: 11,
+    startDay: 15,
+    endMonth: 1,
+    endDay: 7,
+    packageMultiplier: 1.08,
+    addonMultiplier: 1.05,
+    rentalMultiplier: 1.04
+  }
+];
+
+const DEFAULT_BARTENDER_RATE_TYPES = [
+  { id: "standard", name: "Standard Bartender", rate: 30 },
+  { id: "premium", name: "Premium Bartender", rate: 40 }
+];
+
+const DEFAULT_STAFFING_RATE_TYPES = [
+  { id: "standard", name: "Standard Staffing", serverRate: 22, chefRate: 28 },
+  { id: "senior", name: "Senior Staffing", serverRate: 26, chefRate: 34 }
+];
+
+const DEFAULT_PRICING_SETTINGS = {
+  perMileRate: 0.7,
+  longDistancePerMileRate: 1.1,
+  deliveryThresholdMiles: 30,
+  bartenderRate: 30,
+  serverRate: 22,
+  chefRate: 28,
+  staffingLaborEnabled: true,
+  serviceFeePct: 0.2,
+  serviceFeeTiers: DEFAULT_SERVICE_FEE_TIERS,
+  taxRate: 0.1,
+  taxRegions: DEFAULT_TAX_REGIONS,
+  defaultTaxRegion: "local",
+  depositPct: 0.3,
+  seasonalProfiles: DEFAULT_SEASONAL_PROFILES,
+  defaultSeasonProfile: "auto",
+  bartenderRateTypes: DEFAULT_BARTENDER_RATE_TYPES,
+  defaultBartenderRateType: "standard",
+  staffingRateTypes: DEFAULT_STAFFING_RATE_TYPES,
+  defaultStaffingRateType: "standard",
+  menuSections: []
+};
+
+const STAFF_RULES = {
+  Buffet: { serverRatio: 25, minServers: 2, chefRatio: Number.POSITIVE_INFINITY },
+  Plated: { serverRatio: 12, minServers: 3, chefRatio: 50 },
+  Stations: { serverRatio: 20, minServers: 2, chefRatio: 75 },
+  "Drop-off": { serverRatio: Number.POSITIVE_INFINITY, minServers: 0, chefRatio: Number.POSITIVE_INFINITY }
+};
+
+class PricingEngineError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "PricingEngineError";
+    this.code = code || "invalid-argument";
+  }
+}
+
+function toText(value, fallback = "") {
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function toLowerText(value, fallback = "") {
+  return toText(value, fallback).toLowerCase();
+}
+
+function toNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function toInt(value, fallback = 0) {
+  return Math.round(toNumber(value, fallback));
+}
+
+function toOptionalRate(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  const n = Number(text);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+function normalizeISO(value, fallback = "") {
+  const text = toText(value);
+  if (!text) return fallback;
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+}
+
+function normalizeOrganizationId(value) {
+  const raw = toLowerText(value);
+  if (!raw) return "";
+  return raw
+    .replace(/[^\w-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizePricingType(value, fallback = "per_event") {
+  const raw = toLowerText(value, fallback);
+  return PRICING_MODES.has(raw) ? raw : fallback;
+}
+
+function normalizeQuantityMap(input) {
+  if (!input || typeof input !== "object") return {};
+  return Object.entries(input).reduce((acc, [rawKey, rawValue]) => {
+    const key = toText(rawKey);
+    if (!key) return acc;
+    acc[key] = Math.max(1, toInt(rawValue, 1));
+    return acc;
+  }, {});
+}
+
+function resolveLineQuantity(itemId, quantityMap, fallback = 1) {
+  const id = toText(itemId);
+  if (!id) return Math.max(1, toInt(fallback, 1));
+  if (!Object.prototype.hasOwnProperty.call(quantityMap, id)) {
+    return Math.max(1, toInt(fallback, 1));
+  }
+  return Math.max(1, toInt(quantityMap[id], fallback));
+}
+
+function dateParts(isoDate) {
+  const parsed = isoDate ? new Date(isoDate) : new Date();
+  if (Number.isNaN(parsed.getTime())) {
+    const now = new Date();
+    return { month: now.getMonth() + 1, day: now.getDate() };
+  }
+  return {
+    month: parsed.getMonth() + 1,
+    day: parsed.getDate()
+  };
+}
+
+function seasonRangeContains(profile, month, day) {
+  const target = month * 100 + day;
+  const start = toNumber(profile?.startMonth, 1) * 100 + toNumber(profile?.startDay, 1);
+  const end = toNumber(profile?.endMonth, 12) * 100 + toNumber(profile?.endDay, 31);
+
+  if (start <= end) {
+    return target >= start && target <= end;
+  }
+  return target >= start || target <= end;
+}
+
+function resolveServiceFeePct(guests, settings) {
+  const tiers = Array.isArray(settings?.serviceFeeTiers) ? settings.serviceFeeTiers : [];
+  const match = tiers.find((tier) => guests >= Number(tier.minGuests || 0) && guests <= Number(tier.maxGuests || 9999));
+  if (match) return Number(match.pct || 0);
+  return Number(settings?.serviceFeePct || 0);
+}
+
+function resolveTaxRegion(input, settings) {
+  const regions = Array.isArray(settings?.taxRegions) ? settings.taxRegions : [];
+  const fallbackRate = Number(settings?.taxRate || 0);
+  const selectedId = toText(input?.taxRegionId || input?.taxRegion || settings?.defaultTaxRegion);
+  const selected = regions.find((region) => toText(region?.id) === selectedId) || regions[0];
+
+  if (selected) {
+    return {
+      id: toText(selected.id, "default"),
+      name: toText(selected.name, "Default"),
+      rate: toNumber(selected.rate, fallbackRate)
+    };
+  }
+
+  return {
+    id: "default",
+    name: "Default",
+    rate: fallbackRate
+  };
+}
+
+function resolveSeasonProfile(input, settings) {
+  const profiles = Array.isArray(settings?.seasonalProfiles) ? settings.seasonalProfiles : [];
+  const explicit = toText(input?.seasonProfileId);
+  const defaultProfileId = toText(settings?.defaultSeasonProfile, "auto");
+
+  if (!profiles.length) {
+    return {
+      id: "standard",
+      name: "Standard",
+      packageMultiplier: 1,
+      addonMultiplier: 1,
+      rentalMultiplier: 1
+    };
+  }
+
+  if (explicit && explicit !== "auto") {
+    const chosen = profiles.find((profile) => toText(profile?.id) === explicit);
+    if (chosen) return chosen;
+  }
+
+  if (defaultProfileId && defaultProfileId !== "auto") {
+    const chosen = profiles.find((profile) => toText(profile?.id) === defaultProfileId);
+    if (chosen) return chosen;
+  }
+
+  const { month, day } = dateParts(input?.date);
+  const autoMatch = profiles.find((profile) => seasonRangeContains(profile, month, day));
+  return autoMatch || profiles[0];
+}
+
+function resolveLaborRates(input, settings) {
+  const bartenderRateTypes = Array.isArray(settings?.bartenderRateTypes) ? settings.bartenderRateTypes : [];
+  const staffingRateTypes = Array.isArray(settings?.staffingRateTypes) ? settings.staffingRateTypes : [];
+
+  const selectedBartenderRateTypeId = toText(input?.labor?.bartenderRateTypeId || settings?.defaultBartenderRateType);
+  const selectedStaffingRateTypeId = toText(input?.labor?.staffingRateTypeId || settings?.defaultStaffingRateType);
+
+  const bartenderRateType = bartenderRateTypes.find((item) => toText(item?.id) === selectedBartenderRateTypeId) || null;
+  const staffingRateType = staffingRateTypes.find((item) => toText(item?.id) === selectedStaffingRateTypeId) || null;
+
+  const baseBartenderRate = toNumber(settings?.bartenderRate, 0);
+  const baseServerRate = toNumber(settings?.serverRate, 0);
+  const baseChefRate = toNumber(settings?.chefRate, 0);
+
+  const bartenderRateFromType = toNumber(bartenderRateType?.rate, baseBartenderRate);
+  const serverRateFromType = toNumber(staffingRateType?.serverRate, baseServerRate);
+  const chefRateFromType = toNumber(staffingRateType?.chefRate, baseChefRate);
+
+  const bartenderRateOverride = toOptionalRate(input?.labor?.bartenderRateOverride);
+  const serverRateOverride = toOptionalRate(input?.labor?.serverRateOverride);
+  const chefRateOverride = toOptionalRate(input?.labor?.chefRateOverride);
+
+  return {
+    bartenderRateApplied: bartenderRateOverride ?? bartenderRateFromType,
+    serverRateApplied: serverRateOverride ?? serverRateFromType,
+    chefRateApplied: chefRateOverride ?? chefRateFromType,
+    bartenderRateTypeId: toText(bartenderRateType?.id),
+    bartenderRateTypeName: toText(bartenderRateType?.name),
+    staffingRateTypeId: toText(staffingRateType?.id),
+    staffingRateTypeName: toText(staffingRateType?.name)
+  };
+}
+
+function toCatalogId(value, fallback = "") {
+  const raw = toLowerText(value, fallback);
+  if (!raw) return "";
+  return raw
+    .replace(/[^\w-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeSelectionEntry(entry, fallbackPricingMode = "per_event") {
+  if (typeof entry === "string") {
+    const id = toText(entry);
+    if (!id) return null;
+    return {
+      id,
+      name: id,
+      pricingMode: fallbackPricingMode,
+      unitPrice: 0,
+      quantity: 1
+    };
+  }
+
+  if (!entry || typeof entry !== "object") return null;
+  const id = toText(entry.id);
+  if (!id) return null;
+
+  return {
+    id,
+    name: toText(entry.name, id),
+    pricingMode: normalizePricingType(entry.pricingMode || entry.pricingType || entry.type, fallbackPricingMode),
+    unitPrice: toNumber(entry.unitPrice, toNumber(entry.price, 0)),
+    quantity: Math.max(1, toInt(entry.quantity, 1))
+  };
+}
+
+function normalizeSelectionList(input, fallbackPricingMode) {
+  const source = Array.isArray(input) ? input : [];
+  return source
+    .map((entry) => normalizeSelectionEntry(entry, fallbackPricingMode))
+    .filter(Boolean);
+}
+
+function normalizeActor(source = {}, staff = {}) {
+  return {
+    uid: toText(source?.uid || staff?.uid),
+    email: toLowerText(source?.email || staff?.email || ""),
+    role: toText(source?.role || staff?.role)
+  };
+}
+
+function normalizePricingInputPayload(data = {}, staff = {}) {
+  const root = data && typeof data === "object" ? data : {};
+  const source = root.pricingInput && typeof root.pricingInput === "object" ? root.pricingInput : root;
+  const event = source.event && typeof source.event === "object" ? source.event : {};
+  const selection = source.selection && typeof source.selection === "object" ? source.selection : {};
+  const rawForm = root.form && typeof root.form === "object"
+    ? root.form
+    : source.form && typeof source.form === "object"
+      ? source.form
+      : {};
+  const rawQuantities = selection.quantities && typeof selection.quantities === "object" ? selection.quantities : {};
+
+  const actor = normalizeActor(source.actor, staff);
+  const requestedOrganizationId = normalizeOrganizationId(
+    source.organizationId || root.organizationId || staff.organizationId
+  );
+  const staffOrganizationId = normalizeOrganizationId(staff.organizationId);
+
+  if (staffOrganizationId && requestedOrganizationId && requestedOrganizationId !== staffOrganizationId) {
+    throw new PricingEngineError("permission-denied", "Requested organization is outside your role scope.");
+  }
+
+  const organizationId = requestedOrganizationId || staffOrganizationId;
+  const packageRef = selection.package && typeof selection.package === "object" ? selection.package : {};
+  const packageId = toText(
+    packageRef.id || selection.packageId || rawForm.pkg || source.packageId
+  );
+
+  if (!packageId) {
+    throw new PricingEngineError("invalid-argument", "selection.package.id is required.");
+  }
+
+  const addonQuantities = normalizeQuantityMap(
+    rawQuantities.addonQuantities || selection.addonQuantities || rawForm.addonQuantities
+  );
+  const rentalQuantities = normalizeQuantityMap(
+    rawQuantities.rentalQuantities || selection.rentalQuantities || rawForm.rentalQuantities
+  );
+  const menuItemQuantities = normalizeQuantityMap(
+    rawQuantities.menuItemQuantities || selection.menuItemQuantities || rawForm.menuItemQuantities
+  );
+
+  const addons = normalizeSelectionList(selection.addons || rawForm.addons || source.addons, "per_person");
+  const rentals = normalizeSelectionList(selection.rentals || rawForm.rentals || source.rentals, "per_item");
+  const menuItems = normalizeSelectionList(selection.menuItems || rawForm.menuItems || source.menuItems, "per_event");
+
+  return {
+    organizationId,
+    allowLegacyGlobalFallback: root.allowLegacyGlobalFallback !== false,
+    quoteId: toText(source.quoteId || root.quoteId),
+    quoteNumber: toText(source.quoteNumber || root.quoteNumber),
+    actor,
+    event: {
+      name: toText(event.name || rawForm.eventName),
+      eventTypeId: toText(event.eventTypeId || rawForm.eventTypeId),
+      date: toText(event.date || rawForm.date),
+      time: toText(event.time || rawForm.time),
+      venue: toText(event.venue || rawForm.venue),
+      venueAddress: toText(event.venueAddress || rawForm.venueAddress),
+      guests: Math.max(0, toInt(event.guests ?? rawForm.guests, 0)),
+      hours: Math.max(0, toNumber(event.hours ?? rawForm.hours, 0)),
+      style: toText(event.style || rawForm.style, "Buffet"),
+      bartenders: Math.max(0, toInt(event.bartenders ?? rawForm.bartenders, 0)),
+      milesRT: Math.max(0, toNumber(event.milesRT ?? selection.milesRT ?? rawForm.milesRT, 0)),
+      taxRegionId: toText(event.taxRegionId || selection.taxRegion || rawForm.taxRegion),
+      seasonProfileId: toText(event.seasonProfileId || selection.seasonProfileId || rawForm.seasonProfileId)
+    },
+    selection: {
+      package: {
+        id: packageId,
+        name: toText(packageRef.name || selection.packageName || rawForm.packageName || packageId),
+        pricingMode: normalizePricingType(packageRef.pricingMode || packageRef.pricingType || packageRef.type, "per_person"),
+        unitPrice: toNumber(packageRef.unitPrice, toNumber(packageRef.price, 0)),
+        quantity: Math.max(1, toInt(packageRef.quantity, 1))
+      },
+      addons,
+      rentals,
+      menuItems,
+      quantities: {
+        addonQuantities,
+        rentalQuantities,
+        menuItemQuantities
+      }
+    },
+    labor: {
+      bartenderRateTypeId: toText(source.labor?.bartenderRateTypeId || rawForm.bartenderRateTypeId || selection.bartenderRateTypeId),
+      staffingRateTypeId: toText(source.labor?.staffingRateTypeId || rawForm.staffingRateTypeId || selection.staffingRateTypeId),
+      bartenderRateOverride: source.labor?.bartenderRateOverride ?? rawForm.bartenderRateOverride ?? selection.bartenderRateOverride,
+      serverRateOverride: source.labor?.serverRateOverride ?? rawForm.serverRateOverride ?? selection.serverRateOverride,
+      chefRateOverride: source.labor?.chefRateOverride ?? rawForm.chefRateOverride ?? selection.chefRateOverride
+    },
+    metadata: {
+      source: toText(source.metadata?.source || root.source || source.source),
+      generatedAt: normalizeISO(source.metadata?.generatedAt || source.generatedAt || root.generatedAt || "", "")
+    }
+  };
+}
+
+function hasCatalogRecords(bundle = {}) {
+  return Boolean(
+    Array.isArray(bundle.packages) && bundle.packages.length
+    || Array.isArray(bundle.addons) && bundle.addons.length
+    || Array.isArray(bundle.rentals) && bundle.rentals.length
+  );
+}
+
+function normalizeCatalogPackage(item = {}) {
+  return {
+    id: toText(item.id),
+    name: toText(item.name, toText(item.id)),
+    ppp: toNumber(item.ppp, 0),
+    active: item.active !== false
+  };
+}
+
+function normalizeCatalogAddon(item = {}) {
+  const pricingType = normalizePricingType(item.pricingType || item.type, "per_person");
+  return {
+    id: toText(item.id),
+    name: toText(item.name, toText(item.id)),
+    price: toNumber(item.price, 0),
+    pricingType,
+    type: pricingType,
+    active: item.active !== false
+  };
+}
+
+function normalizeCatalogRental(item = {}) {
+  const pricingType = normalizePricingType(item.pricingType || item.type, "per_item");
+  return {
+    id: toText(item.id),
+    name: toText(item.name, toText(item.id)),
+    price: toNumber(item.price, 0),
+    qtyPerGuests: Math.max(1, toNumber(item.qtyPerGuests, 1)),
+    pricingType,
+    type: pricingType,
+    active: item.active !== false
+  };
+}
+
+function normalizeMenuSections(sections = []) {
+  const source = Array.isArray(sections) ? sections : [];
+  return source.map((section, idx) => {
+    const sectionId = toCatalogId(section?.id, `menu-${idx + 1}`);
+    const rawItems = Array.isArray(section?.items) ? section.items : [];
+    const seen = new Set();
+    const items = rawItems
+      .map((item, itemIdx) => {
+        if (typeof item === "string") {
+          const name = toText(item);
+          const id = toCatalogId(name, `${sectionId}-item-${itemIdx + 1}`);
+          return {
+            id,
+            name: name || id,
+            price: 0,
+            pricingType: "per_event",
+            type: "per_event",
+            active: true
+          };
+        }
+
+        const id = toCatalogId(item?.id, `${sectionId}-item-${itemIdx + 1}`);
+        const name = toText(item?.name, id);
+        const pricingType = normalizePricingType(item?.pricingType || item?.type, "per_event");
+        return {
+          id,
+          name,
+          price: toNumber(item?.price, 0),
+          pricingType,
+          type: pricingType,
+          active: item?.active !== false
+        };
+      })
+      .filter((item) => {
+        if (!item.id || seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
+
+    return {
+      id: sectionId,
+      name: toText(section?.name, `Menu ${idx + 1}`),
+      items
+    };
+  });
+}
+
+function normalizeServiceFeeTiers(tiers = []) {
+  const source = Array.isArray(tiers) && tiers.length ? tiers : DEFAULT_SERVICE_FEE_TIERS;
+  return source.map((tier, idx) => {
+    const minGuests = Math.max(0, toInt(tier?.minGuests, 0));
+    const maxGuests = Math.max(minGuests, toInt(tier?.maxGuests, 9999));
+    return {
+      id: toCatalogId(tier?.id, `tier-${idx + 1}`),
+      minGuests,
+      maxGuests,
+      pct: Math.max(0, toNumber(tier?.pct, 0))
+    };
+  });
+}
+
+function normalizeTaxRegions(regions = [], fallbackRate = 0.1) {
+  const source = Array.isArray(regions) && regions.length ? regions : DEFAULT_TAX_REGIONS;
+  return source.map((region, idx) => ({
+    id: toCatalogId(region?.id, `tax-${idx + 1}`),
+    name: toText(region?.name, `Region ${idx + 1}`),
+    rate: Math.max(0, toNumber(region?.rate, fallbackRate))
+  }));
+}
+
+function normalizeSeasonalProfiles(profiles = []) {
+  const source = Array.isArray(profiles) && profiles.length ? profiles : DEFAULT_SEASONAL_PROFILES;
+  return source.map((profile, idx) => ({
+    id: toCatalogId(profile?.id, `season-${idx + 1}`),
+    name: toText(profile?.name, `Season ${idx + 1}`),
+    startMonth: Math.min(12, Math.max(1, toInt(profile?.startMonth, 1))),
+    startDay: Math.min(31, Math.max(1, toInt(profile?.startDay, 1))),
+    endMonth: Math.min(12, Math.max(1, toInt(profile?.endMonth, 12))),
+    endDay: Math.min(31, Math.max(1, toInt(profile?.endDay, 31))),
+    packageMultiplier: Math.max(0.5, Math.min(2, toNumber(profile?.packageMultiplier, 1))),
+    addonMultiplier: Math.max(0.5, Math.min(2, toNumber(profile?.addonMultiplier, 1))),
+    rentalMultiplier: Math.max(0.5, Math.min(2, toNumber(profile?.rentalMultiplier, 1)))
+  }));
+}
+
+function normalizeBartenderRateTypes(rateTypes = [], fallbackRate = 30) {
+  const source = Array.isArray(rateTypes) && rateTypes.length ? rateTypes : DEFAULT_BARTENDER_RATE_TYPES;
+  return source.map((item, idx) => ({
+    id: toCatalogId(item?.id, `bartender-rate-${idx + 1}`),
+    name: toText(item?.name, `Bartender Type ${idx + 1}`),
+    rate: Math.max(0, toNumber(item?.rate, fallbackRate))
+  }));
+}
+
+function normalizeStaffingRateTypes(rateTypes = [], fallbackServerRate = 22, fallbackChefRate = 28) {
+  const source = Array.isArray(rateTypes) && rateTypes.length ? rateTypes : DEFAULT_STAFFING_RATE_TYPES;
+  return source.map((item, idx) => ({
+    id: toCatalogId(item?.id, `staffing-rate-${idx + 1}`),
+    name: toText(item?.name, `Staffing Type ${idx + 1}`),
+    serverRate: Math.max(0, toNumber(item?.serverRate, fallbackServerRate)),
+    chefRate: Math.max(0, toNumber(item?.chefRate, fallbackChefRate))
+  }));
+}
+
+function normalizePricingSettings(settings = {}) {
+  const source = settings && typeof settings === "object" ? settings : {};
+  const taxRate = Math.max(0, toNumber(source.taxRate, DEFAULT_PRICING_SETTINGS.taxRate));
+  const bartenderRate = Math.max(0, toNumber(source.bartenderRate, DEFAULT_PRICING_SETTINGS.bartenderRate));
+  const serverRate = Math.max(0, toNumber(source.serverRate, DEFAULT_PRICING_SETTINGS.serverRate));
+  const chefRate = Math.max(0, toNumber(source.chefRate, DEFAULT_PRICING_SETTINGS.chefRate));
+
+  const normalized = {
+    perMileRate: Math.max(0, toNumber(source.perMileRate, DEFAULT_PRICING_SETTINGS.perMileRate)),
+    longDistancePerMileRate: Math.max(0, toNumber(source.longDistancePerMileRate, DEFAULT_PRICING_SETTINGS.longDistancePerMileRate)),
+    deliveryThresholdMiles: Math.max(0, toNumber(source.deliveryThresholdMiles, DEFAULT_PRICING_SETTINGS.deliveryThresholdMiles)),
+    bartenderRate,
+    serverRate,
+    chefRate,
+    staffingLaborEnabled: source.staffingLaborEnabled !== false,
+    serviceFeePct: Math.max(0, toNumber(source.serviceFeePct, DEFAULT_PRICING_SETTINGS.serviceFeePct)),
+    serviceFeeTiers: normalizeServiceFeeTiers(source.serviceFeeTiers),
+    taxRate,
+    taxRegions: normalizeTaxRegions(source.taxRegions, taxRate),
+    defaultTaxRegion: toText(source.defaultTaxRegion, DEFAULT_PRICING_SETTINGS.defaultTaxRegion),
+    depositPct: Math.max(0, toNumber(source.depositPct, DEFAULT_PRICING_SETTINGS.depositPct)),
+    seasonalProfiles: normalizeSeasonalProfiles(source.seasonalProfiles),
+    defaultSeasonProfile: toText(source.defaultSeasonProfile, DEFAULT_PRICING_SETTINGS.defaultSeasonProfile),
+    bartenderRateTypes: normalizeBartenderRateTypes(source.bartenderRateTypes, bartenderRate),
+    defaultBartenderRateType: toText(source.defaultBartenderRateType, DEFAULT_PRICING_SETTINGS.defaultBartenderRateType),
+    staffingRateTypes: normalizeStaffingRateTypes(source.staffingRateTypes, serverRate, chefRate),
+    defaultStaffingRateType: toText(source.defaultStaffingRateType, DEFAULT_PRICING_SETTINGS.defaultStaffingRateType),
+    menuSections: normalizeMenuSections(source.menuSections)
+  };
+
+  return normalized;
+}
+
+function normalizeCatalogBundle(bundle = {}) {
+  const rawPackages = Array.isArray(bundle?.packages) ? bundle.packages : [];
+  const rawAddons = Array.isArray(bundle?.addons) ? bundle.addons : [];
+  const rawRentals = Array.isArray(bundle?.rentals) ? bundle.rentals : [];
+
+  const packages = rawPackages
+    .map((item) => normalizeCatalogPackage(item))
+    .filter((item) => item.id)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const addons = rawAddons
+    .map((item) => normalizeCatalogAddon(item))
+    .filter((item) => item.id)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const rentals = rawRentals
+    .map((item) => normalizeCatalogRental(item))
+    .filter((item) => item.id)
+    .sort((a, b) => a.id.localeCompare(b.id));
+
+  const settings = normalizePricingSettings(bundle?.settings);
+
+  return {
+    packages,
+    addons,
+    rentals,
+    settings
+  };
+}
+
+async function readCatalogBundle(db, organizationsCollection, organizationId = "") {
+  const orgId = normalizeOrganizationId(organizationId);
+  if (orgId) {
+    const [pkgSnap, addSnap, rentSnap, settingsSnap] = await Promise.all([
+      db.collection(organizationsCollection).doc(orgId).collection("catalogPackages").get(),
+      db.collection(organizationsCollection).doc(orgId).collection("catalogAddons").get(),
+      db.collection(organizationsCollection).doc(orgId).collection("catalogRentals").get(),
+      db.collection(organizationsCollection).doc(orgId).collection("settings").doc("config").get()
+    ]);
+
+    return normalizeCatalogBundle({
+      packages: pkgSnap.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+      addons: addSnap.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+      rentals: rentSnap.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+      settings: settingsSnap.exists ? settingsSnap.data() : {}
+    });
+  }
+
+  const [pkgSnap, addSnap, rentSnap, settingsSnap] = await Promise.all([
+    db.collection("catalogPackages").get(),
+    db.collection("catalogAddons").get(),
+    db.collection("catalogRentals").get(),
+    db.collection("pricing").doc("settings").get()
+  ]);
+
+  return normalizeCatalogBundle({
+    packages: pkgSnap.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    addons: addSnap.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    rentals: rentSnap.docs.map((doc) => ({ ...doc.data(), id: doc.id })),
+    settings: settingsSnap.exists ? settingsSnap.data() : {}
+  });
+}
+
+async function loadCatalogAndSettings(db, organizationsCollection, {
+  organizationId = "",
+  allowLegacyGlobalFallback = true
+} = {}) {
+  const scopedOrganizationId = normalizeOrganizationId(organizationId);
+
+  if (scopedOrganizationId) {
+    const orgBundle = await readCatalogBundle(db, organizationsCollection, scopedOrganizationId);
+    if (hasCatalogRecords(orgBundle) || allowLegacyGlobalFallback === false) {
+      return {
+        ...orgBundle,
+        source: "firebase-org",
+        organizationId: scopedOrganizationId
+      };
+    }
+
+    const legacyGlobalBundle = await readCatalogBundle(db, organizationsCollection, "");
+    return {
+      ...legacyGlobalBundle,
+      source: "firebase-legacy-fallback",
+      organizationId: scopedOrganizationId
+    };
+  }
+
+  const globalBundle = await readCatalogBundle(db, organizationsCollection, "");
+  return {
+    ...globalBundle,
+    source: "firebase-legacy-global",
+    organizationId: ""
+  };
+}
+
+function buildCatalogMaps(catalog = {}) {
+  return {
+    packageById: new Map((catalog.packages || []).map((item) => [item.id, item])),
+    addonById: new Map((catalog.addons || []).map((item) => [item.id, item])),
+    rentalById: new Map((catalog.rentals || []).map((item) => [item.id, item]))
+  };
+}
+
+function flattenMenuItems(settings = {}) {
+  const sections = Array.isArray(settings?.menuSections) ? settings.menuSections : [];
+  const byId = new Map();
+  sections.forEach((section) => {
+    const items = Array.isArray(section?.items) ? section.items : [];
+    items.forEach((item) => {
+      const id = toText(item?.id);
+      if (!id || byId.has(id)) return;
+      byId.set(id, {
+        id,
+        name: toText(item?.name, id),
+        price: toNumber(item?.price, 0),
+        pricingType: normalizePricingType(item?.pricingType || item?.type, "per_event"),
+        active: item?.active !== false
+      });
+    });
+  });
+  return byId;
+}
+
+function buildLineItem({
+  id,
+  category,
+  name,
+  pricingMode,
+  unitPrice,
+  quantity,
+  total,
+  meta = {}
+}) {
+  return {
+    id: toText(id),
+    category: toText(category),
+    name: toText(name, toText(id)),
+    pricingMode: normalizePricingType(pricingMode, "per_event"),
+    unitPrice: toNumber(unitPrice, 0),
+    quantity: Math.max(0, toInt(quantity, 0)),
+    total: toNumber(total, 0),
+    meta: meta && typeof meta === "object" ? { ...meta } : {}
+  };
+}
+
+function calculatePriceWithMode({
+  pricingMode,
+  unitPrice,
+  guests,
+  quantity,
+  multiplier
+}) {
+  const price = toNumber(unitPrice, 0);
+  const mode = normalizePricingType(pricingMode, "per_event");
+  const appliedMultiplier = toNumber(multiplier, 1);
+
+  if (mode === "per_person") {
+    return {
+      quantity: Math.max(0, toInt(guests, 0)),
+      total: price * Math.max(0, toInt(guests, 0)) * appliedMultiplier
+    };
+  }
+  if (mode === "per_item") {
+    const resolvedQuantity = Math.max(1, toInt(quantity, 1));
+    return {
+      quantity: resolvedQuantity,
+      total: price * resolvedQuantity * appliedMultiplier
+    };
+  }
+  return {
+    quantity: 1,
+    total: price * appliedMultiplier
+  };
+}
+
+function calculateAuthoritativePricing(input, catalog, settings, catalogSource = "") {
+  const maps = buildCatalogMaps(catalog);
+  const menuItemById = flattenMenuItems(settings);
+  const missingReferences = new Set();
+
+  const guests = Math.min(400, Math.max(0, toNumber(input.event.guests, 0)));
+  const hours = Math.max(0, toNumber(input.event.hours, 0));
+  const bartenders = Math.max(0, toNumber(input.event.bartenders, 0));
+  const style = toText(input.event.style, "Buffet");
+  const milesRT = Math.max(0, toNumber(input.event.milesRT, 0));
+
+  const selectedPkg = maps.packageById.get(input.selection.package.id) || catalog.packages[0] || null;
+  if (!selectedPkg) {
+    throw new PricingEngineError("failed-precondition", "No catalog packages are available for pricing.");
+  }
+
+  if (!maps.packageById.has(input.selection.package.id)) {
+    missingReferences.add(`package:${input.selection.package.id}`);
+  }
+
+  const serviceFeePctApplied = resolveServiceFeePct(guests, settings);
+  const taxRegion = resolveTaxRegion({
+    taxRegionId: input.event.taxRegionId
+  }, settings);
+  const seasonProfile = resolveSeasonProfile({
+    seasonProfileId: input.event.seasonProfileId,
+    date: input.event.date
+  }, settings);
+
+  const packageMultiplier = toNumber(seasonProfile?.packageMultiplier, 1);
+  const addonMultiplier = toNumber(seasonProfile?.addonMultiplier, 1);
+  const rentalMultiplier = toNumber(seasonProfile?.rentalMultiplier, 1);
+  const staffingLaborEnabled = settings?.staffingLaborEnabled !== false;
+
+  const thresholdMiles = toNumber(settings?.deliveryThresholdMiles, 0);
+  const standardTravelRate = toNumber(settings?.perMileRate, 0);
+  const longDistanceRate = toNumber(settings?.longDistancePerMileRate, standardTravelRate);
+  const baseMiles = Math.min(milesRT, thresholdMiles);
+  const longDistanceMiles = Math.max(0, milesRT - thresholdMiles);
+
+  const laborRates = resolveLaborRates(input, settings);
+
+  const addonQuantityMap = normalizeQuantityMap(input.selection.quantities.addonQuantities);
+  const rentalQuantityMap = normalizeQuantityMap(input.selection.quantities.rentalQuantities);
+  const menuItemQuantityMap = normalizeQuantityMap(input.selection.quantities.menuItemQuantities);
+
+  let base = 0;
+  let addons = 0;
+  let rentals = 0;
+  let menu = 0;
+
+  const lineItems = [];
+
+  if (guests > 0) {
+    base = toNumber(selectedPkg?.ppp, 0) * guests * packageMultiplier;
+
+    lineItems.push(buildLineItem({
+      id: selectedPkg.id,
+      category: "package",
+      name: selectedPkg.name,
+      pricingMode: "per_person",
+      unitPrice: toNumber(selectedPkg.ppp, 0),
+      quantity: guests,
+      total: base,
+      meta: {
+        packageMultiplier
+      }
+    }));
+
+    input.selection.addons.forEach((itemRef) => {
+      const found = maps.addonById.get(itemRef.id);
+      if (!found) {
+        missingReferences.add(`addon:${itemRef.id}`);
+      }
+      const pricingMode = normalizePricingType(found?.pricingType || itemRef.pricingMode, "per_person");
+      const unitPrice = toNumber(found?.price, 0);
+      const active = found ? found.active !== false : false;
+      const result = active
+        ? calculatePriceWithMode({
+          pricingMode,
+          unitPrice,
+          guests,
+          quantity: resolveLineQuantity(itemRef.id, addonQuantityMap, itemRef.quantity || 1),
+          multiplier: addonMultiplier
+        })
+        : {
+          quantity: pricingMode === "per_person" ? Math.max(0, toInt(guests, 0)) : Math.max(1, toInt(itemRef.quantity, 1)),
+          total: 0
+        };
+
+      addons += result.total;
+      lineItems.push(buildLineItem({
+        id: itemRef.id,
+        category: "addon",
+        name: toText(found?.name, itemRef.name || itemRef.id),
+        pricingMode,
+        unitPrice,
+        quantity: result.quantity,
+        total: result.total,
+        meta: {
+          active,
+          addonMultiplier
+        }
+      }));
+    });
+
+    input.selection.rentals.forEach((itemRef) => {
+      const found = maps.rentalById.get(itemRef.id);
+      if (!found) {
+        missingReferences.add(`rental:${itemRef.id}`);
+      }
+      const pricingMode = normalizePricingType(found?.pricingType || itemRef.pricingMode, "per_item");
+      const unitPrice = toNumber(found?.price, 0);
+      const active = found ? found.active !== false : false;
+      const defaultQty = pricingMode === "per_item"
+        ? Math.max(1, Math.ceil(guests / Math.max(1, toNumber(found?.qtyPerGuests, 1))))
+        : 1;
+      const result = active
+        ? calculatePriceWithMode({
+          pricingMode,
+          unitPrice,
+          guests,
+          quantity: resolveLineQuantity(itemRef.id, rentalQuantityMap, defaultQty),
+          multiplier: rentalMultiplier
+        })
+        : {
+          quantity: pricingMode === "per_person" ? Math.max(0, toInt(guests, 0)) : Math.max(1, defaultQty),
+          total: 0
+        };
+
+      rentals += result.total;
+      lineItems.push(buildLineItem({
+        id: itemRef.id,
+        category: "rental",
+        name: toText(found?.name, itemRef.name || itemRef.id),
+        pricingMode,
+        unitPrice,
+        quantity: result.quantity,
+        total: result.total,
+        meta: {
+          active,
+          qtyPerGuests: toNumber(found?.qtyPerGuests, 1),
+          rentalMultiplier
+        }
+      }));
+    });
+
+    input.selection.menuItems.forEach((itemRef) => {
+      const found = menuItemById.get(itemRef.id);
+      if (!found) {
+        missingReferences.add(`menu:${itemRef.id}`);
+      }
+      const pricingMode = normalizePricingType(found?.pricingType || itemRef.pricingMode, "per_event");
+      const unitPrice = toNumber(found?.price, 0);
+      const active = found ? found.active !== false : false;
+      const result = active
+        ? calculatePriceWithMode({
+          pricingMode,
+          unitPrice,
+          guests,
+          quantity: resolveLineQuantity(itemRef.id, menuItemQuantityMap, itemRef.quantity || 1),
+          multiplier: addonMultiplier
+        })
+        : {
+          quantity: pricingMode === "per_person" ? Math.max(0, toInt(guests, 0)) : Math.max(1, toInt(itemRef.quantity, 1)),
+          total: 0
+        };
+
+      menu += result.total;
+      lineItems.push(buildLineItem({
+        id: itemRef.id,
+        category: "menu_item",
+        name: toText(found?.name, itemRef.name || itemRef.id),
+        pricingMode,
+        unitPrice,
+        quantity: result.quantity,
+        total: result.total,
+        meta: {
+          active,
+          addonMultiplier
+        }
+      }));
+    });
+  } else {
+    lineItems.push(buildLineItem({
+      id: selectedPkg.id,
+      category: "package",
+      name: selectedPkg.name,
+      pricingMode: "per_person",
+      unitPrice: toNumber(selectedPkg?.ppp, 0),
+      quantity: 0,
+      total: 0,
+      meta: {
+        packageMultiplier
+      }
+    }));
+  }
+
+  const styleRules = STAFF_RULES[style] || STAFF_RULES.Buffet;
+  const computedServers =
+    styleRules.serverRatio === Number.POSITIVE_INFINITY
+      ? 0
+      : Math.max(styleRules.minServers, Math.ceil(guests / styleRules.serverRatio));
+  const computedChefs =
+    styleRules.chefRatio === Number.POSITIVE_INFINITY ? 0 : Math.ceil(guests / styleRules.chefRatio);
+
+  const servers = staffingLaborEnabled ? computedServers : 0;
+  const chefs = staffingLaborEnabled ? computedChefs : 0;
+
+  const bartenderLabor = staffingLaborEnabled ? laborRates.bartenderRateApplied * bartenders * hours : 0;
+  const labor = staffingLaborEnabled
+    ? laborRates.serverRateApplied * servers * hours + laborRates.chefRateApplied * chefs * hours + bartenderLabor
+    : 0;
+
+  const travel = baseMiles * standardTravelRate + longDistanceMiles * longDistanceRate;
+
+  const subtotal = base + addons + rentals + menu + labor + travel;
+  const serviceFee = guests > 0 ? subtotal * serviceFeePctApplied : 0;
+  const tax = guests > 0 ? (base + addons + rentals + menu + serviceFee) * toNumber(taxRegion.rate, 0) : 0;
+  const grandTotal = subtotal + serviceFee + tax;
+  const depositAmount = grandTotal * toNumber(settings.depositPct, 0);
+
+  lineItems.push(
+    buildLineItem({
+      id: "labor",
+      category: "labor",
+      name: "Labor",
+      pricingMode: "per_event",
+      unitPrice: labor,
+      quantity: 1,
+      total: labor,
+      meta: {
+        staffingLaborEnabled,
+        servers,
+        chefs,
+        bartenders,
+        hours,
+        ...laborRates
+      }
+    }),
+    buildLineItem({
+      id: "travel",
+      category: "travel",
+      name: "Travel",
+      pricingMode: "per_event",
+      unitPrice: travel,
+      quantity: 1,
+      total: travel,
+      meta: {
+        milesRT,
+        thresholdMiles,
+        baseMiles,
+        longDistanceMiles,
+        standardTravelRate,
+        longDistanceRate
+      }
+    }),
+    buildLineItem({
+      id: "service_fee",
+      category: "service_fee",
+      name: "Service Fee",
+      pricingMode: "per_event",
+      unitPrice: serviceFee,
+      quantity: 1,
+      total: serviceFee,
+      meta: {
+        serviceFeePctApplied
+      }
+    }),
+    buildLineItem({
+      id: "tax",
+      category: "tax",
+      name: "Tax",
+      pricingMode: "per_event",
+      unitPrice: tax,
+      quantity: 1,
+      total: tax,
+      meta: {
+        taxRateApplied: toNumber(taxRegion.rate, 0),
+        taxRegionId: taxRegion.id,
+        taxRegionName: taxRegion.name
+      }
+    }),
+    buildLineItem({
+      id: "deposit",
+      category: "deposit",
+      name: "Deposit",
+      pricingMode: "per_event",
+      unitPrice: depositAmount,
+      quantity: 1,
+      total: depositAmount,
+      meta: {
+        depositPct: toNumber(settings.depositPct, 0)
+      }
+    })
+  );
+
+  const normalizedInputs = {
+    organizationId: input.organizationId,
+    quoteId: input.quoteId,
+    quoteNumber: input.quoteNumber,
+    actor: {
+      uid: input.actor.uid,
+      email: toLowerText(input.actor.email),
+      role: input.actor.role
+    },
+    event: {
+      name: input.event.name,
+      eventTypeId: input.event.eventTypeId,
+      date: input.event.date,
+      time: input.event.time,
+      venue: input.event.venue,
+      venueAddress: input.event.venueAddress,
+      guests: Math.max(0, toInt(input.event.guests, 0)),
+      hours: Math.max(0, toNumber(input.event.hours, 0)),
+      style,
+      bartenders: Math.max(0, toInt(input.event.bartenders, 0)),
+      milesRT,
+      taxRegionId: toText(input.event.taxRegionId, taxRegion.id),
+      seasonProfileId: toText(input.event.seasonProfileId, toText(seasonProfile?.id))
+    },
+    selection: {
+      package: {
+        id: selectedPkg.id,
+        name: selectedPkg.name,
+        pricingMode: "per_person",
+        unitPrice: toNumber(selectedPkg.ppp, 0),
+        quantity: 1
+      },
+      addons: input.selection.addons.map((itemRef) => {
+        const found = maps.addonById.get(itemRef.id);
+        return {
+          id: itemRef.id,
+          name: toText(found?.name, itemRef.name || itemRef.id),
+          pricingMode: normalizePricingType(found?.pricingType || itemRef.pricingMode, "per_person"),
+          unitPrice: toNumber(found?.price, 0),
+          quantity: resolveLineQuantity(itemRef.id, addonQuantityMap, itemRef.quantity || 1)
+        };
+      }),
+      rentals: input.selection.rentals.map((itemRef) => {
+        const found = maps.rentalById.get(itemRef.id);
+        const pricingMode = normalizePricingType(found?.pricingType || itemRef.pricingMode, "per_item");
+        const defaultQty = pricingMode === "per_item"
+          ? Math.max(1, Math.ceil(guests / Math.max(1, toNumber(found?.qtyPerGuests, 1))))
+          : 1;
+        return {
+          id: itemRef.id,
+          name: toText(found?.name, itemRef.name || itemRef.id),
+          pricingMode,
+          unitPrice: toNumber(found?.price, 0),
+          quantity: resolveLineQuantity(itemRef.id, rentalQuantityMap, defaultQty)
+        };
+      }),
+      menuItems: input.selection.menuItems.map((itemRef) => {
+        const found = menuItemById.get(itemRef.id);
+        return {
+          id: itemRef.id,
+          name: toText(found?.name, itemRef.name || itemRef.id),
+          pricingMode: normalizePricingType(found?.pricingType || itemRef.pricingMode, "per_event"),
+          unitPrice: toNumber(found?.price, 0),
+          quantity: resolveLineQuantity(itemRef.id, menuItemQuantityMap, itemRef.quantity || 1)
+        };
+      }),
+      quantities: {
+        addonQuantities: addonQuantityMap,
+        rentalQuantities: rentalQuantityMap,
+        menuItemQuantities: menuItemQuantityMap
+      }
+    },
+    pricingModes: {
+      package: "per_person",
+      addonsDefault: "per_person",
+      rentalsDefault: "per_item",
+      menuDefault: "per_event"
+    },
+    settings: {
+      serviceFeePct: toNumber(settings.serviceFeePct, 0),
+      taxRate: toNumber(settings.taxRate, 0),
+      depositPct: toNumber(settings.depositPct, 0),
+      defaultTaxRegion: toText(settings.defaultTaxRegion),
+      defaultSeasonProfile: toText(settings.defaultSeasonProfile)
+    },
+    metadata: {
+      source: toText(input.metadata.source),
+      generatedAt: normalizeISO(input.metadata.generatedAt, "")
+    }
+  };
+
+  return {
+    pricingVersion: PRICING_VERSION,
+    calculatedAt: normalizedInputs.metadata.generatedAt,
+    authority: PRICING_AUTHORITY,
+    inputs: normalizedInputs,
+    lineItems,
+    fees: {
+      labor,
+      travel,
+      bartenderLabor,
+      serviceFee
+    },
+    tax: {
+      rate: toNumber(taxRegion.rate, 0),
+      amount: tax,
+      regionId: toText(taxRegion.id),
+      regionName: toText(taxRegion.name)
+    },
+    discountTotal: 0,
+    deposit: {
+      pct: toNumber(settings.depositPct, 0),
+      amount: depositAmount
+    },
+    subtotal,
+    grandTotal,
+    rulesSnapshot: {
+      catalogSource,
+      serviceFeePctApplied,
+      taxRateApplied: toNumber(taxRegion.rate, 0),
+      taxRegionId: toText(taxRegion.id),
+      taxRegionName: toText(taxRegion.name),
+      seasonProfileId: toText(seasonProfile?.id),
+      seasonProfileName: toText(seasonProfile?.name),
+      packageMultiplier,
+      addonMultiplier,
+      rentalMultiplier,
+      depositPct: toNumber(settings.depositPct, 0),
+      staffingLaborEnabled,
+      laborRateSnapshot: {
+        bartenderRateApplied: laborRates.bartenderRateApplied,
+        serverRateApplied: laborRates.serverRateApplied,
+        chefRateApplied: laborRates.chefRateApplied,
+        bartenderRateTypeId: laborRates.bartenderRateTypeId,
+        bartenderRateTypeName: laborRates.bartenderRateTypeName,
+        staffingRateTypeId: laborRates.staffingRateTypeId,
+        staffingRateTypeName: laborRates.staffingRateTypeName
+      },
+      staffing: {
+        style,
+        servers,
+        chefs,
+        bartenders,
+        hours
+      },
+      travel: {
+        milesRT,
+        thresholdMiles,
+        baseMiles,
+        longDistanceMiles,
+        standardTravelRate,
+        longDistanceRate
+      },
+      missingReferences: Array.from(missingReferences),
+      pricingModeDefaults: {
+        package: "per_person",
+        addons: "per_person",
+        rentals: "per_item",
+        menuItems: "per_event"
+      }
+    }
+  };
+}
+
+async function calculateQuotePricingAuthoritative({
+  db,
+  data = {},
+  staff = {},
+  organizationsCollection = "organizations"
+} = {}) {
+  if (!db) {
+    throw new PricingEngineError("failed-precondition", "Firestore instance is required.");
+  }
+
+  const normalizedInput = normalizePricingInputPayload(data, staff);
+  const catalogBundle = await loadCatalogAndSettings(db, organizationsCollection, {
+    organizationId: normalizedInput.organizationId,
+    allowLegacyGlobalFallback: normalizedInput.allowLegacyGlobalFallback
+  });
+
+  const pricing = calculateAuthoritativePricing(
+    normalizedInput,
+    {
+      packages: catalogBundle.packages,
+      addons: catalogBundle.addons,
+      rentals: catalogBundle.rentals
+    },
+    catalogBundle.settings,
+    catalogBundle.source
+  );
+
+  return {
+    organizationId: catalogBundle.organizationId,
+    catalogSource: catalogBundle.source,
+    pricing
+  };
+}
+
+module.exports = {
+  PRICING_VERSION,
+  PRICING_AUTHORITY,
+  PricingEngineError,
+  calculateQuotePricingAuthoritative
+};

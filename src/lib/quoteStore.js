@@ -6,6 +6,7 @@ import {
   getDocs,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -19,6 +20,12 @@ import {
   getOrganizationSubDocRef,
   normalizeOrganizationId
 } from "./organizationService";
+import {
+  buildPricingSnapshotFromClientTotals,
+  deriveLegacyPricingSnapshot,
+  normalizePricingOutput,
+  normalizeVersionMetadata
+} from "./pricingContracts";
 import { buildCrmAdapterRequest, resolveCrmProvider } from "./crmAdapters";
 import { buildQuoteEmailPayload } from "./proposalPayload";
 
@@ -96,7 +103,7 @@ function quoteVersionsCollectionRef(quoteId, organizationId = undefined) {
   if (resolvedOrganizationId) {
     return collection(db, "organizations", resolvedOrganizationId, QUOTES_COLLECTION, id, QUOTE_VERSIONS_COLLECTION);
   }
-  return collection(db, QUOTE_HISTORY_COLLECTION);
+  return collection(db, QUOTES_COLLECTION, id, QUOTE_VERSIONS_COLLECTION);
 }
 
 function portalDocRef(portalKey) {
@@ -313,6 +320,40 @@ function buildPortalSnapshot(quoteId, quote) {
   };
 }
 
+function resolvePersistedPricingSnapshot({
+  pricingSnapshot = null,
+  form = {},
+  totals = {},
+  settings = {},
+  selection = {},
+  catalogSource = "",
+  organizationId = "",
+  quoteId = "",
+  quoteNumber = "",
+  ownerUid = "",
+  ownerEmail = "",
+  reason = ""
+} = {}) {
+  if (pricingSnapshot && typeof pricingSnapshot === "object") {
+    return normalizePricingOutput(pricingSnapshot);
+  }
+  return buildPricingSnapshotFromClientTotals({
+    form,
+    totals,
+    settings,
+    selection,
+    organizationId,
+    quoteId,
+    quoteNumber,
+    actor: {
+      uid: ownerUid,
+      email: ownerEmail,
+      role: "sales"
+    },
+    reason: reason || `fallback_${catalogSource || "unknown"}`
+  });
+}
+
 async function syncPortalSnapshotFromQuoteDoc(quoteId, organizationId = "") {
   if (!firebaseReady || !db || !quoteId) return;
   const quoteSnap = await getDoc(quoteDocRef(quoteId, organizationId));
@@ -349,6 +390,15 @@ function buildContractNumber() {
   const dd = String(now.getDate()).padStart(2, "0");
   const serial = String(Math.floor(Math.random() * 100000)).padStart(5, "0");
   return `C-${yy}${mm}${dd}-${serial}`;
+}
+
+function toVersionNumber(value, fallback = 0) {
+  const numeric = Math.floor(toNumber(value, fallback));
+  return numeric > 0 ? numeric : Math.max(0, Math.floor(toNumber(fallback, 0)));
+}
+
+function buildQuoteVersionId(versionNumber) {
+  return `v${String(Math.max(1, toVersionNumber(versionNumber, 1))).padStart(4, "0")}`;
 }
 
 function sortQuotesDesc(items) {
@@ -423,6 +473,8 @@ function hydrateQuote(item, nowISO = isoNow()) {
     status,
     eventTypeId,
     customerNameKey,
+    activeVersionId: String(item.activeVersionId || "").trim(),
+    latestVersionNumber: toVersionNumber(item.latestVersionNumber, 0),
     deletedAtISO: item.deletedAtISO || "",
     createdAtISO,
     expiresAtISO,
@@ -686,31 +738,207 @@ export async function getQuoteById(quoteId) {
   return readQuoteById(quoteId);
 }
 
-export async function saveQuoteVersion(quoteId) {
+export function resolveQuotePricingSnapshot(quote) {
+  if (quote?.pricing && typeof quote.pricing === "object") {
+    return quote.pricing;
+  }
+  return deriveLegacyPricingSnapshot(quote);
+}
+
+export function resolveQuoteVersionMetadata(quote) {
+  const source = quote && typeof quote === "object" ? quote : {};
+  if (source.versionMeta && typeof source.versionMeta === "object") {
+    return normalizeVersionMetadata(source.versionMeta);
+  }
+  if (source.versionMetadata && typeof source.versionMetadata === "object") {
+    return normalizeVersionMetadata(source.versionMetadata);
+  }
+  return normalizeVersionMetadata({
+    versionNumber: source.versionNumber,
+    createdAt: source.createdAtISO || source.createdAt,
+    ownerUid: source.ownerUid,
+    ownerEmail: source.ownerEmail,
+    reason: source.versionReason || source.reason || ""
+  });
+}
+
+export async function saveQuoteVersion(
+  quoteId,
+  { reason = "snapshot", setActive = false, organizationId = undefined } = {}
+) {
   const quote = await readQuoteById(quoteId);
   const timestamp = isoNow();
   const snapshot = JSON.parse(JSON.stringify(quote));
-  const organizationId = resolveQuoteOrganizationId(quote.organizationId);
+  const resolvedOrganizationId = resolveQuoteOrganizationId(
+    organizationId !== undefined ? organizationId : quote.organizationId
+  );
+  const normalizedReason = normalizeVersionMetadata({ reason }).reason;
 
   if (firebaseReady) {
-    await addDoc(quoteVersionsCollectionRef(quote.id, organizationId), {
-      quoteId: quote.id,
-      organizationId,
-      snapshot,
-      timestamp
+    const quoteRef = quoteDocRef(quote.id, resolvedOrganizationId);
+    const result = await runTransaction(db, async (tx) => {
+      const quoteSnap = await tx.get(quoteRef);
+      if (!quoteSnap.exists()) {
+        throw new Error("Quote not found.");
+      }
+      const data = quoteSnap.data() || {};
+      const nextVersionNumber = toVersionNumber(data.latestVersionNumber, 0) + 1;
+      const versionId = buildQuoteVersionId(nextVersionNumber);
+      const versionMeta = normalizeVersionMetadata({
+        versionNumber: nextVersionNumber,
+        createdAt: timestamp,
+        ownerUid: quote.ownerUid,
+        ownerEmail: quote.ownerEmail,
+        reason: normalizedReason
+      });
+      const versionRef = doc(quoteVersionsCollectionRef(quote.id, resolvedOrganizationId), versionId);
+      tx.set(versionRef, {
+        versionId,
+        quoteId: quote.id,
+        organizationId: resolvedOrganizationId,
+        versionNumber: versionMeta.versionNumber,
+        createdAtISO: timestamp,
+        reason: versionMeta.reason,
+        createdBy: versionMeta.createdBy,
+        status: normalizeStatus(quote.status),
+        pricing: resolveQuotePricingSnapshot(snapshot),
+        snapshot
+      });
+      const quotePatch = {
+        latestVersionNumber: versionMeta.versionNumber,
+        versionMeta
+      };
+      if (setActive) {
+        quotePatch.activeVersionId = versionId;
+      }
+      tx.set(quoteRef, quotePatch, { merge: true });
+      return {
+        versionId,
+        versionNumber: versionMeta.versionNumber
+      };
     });
-    return { ok: true, storage: "firebase", timestamp };
+
+    return {
+      ok: true,
+      storage: "firebase",
+      timestamp,
+      versionId: result.versionId,
+      versionNumber: result.versionNumber
+    };
   }
+
+  const nextVersionNumber = toVersionNumber(quote.latestVersionNumber, 0) + 1;
+  const versionId = buildQuoteVersionId(nextVersionNumber);
+  const versionMeta = normalizeVersionMetadata({
+    versionNumber: nextVersionNumber,
+    createdAt: timestamp,
+    ownerUid: quote.ownerUid,
+    ownerEmail: quote.ownerEmail,
+    reason: normalizedReason
+  });
+
+  const existingQuotes = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+  const nextQuotes = existingQuotes.map((item) => {
+    if (item.id !== quote.id) return item;
+    const patch = {
+      latestVersionNumber: versionMeta.versionNumber,
+      versionMeta
+    };
+    if (setActive) {
+      patch.activeVersionId = versionId;
+    }
+    return {
+      ...item,
+      ...patch
+    };
+  });
+  localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(nextQuotes));
 
   const history = JSON.parse(localStorage.getItem(LOCAL_QUOTE_HISTORY_KEY) || "[]");
   history.unshift({
     id: buildPortalKey(),
+    versionId,
+    versionNumber: versionMeta.versionNumber,
+    reason: versionMeta.reason,
     quoteId: quote.id,
+    organizationId: resolvedOrganizationId,
     snapshot,
+    pricing: resolveQuotePricingSnapshot(snapshot),
     timestamp
   });
   localStorage.setItem(LOCAL_QUOTE_HISTORY_KEY, JSON.stringify(history));
-  return { ok: true, storage: "local", timestamp };
+  return {
+    ok: true,
+    storage: "local",
+    timestamp,
+    versionId,
+    versionNumber: versionMeta.versionNumber
+  };
+}
+
+export async function getQuoteVersionHistory(quoteId, { organizationId = undefined } = {}) {
+  const id = String(quoteId || "").trim();
+  if (!id) {
+    throw new Error("Quote id is required.");
+  }
+
+  if (firebaseReady) {
+    const resolvedOrganizationId = resolveQuoteOrganizationId(organizationId);
+    let versionSnap = await getDocs(query(
+      quoteVersionsCollectionRef(id, resolvedOrganizationId),
+      orderBy("versionNumber", "desc")
+    ));
+
+    if (!versionSnap.docs.length && resolvedOrganizationId && allowLegacyGlobalFallback()) {
+      versionSnap = await getDocs(query(
+        quoteVersionsCollectionRef(id, ""),
+        orderBy("versionNumber", "desc")
+      ));
+    }
+
+    return {
+      source: "firebase",
+      versions: versionSnap.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }))
+    };
+  }
+
+  const history = JSON.parse(localStorage.getItem(LOCAL_QUOTE_HISTORY_KEY) || "[]");
+  const versions = history
+    .filter((item) => item.quoteId === id)
+    .sort((a, b) => {
+      const aVersion = toVersionNumber(a.versionNumber, 0);
+      const bVersion = toVersionNumber(b.versionNumber, 0);
+      if (aVersion !== bVersion) return bVersion - aVersion;
+      return new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime();
+    });
+
+  return {
+    source: "local",
+    versions
+  };
+}
+
+export async function getActiveQuoteVersion(quoteId, { organizationId = undefined } = {}) {
+  const quote = await readQuoteById(quoteId);
+  const history = await getQuoteVersionHistory(quote.id, {
+    organizationId: organizationId !== undefined ? organizationId : quote.organizationId
+  });
+  const activeVersionId = String(quote.activeVersionId || "").trim();
+  const activeVersion = history.versions.find((item) => {
+    const id = String(item.versionId || item.id || "").trim();
+    return id && id === activeVersionId;
+  }) || history.versions[0] || null;
+
+  return {
+    source: history.source,
+    quoteId: quote.id,
+    activeVersionId: activeVersionId || String(activeVersion?.versionId || activeVersion?.id || "").trim(),
+    version: activeVersion,
+    versions: history.versions
+  };
 }
 
 export async function convertQuoteToContract({
@@ -1181,6 +1409,7 @@ export async function updateQuoteBookingAssignment({ quoteId, staffLead = "" } =
 export async function submitQuote({
   form,
   totals,
+  pricingSnapshot = null,
   catalogSource,
   settings,
   catalog = {},
@@ -1222,6 +1451,45 @@ export async function submitQuote({
     occurredAtISO: "",
     provider: crmProvider
   };
+  const persistedPricing = resolvePersistedPricingSnapshot({
+    pricingSnapshot,
+    form,
+    totals,
+    settings,
+    selection: {
+      packageId: form.pkg,
+      packageName: totals.selectedPkg?.name || "",
+      addons: form.addons,
+      rentals: form.rentals,
+      menuItems,
+      addonQuantities,
+      rentalQuantities,
+      menuItemQuantities,
+      milesRT: Number(form.milesRT || 0),
+      taxRegion: form.taxRegion || settings?.defaultTaxRegion || "",
+      seasonProfileId: form.seasonProfileId || settings?.defaultSeasonProfile || "auto",
+      bartenderRateTypeId: String(form.bartenderRateTypeId || ""),
+      staffingRateTypeId: String(form.staffingRateTypeId || ""),
+      bartenderRateOverride:
+        form.bartenderRateOverride === "" || form.bartenderRateOverride === null || form.bartenderRateOverride === undefined
+          ? ""
+          : toNumber(form.bartenderRateOverride, 0),
+      serverRateOverride:
+        form.serverRateOverride === "" || form.serverRateOverride === null || form.serverRateOverride === undefined
+          ? ""
+          : toNumber(form.serverRateOverride, 0),
+      chefRateOverride:
+        form.chefRateOverride === "" || form.chefRateOverride === null || form.chefRateOverride === undefined
+          ? ""
+          : toNumber(form.chefRateOverride, 0)
+    },
+    catalogSource,
+    organizationId: resolvedOrganizationId,
+    quoteNumber,
+    ownerUid,
+    ownerEmail,
+    reason: "submit_quote"
+  });
   const payload = {
     quoteNumber,
     customer: {
@@ -1359,6 +1627,7 @@ export async function submitQuote({
       addonMultiplier: totals.addonMultiplier,
       rentalMultiplier: totals.rentalMultiplier
     },
+    pricing: persistedPricing,
     quoteMeta: {
       quotePreparedBy: settings?.quotePreparedBy || "",
       brandName: settings?.brandName || "",
@@ -1395,7 +1664,9 @@ export async function submitQuote({
     expiresAtISO,
     lifecycle: {
       draftAtISO: nowISO
-    }
+    },
+    activeVersionId: "",
+    latestVersionNumber: 0
   };
 
   if (firebaseReady) {
@@ -1408,6 +1679,11 @@ export async function submitQuote({
       buildPortalSnapshot(ref.id, payload),
       { merge: true }
     );
+    await saveQuoteVersion(ref.id, {
+      reason: "initial_quote_create",
+      setActive: true,
+      organizationId: resolvedOrganizationId
+    });
     return { id: ref.id, quoteNumber, portalKey, storage: "firebase" };
   }
 
@@ -1415,13 +1691,19 @@ export async function submitQuote({
   const fallbackId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now());
   existing.unshift({ id: fallbackId, ...payload });
   localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(existing));
-  return { id: existing[0].id, quoteNumber, portalKey, storage: "local" };
+  await saveQuoteVersion(fallbackId, {
+    reason: "initial_quote_create",
+    setActive: true,
+    organizationId: resolvedOrganizationId
+  });
+  return { id: fallbackId, quoteNumber, portalKey, storage: "local" };
 }
 
 export async function updateQuote({
   quoteId,
   form,
   totals,
+  pricingSnapshot = null,
   catalogSource,
   settings,
   catalog = {},
@@ -1474,6 +1756,46 @@ export async function updateQuote({
   if (!nextDepositLink && nextDepositStatus === "sent") {
     nextDepositStatus = "unpaid";
   }
+  const persistedPricing = resolvePersistedPricingSnapshot({
+    pricingSnapshot,
+    form,
+    totals,
+    settings,
+    selection: {
+      packageId: form.pkg,
+      packageName: totals.selectedPkg?.name || "",
+      addons: form.addons,
+      rentals: form.rentals,
+      menuItems,
+      addonQuantities,
+      rentalQuantities,
+      menuItemQuantities,
+      milesRT: Number(form.milesRT || 0),
+      taxRegion: form.taxRegion || settings?.defaultTaxRegion || "",
+      seasonProfileId: form.seasonProfileId || settings?.defaultSeasonProfile || "auto",
+      bartenderRateTypeId: String(form.bartenderRateTypeId || ""),
+      staffingRateTypeId: String(form.staffingRateTypeId || ""),
+      bartenderRateOverride:
+        form.bartenderRateOverride === "" || form.bartenderRateOverride === null || form.bartenderRateOverride === undefined
+          ? ""
+          : toNumber(form.bartenderRateOverride, 0),
+      serverRateOverride:
+        form.serverRateOverride === "" || form.serverRateOverride === null || form.serverRateOverride === undefined
+          ? ""
+          : toNumber(form.serverRateOverride, 0),
+      chefRateOverride:
+        form.chefRateOverride === "" || form.chefRateOverride === null || form.chefRateOverride === undefined
+          ? ""
+          : toNumber(form.chefRateOverride, 0)
+    },
+    catalogSource,
+    organizationId: nextOrganizationId,
+    quoteId: id,
+    quoteNumber: existing.quoteNumber || "",
+    ownerUid: ownerUid || existing.ownerUid || "",
+    ownerEmail: normalizeEmail(ownerEmail) || existing.ownerEmail || "",
+    reason: "update_quote"
+  });
 
   const patch = {
     customer: {
@@ -1585,6 +1907,7 @@ export async function updateQuote({
       addonMultiplier: totals.addonMultiplier,
       rentalMultiplier: totals.rentalMultiplier
     },
+    pricing: persistedPricing,
     quoteMeta: {
       quotePreparedBy: settings?.quotePreparedBy || "",
       brandName: settings?.brandName || "",
@@ -1735,7 +2058,9 @@ export async function duplicateQuote(quoteId, { ownerUid = "", ownerEmail = "" }
     expiresAtISO,
     lifecycle: {
       draftAtISO: nowISO
-    }
+    },
+    activeVersionId: "",
+    latestVersionNumber: 0
   };
 
   if (firebaseReady) {
@@ -1748,6 +2073,11 @@ export async function duplicateQuote(quoteId, { ownerUid = "", ownerEmail = "" }
       buildPortalSnapshot(ref.id, payload),
       { merge: true }
     );
+    await saveQuoteVersion(ref.id, {
+      reason: "duplicate_quote_create",
+      setActive: true,
+      organizationId
+    });
     return { id: ref.id, quoteNumber, portalKey, storage: "firebase" };
   }
 
@@ -1755,6 +2085,11 @@ export async function duplicateQuote(quoteId, { ownerUid = "", ownerEmail = "" }
   const fallbackId = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now());
   existing.unshift({ id: fallbackId, ...payload });
   localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(existing));
+  await saveQuoteVersion(fallbackId, {
+    reason: "duplicate_quote_create",
+    setActive: true,
+    organizationId
+  });
   return { id: fallbackId, quoteNumber, portalKey, storage: "local" };
 }
 

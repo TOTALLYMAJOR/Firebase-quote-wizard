@@ -261,15 +261,26 @@ function renderHeader({
   return y + 56;
 }
 
-export async function exportQuoteProposal(quote, { basePortalUrl = "", output = "save" } = {}) {
+export async function exportQuoteProposal(quote, {
+  basePortalUrl = "",
+  output = "save",
+  compact = false
+} = {}) {
   if (!quote) {
     throw new Error("Missing quote data for PDF export.");
   }
 
   const proposal = buildProposalPayload(quote);
   const { branding, meta } = proposal;
-  const brandAssets = await loadBrandAssets(branding);
-  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const includeBrandImages = compact !== true;
+  const brandAssets = includeBrandImages
+    ? await loadBrandAssets(branding)
+    : { logo: null, crewMembers: [] };
+  const doc = new jsPDF({
+    unit: "pt",
+    format: "letter",
+    compress: compact === true
+  });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const left = 44;
