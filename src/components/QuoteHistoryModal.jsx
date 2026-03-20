@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { createDepositCheckout } from "../lib/commerceOps";
+import {
+  createDepositCheckout,
+  sendPaymentRequestToCustomerEmail,
+  sendQuoteToCustomerEmail
+} from "../lib/commerceOps";
 import { currency } from "../lib/quoteCalculator";
 import { getEventTypes } from "../lib/menuService";
 import {
@@ -48,6 +52,7 @@ export default function QuoteHistoryModal({
   open,
   onClose,
   basePortalUrl = "",
+  organizationId = "",
   currentUserUid = "",
   currentUserEmail = "",
   onEditQuote,
@@ -71,6 +76,8 @@ export default function QuoteHistoryModal({
   const [creatingCheckoutId, setCreatingCheckoutId] = useState("");
   const [duplicatingId, setDuplicatingId] = useState("");
   const [exportingPdfId, setExportingPdfId] = useState("");
+  const [sendingQuoteEmailId, setSendingQuoteEmailId] = useState("");
+  const [sendingPaymentEmailId, setSendingPaymentEmailId] = useState("");
   const [pendingDeleteQuote, setPendingDeleteQuote] = useState(null);
 
   const pushToast = (message, tone = "info") => {
@@ -84,7 +91,8 @@ export default function QuoteHistoryModal({
     try {
       const result = await getQuoteHistory({
         eventTypeId: eventTypeFilter === "all" ? "" : eventTypeFilter,
-        customerName: query
+        customerName: query,
+        organizationId
       });
       setState({
         loading: false,
@@ -106,7 +114,7 @@ export default function QuoteHistoryModal({
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    getEventTypes()
+    getEventTypes({ organizationId })
       .then((items) => {
         if (!alive) return;
         setEventTypes(items);
@@ -118,7 +126,7 @@ export default function QuoteHistoryModal({
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, organizationId]);
 
   useEffect(() => {
     if (!open) return;
@@ -187,6 +195,12 @@ export default function QuoteHistoryModal({
         depositConfirmedAtISO: quote.payment?.depositConfirmedAtISO || ""
       }
     }));
+  };
+
+  const resolveQuotePortalLink = (quote) => {
+    if (!quote?.portalKey) return "";
+    const base = basePortalUrl || `${window.location.origin}${window.location.pathname}`;
+    return `${base}?portal=${quote.portalKey}`;
   };
 
   const handleStatusUpdate = async (quoteId, nextStatus, silent = false) => {
@@ -426,11 +440,10 @@ export default function QuoteHistoryModal({
       if (!navigator.clipboard) {
         throw new Error("Clipboard unavailable in this browser.");
       }
-      if (!quote.portalKey) {
+      const portalLink = resolveQuotePortalLink(quote);
+      if (!portalLink) {
         throw new Error("No customer portal key for this quote.");
       }
-      const base = basePortalUrl || `${window.location.origin}${window.location.pathname}`;
-      const portalLink = `${base}?portal=${quote.portalKey}`;
       await navigator.clipboard.writeText(portalLink);
       setState((prev) => ({ ...prev, feedback: `Portal link copied for ${quote.quoteNumber}.` }));
       pushToast(`Portal link copied for ${quote.quoteNumber}.`, "success");
@@ -439,33 +452,37 @@ export default function QuoteHistoryModal({
     }
   };
 
+  const createCheckoutLink = async (quote) => {
+    if (state.source !== "firebase") {
+      throw new Error("Stripe checkout requires Firebase-backed quote storage.");
+    }
+
+    const base = basePortalUrl || `${window.location.origin}${window.location.pathname}`;
+    const successUrl = quote.portalKey
+      ? `${base}?portal=${encodeURIComponent(quote.portalKey)}&payment=success`
+      : `${base}?payment=success`;
+    const cancelUrl = quote.portalKey
+      ? `${base}?portal=${encodeURIComponent(quote.portalKey)}&payment=cancelled`
+      : `${base}?payment=cancelled`;
+
+    const result = await createDepositCheckout({
+      quoteId: quote.id,
+      successUrl,
+      cancelUrl
+    });
+    const paymentLink = String(result?.url || "").trim();
+    if (!paymentLink) {
+      throw new Error("Checkout URL was not returned.");
+    }
+    applyPaymentLinkLocally(quote.id, paymentLink);
+    return paymentLink;
+  };
+
   const handleCreateCheckout = async (quote) => {
     setCreatingCheckoutId(quote.id);
     setState((prev) => ({ ...prev, error: "", feedback: "" }));
     try {
-      if (state.source !== "firebase") {
-        throw new Error("Stripe checkout requires Firebase-backed quote storage.");
-      }
-
-      const base = basePortalUrl || `${window.location.origin}${window.location.pathname}`;
-      const successUrl = quote.portalKey
-        ? `${base}?portal=${encodeURIComponent(quote.portalKey)}&payment=success`
-        : `${base}?payment=success`;
-      const cancelUrl = quote.portalKey
-        ? `${base}?portal=${encodeURIComponent(quote.portalKey)}&payment=cancelled`
-        : `${base}?payment=cancelled`;
-
-      const result = await createDepositCheckout({
-        quoteId: quote.id,
-        successUrl,
-        cancelUrl
-      });
-      const paymentLink = String(result?.url || "").trim();
-      if (!paymentLink) {
-        throw new Error("Checkout URL was not returned.");
-      }
-
-      applyPaymentLinkLocally(quote.id, paymentLink);
+      const paymentLink = await createCheckoutLink(quote);
       setState((prev) => ({ ...prev, feedback: `Stripe checkout created for ${quote.quoteNumber}.` }));
       pushToast(`Stripe checkout created for ${quote.quoteNumber}.`, "success");
       window.open(paymentLink, "_blank", "noopener,noreferrer");
@@ -473,6 +490,78 @@ export default function QuoteHistoryModal({
       setState((prev) => ({ ...prev, error: err?.message || "Failed to create Stripe checkout." }));
     } finally {
       setCreatingCheckoutId("");
+    }
+  };
+
+  const handleSendQuoteEmail = async (quote) => {
+    setSendingQuoteEmailId(quote.id);
+    setState((prev) => ({ ...prev, error: "", feedback: "" }));
+    try {
+      const { exportQuoteProposal } = await import("../lib/proposalExport");
+      const attachment = await exportQuoteProposal(quote, {
+        basePortalUrl,
+        output: "base64"
+      });
+      const portalLink = resolveQuotePortalLink(quote);
+
+      await sendQuoteToCustomerEmail({
+        quoteId: quote.id,
+        portalLink,
+        attachment
+      });
+
+      if (String(quote.status || "").toLowerCase() === "draft") {
+        await handleStatusUpdate(quote.id, "sent", true);
+      }
+
+      setState((prev) => ({ ...prev, feedback: `Quote email sent to ${quote.customer?.email || "customer"}.` }));
+      pushToast(`Quote email sent for ${quote.quoteNumber}.`, "success");
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err?.message || "Failed to send quote email." }));
+    } finally {
+      setSendingQuoteEmailId("");
+    }
+  };
+
+  const handleSendPaymentRequestEmail = async (quote) => {
+    setSendingPaymentEmailId(quote.id);
+    setState((prev) => ({ ...prev, error: "", feedback: "" }));
+    try {
+      const status = String(quote.status || "").trim().toLowerCase();
+      if (!["accepted", "booked"].includes(status)) {
+        throw new Error("Payment request email is only available after quote acceptance.");
+      }
+
+      let paymentLink = String(quote.payment?.depositLink || "").trim();
+      if (!paymentLink) {
+        paymentLink = await createCheckoutLink(quote);
+      }
+
+      const { exportQuoteProposal } = await import("../lib/proposalExport");
+      const attachment = await exportQuoteProposal(quote, {
+        basePortalUrl,
+        output: "base64"
+      });
+      const portalLink = resolveQuotePortalLink(quote);
+
+      await sendPaymentRequestToCustomerEmail({
+        quoteId: quote.id,
+        paymentLink,
+        portalLink,
+        attachment
+      });
+
+      if (String(quote.payment?.depositStatus || "unpaid").toLowerCase() === "unpaid") {
+        await updateQuotePaymentStatus(quote.id, "sent");
+        applyPaymentLocally(quote.id, "sent");
+      }
+
+      setState((prev) => ({ ...prev, feedback: `Payment request sent to ${quote.customer?.email || "customer"}.` }));
+      pushToast(`Payment request sent for ${quote.quoteNumber}.`, "success");
+    } catch (err) {
+      setState((prev) => ({ ...prev, error: err?.message || "Failed to send payment request." }));
+    } finally {
+      setSendingPaymentEmailId("");
     }
   };
 
@@ -559,6 +648,9 @@ export default function QuoteHistoryModal({
                 const confirmationStatus = booking.confirmationStatus || "pending";
                 const canConvert = canConvertToContract(quote);
                 const canTrackConfirmation = quote.status === "booked" && Boolean(contractNumber);
+                const canSendPaymentRequest = ["accepted", "booked"].includes(
+                  String(quote.status || "").trim().toLowerCase()
+                );
                 const quoteEventTypeId = String(quote.eventTypeId || quote.selection?.eventTypeId || "");
                 const quoteEventTypeLabel = eventTypeNameById.get(quoteEventTypeId) || quoteEventTypeId || "-";
                 return (
@@ -664,6 +756,26 @@ export default function QuoteHistoryModal({
                         >
                           {exportingPdfId === quote.id ? "Generating PDF..." : "PDF"}
                         </button>
+                        {quote.status !== "deleted" && (
+                          <button
+                            type="button"
+                            className="cta compact"
+                            onClick={() => handleSendQuoteEmail(quote)}
+                            disabled={sendingQuoteEmailId === quote.id}
+                          >
+                            {sendingQuoteEmailId === quote.id ? "Sending..." : "Send Quote Email"}
+                          </button>
+                        )}
+                        {canSendPaymentRequest && (
+                          <button
+                            type="button"
+                            className="cta compact"
+                            onClick={() => handleSendPaymentRequestEmail(quote)}
+                            disabled={sendingPaymentEmailId === quote.id}
+                          >
+                            {sendingPaymentEmailId === quote.id ? "Sending..." : "Send Pay Request"}
+                          </button>
+                        )}
                         <button type="button" className="ghost compact" onClick={() => handleCopyEmail(quote)}>Copy Email</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPortalLink(quote)}>Copy Portal</button>
                         <button type="button" className="ghost compact" onClick={() => handleCopyPaymentLink(quote)}>Copy Pay Link</button>

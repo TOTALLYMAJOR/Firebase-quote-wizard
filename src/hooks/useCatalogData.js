@@ -9,6 +9,12 @@ import {
   toStorageCatalog
 } from "../data/mockCatalog";
 import { db, firebaseReady } from "../lib/firebase";
+import {
+  allowLegacyGlobalFallback,
+  getOrganizationCollectionRef,
+  getOrganizationSubDocRef,
+  resolveOrganizationId
+} from "../lib/organizationService";
 import { getEventTypes, getMenuCategories, getMenuItems } from "../lib/menuService";
 import { recordDiagnosticError } from "../lib/sessionDiagnostics";
 
@@ -93,7 +99,123 @@ async function loadFromFirebase() {
   return normalizeCatalog(raw);
 }
 
-async function saveToFirebase(catalog) {
+function hasCatalogRecords(catalog) {
+  return Boolean(
+    catalog?.packages?.length
+    || catalog?.addons?.length
+    || catalog?.rentals?.length
+  );
+}
+
+async function loadFromFirebaseByOrganization(organizationId = "") {
+  const resolvedOrganizationId = resolveOrganizationId(organizationId, "");
+  if (!resolvedOrganizationId) {
+    if (!allowLegacyGlobalFallback()) {
+      throw new Error("organizationId is required for catalog reads.");
+    }
+    return {
+      catalog: await loadFromFirebase(),
+      source: "firebase-legacy-global"
+    };
+  }
+
+  const [pkgSnap, addSnap, rentSnap, settingsSnap] = await Promise.all([
+    getDocs(getOrganizationCollectionRef("catalogPackages", resolvedOrganizationId)),
+    getDocs(getOrganizationCollectionRef("catalogAddons", resolvedOrganizationId)),
+    getDocs(getOrganizationCollectionRef("catalogRentals", resolvedOrganizationId)),
+    getDoc(getOrganizationSubDocRef("settings", "config", resolvedOrganizationId))
+  ]);
+
+  const orgCatalog = normalizeCatalog({
+    packages: pkgSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    addons: addSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    rentals: rentSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+    settings: settingsSnap.exists() ? settingsSnap.data() : DEFAULT_SETTINGS
+  });
+
+  if (hasCatalogRecords(orgCatalog) || !allowLegacyGlobalFallback()) {
+    return {
+      catalog: orgCatalog,
+      source: "firebase-org"
+    };
+  }
+
+  const legacy = await loadFromFirebase();
+  return {
+    catalog: legacy,
+    source: "firebase-legacy-fallback"
+  };
+}
+
+async function saveToFirebase(catalog, organizationId = "") {
+  const resolvedOrganizationId = resolveOrganizationId(organizationId, "");
+  if (!resolvedOrganizationId) {
+    if (!allowLegacyGlobalFallback()) {
+      throw new Error("organizationId is required for catalog writes.");
+    }
+    await saveToFirebaseGlobal(catalog);
+    return;
+  }
+
+  const packageCollection = getOrganizationCollectionRef("catalogPackages", resolvedOrganizationId);
+  const addonCollection = getOrganizationCollectionRef("catalogAddons", resolvedOrganizationId);
+  const rentalCollection = getOrganizationCollectionRef("catalogRentals", resolvedOrganizationId);
+  const settingsRef = getOrganizationSubDocRef("settings", "config", resolvedOrganizationId);
+
+  const [pkgSnap, addSnap, rentSnap] = await Promise.all([
+    getDocs(packageCollection),
+    getDocs(addonCollection),
+    getDocs(rentalCollection)
+  ]);
+
+  const batch = writeBatch(db);
+  const packageIds = new Set(catalog.packages.map((item) => item.id));
+  const addonIds = new Set(catalog.addons.map((item) => item.id));
+  const rentalIds = new Set(catalog.rentals.map((item) => item.id));
+
+  pkgSnap.docs.forEach((docSnap) => {
+    if (!packageIds.has(docSnap.id)) batch.delete(docSnap.ref);
+  });
+  addSnap.docs.forEach((docSnap) => {
+    if (!addonIds.has(docSnap.id)) batch.delete(docSnap.ref);
+  });
+  rentSnap.docs.forEach((docSnap) => {
+    if (!rentalIds.has(docSnap.id)) batch.delete(docSnap.ref);
+  });
+
+  catalog.packages.forEach((item) => {
+    batch.set(doc(packageCollection, item.id), {
+      name: item.name,
+      ppp: Number(item.ppp || 0)
+    });
+  });
+  catalog.addons.forEach((item) => {
+    const pricingType = normalizePricingType(item.pricingType || item.type || "per_person");
+    batch.set(doc(addonCollection, item.id), {
+      name: item.name,
+      pricingType,
+      type: pricingType,
+      price: Number(item.price || 0),
+      active: item.active !== false
+    });
+  });
+  catalog.rentals.forEach((item) => {
+    const pricingType = normalizePricingType(item.pricingType || item.type || "per_item");
+    batch.set(doc(rentalCollection, item.id), {
+      name: item.name,
+      price: Number(item.price || 0),
+      qtyPerGuests: Number(item.qtyPerGuests || 1),
+      pricingType,
+      type: pricingType,
+      active: item.active !== false
+    });
+  });
+
+  batch.set(settingsRef, catalog.settings, { merge: true });
+  await batch.commit();
+}
+
+async function saveToFirebaseGlobal(catalog) {
   const [pkgSnap, addSnap, rentSnap] = await Promise.all([
     getDocs(collection(db, "catalogPackages")),
     getDocs(collection(db, "catalogAddons")),
@@ -147,7 +269,7 @@ async function saveToFirebase(catalog) {
   await batch.commit();
 }
 
-export function useCatalogData({ enabled = true } = {}) {
+export function useCatalogData({ enabled = true, organizationId = "" } = {}) {
   const [state, setState] = useState(() => ({
     loading: enabled,
     saving: false,
@@ -181,9 +303,9 @@ export function useCatalogData({ enabled = true } = {}) {
     async function load() {
       try {
         if (firebaseReady) {
-          const [catalog, eventTypes] = await Promise.all([
-            loadFromFirebase(),
-            getEventTypes()
+          const [{ catalog, source }, eventTypes] = await Promise.all([
+            loadFromFirebaseByOrganization(organizationId),
+            getEventTypes({ organizationId })
           ]);
           if (!alive) return;
           const hasRecords = catalog.packages.length || catalog.addons.length || catalog.rentals.length;
@@ -193,7 +315,7 @@ export function useCatalogData({ enabled = true } = {}) {
               setState((prev) => ({
                 ...prev,
                 loading: false,
-                source: "firebase-empty-defaults",
+                source: `${source}-empty-defaults`,
                 requiresFirebase: false,
                 eventTypes,
                 ...defaults
@@ -205,7 +327,7 @@ export function useCatalogData({ enabled = true } = {}) {
           setState((prev) => ({
             ...prev,
             loading: false,
-            source: "firebase",
+            source,
             requiresFirebase: false,
             eventTypes,
             ...catalog
@@ -264,7 +386,7 @@ export function useCatalogData({ enabled = true } = {}) {
     return () => {
       alive = false;
     };
-  }, [enabled]);
+  }, [enabled, organizationId]);
 
   const saveCatalog = useCallback(async (nextCatalog) => {
     if (!enabled) {
@@ -278,7 +400,7 @@ export function useCatalogData({ enabled = true } = {}) {
 
     try {
       if (firebaseReady) {
-        await saveToFirebase(normalized);
+        await saveToFirebase(normalized, organizationId);
       }
 
       if (ALLOW_LOCAL_CATALOG_FALLBACK) {
@@ -304,7 +426,7 @@ export function useCatalogData({ enabled = true } = {}) {
       }));
       return { ok: false, error: err?.message || "Failed to save catalog." };
     }
-  }, [enabled]);
+  }, [enabled, organizationId]);
 
   const loadMenuByEvent = useCallback(async (eventTypeId) => {
     const nextEventTypeId = String(eventTypeId || "").trim();
@@ -313,11 +435,11 @@ export function useCatalogData({ enabled = true } = {}) {
     }
 
     const [categories, items] = await Promise.all([
-      getMenuCategories(nextEventTypeId),
-      getMenuItems(nextEventTypeId)
+      getMenuCategories(nextEventTypeId, { organizationId }),
+      getMenuItems(nextEventTypeId, { organizationId })
     ]);
     return normalizeMenuSectionsFromEvent(categories, items);
-  }, []);
+  }, [organizationId]);
 
   return {
     ...state,

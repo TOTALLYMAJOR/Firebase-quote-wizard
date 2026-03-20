@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
+import { collection, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { signOutCurrentUser } from "../lib/authClient";
-import { auth, db, firebaseReady } from "../lib/firebase";
+import { auth, cloudFunctions, db, firebaseReady } from "../lib/firebase";
+import { buildOrganizationProfile, DEFAULT_ORGANIZATION_ID, resolveOrganizationId } from "../lib/organizationService";
 import { recordDiagnosticError, recordDiagnosticEvent } from "../lib/sessionDiagnostics";
 
 const ROLE_VALUES = new Set(["admin", "sales", "customer"]);
@@ -14,6 +16,7 @@ const E2E_ROLE = ROLE_VALUES.has(String(import.meta.env.VITE_E2E_ROLE || "").tri
   : "admin";
 const E2E_EMAIL = String(import.meta.env.VITE_E2E_EMAIL || "e2e-admin@local.test").trim().toLowerCase();
 const E2E_UID = String(import.meta.env.VITE_E2E_UID || "e2e-admin").trim() || "e2e-admin";
+const ORG_BOOTSTRAP_CALLABLE = "ensureOrganizationBootstrap";
 const BOOTSTRAP_ADMINS = new Set(
   [
     "tonitastefultouch@yahoo.com",
@@ -33,24 +36,137 @@ function normalizeRole(value) {
   return ROLE_VALUES.has(role) ? role : "customer";
 }
 
-async function loadOrCreateRole(user) {
-  if (!user || !db) return "customer";
+function generateOrganizationId() {
+  if (!db) return "";
+  return doc(collection(db, "organizations")).id;
+}
+
+async function loadOrCreateRoleLegacy(user) {
+  if (!user || !db) {
+    return {
+      role: "customer",
+      organizationId: resolveOrganizationId("", "")
+    };
+  }
 
   const email = normalizeEmail(user.email);
   const bootstrapRole = BOOTSTRAP_ADMINS.has(email) ? "admin" : "customer";
+  const generatedOrganizationId = generateOrganizationId();
+  const defaultOrganizationId = bootstrapRole === "admin"
+    ? resolveOrganizationId(generatedOrganizationId, DEFAULT_ORGANIZATION_ID)
+    : resolveOrganizationId("", "");
   const roleRef = doc(db, "userRoles", user.uid);
   const roleSnap = await getDoc(roleRef);
   if (roleSnap.exists()) {
-    return normalizeRole(roleSnap.data()?.role);
+    const existing = roleSnap.data() || {};
+    const role = normalizeRole(existing.role);
+    const roleFallbackOrgId = role === "admin" || role === "sales"
+      ? resolveOrganizationId(generatedOrganizationId, DEFAULT_ORGANIZATION_ID)
+      : "";
+    const organizationId = resolveOrganizationId(existing.organizationId, roleFallbackOrgId);
+
+    if (!existing.organizationId) {
+      await setDoc(roleRef, {
+        organizationId,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    }
+
+    if (role === "admin") {
+      const orgRef = doc(db, "organizations", organizationId);
+      const orgSnap = await getDoc(orgRef);
+      if (!orgSnap.exists()) {
+        const organizationProfile = buildOrganizationProfile({
+          organizationId,
+          name: "Default Organization",
+          slug: "default-organization",
+          ownerUid: user.uid,
+          ownerEmail: email
+        });
+        await setDoc(orgRef, {
+          name: organizationProfile.name,
+          slug: organizationProfile.slug,
+          ownerUid: organizationProfile.ownerUid,
+          ownerEmail: organizationProfile.ownerEmail,
+          updatedAtISO: organizationProfile.updatedAtISO,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      }
+    }
+
+    return { role, organizationId };
   }
 
   await setDoc(roleRef, {
     role: bootstrapRole,
     email,
+    organizationId: defaultOrganizationId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp()
   });
-  return bootstrapRole;
+
+  if (bootstrapRole === "admin") {
+    const orgRef = doc(db, "organizations", defaultOrganizationId);
+    const organizationProfile = buildOrganizationProfile({
+      organizationId: defaultOrganizationId,
+      name: "Default Organization",
+      slug: "default-organization",
+      ownerUid: user.uid,
+      ownerEmail: email
+    });
+    await setDoc(orgRef, {
+      name: organizationProfile.name,
+      slug: organizationProfile.slug,
+      ownerUid: organizationProfile.ownerUid,
+      ownerEmail: organizationProfile.ownerEmail,
+      updatedAtISO: organizationProfile.updatedAtISO,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  }
+
+  return {
+    role: bootstrapRole,
+    organizationId: defaultOrganizationId
+  };
+}
+
+async function bootstrapRoleWithCallable(user) {
+  if (!cloudFunctions || !user) {
+    throw new Error("Callable organization bootstrap is unavailable.");
+  }
+  const call = httpsCallable(cloudFunctions, ORG_BOOTSTRAP_CALLABLE);
+  const result = await call({});
+  const data = result?.data || {};
+  return {
+    role: normalizeRole(data.role),
+    organizationId: resolveOrganizationId(data.organizationId, "")
+  };
+}
+
+async function loadOrCreateRole(user) {
+  if (!user || !db) {
+    return {
+      role: "customer",
+      organizationId: resolveOrganizationId("", "")
+    };
+  }
+
+  try {
+    const callableResult = await bootstrapRoleWithCallable(user);
+    if (callableResult.organizationId || callableResult.role !== "customer") {
+      return callableResult;
+    }
+  } catch (err) {
+    recordDiagnosticEvent({
+      level: "warning",
+      type: "auth.org-bootstrap.callable-fallback",
+      message: err?.message || "Falling back to client role bootstrap."
+    });
+  }
+
+  return loadOrCreateRoleLegacy(user);
 }
 
 export function useAuthSession() {
@@ -58,6 +174,7 @@ export function useAuthSession() {
     loading: true,
     user: null,
     role: "customer",
+    organizationId: resolveOrganizationId("", ""),
     error: ""
   });
 
@@ -72,6 +189,7 @@ export function useAuthSession() {
           email: E2E_EMAIL
         },
         role: E2E_ROLE,
+        organizationId: resolveOrganizationId("", ""),
         error: ""
       });
       return () => {
@@ -89,6 +207,7 @@ export function useAuthSession() {
         loading: false,
         user: null,
         role: "customer",
+        organizationId: resolveOrganizationId("", ""),
         error: "Firebase Auth is unavailable. Check env config."
       });
       return () => {
@@ -99,7 +218,13 @@ export function useAuthSession() {
     const stop = onAuthStateChanged(auth, async (nextUser) => {
       if (!active) return;
       if (!nextUser) {
-        setState({ loading: false, user: null, role: "customer", error: "" });
+        setState({
+          loading: false,
+          user: null,
+          role: "customer",
+          organizationId: resolveOrganizationId("", ""),
+          error: ""
+        });
         return;
       }
 
@@ -107,13 +232,14 @@ export function useAuthSession() {
       try {
         const tokenResult = await nextUser.getIdTokenResult();
         const claimRole = normalizeRole(tokenResult?.claims?.role);
-        const docRole = await loadOrCreateRole(nextUser);
-        const role = claimRole !== "customer" ? claimRole : docRole;
+        const roleRecord = await loadOrCreateRole(nextUser);
+        const role = claimRole !== "customer" ? claimRole : roleRecord.role;
         if (!active) return;
         setState({
           loading: false,
           user: nextUser,
           role,
+          organizationId: resolveOrganizationId(roleRecord.organizationId, ""),
           error: ""
         });
       } catch (err) {
@@ -127,6 +253,7 @@ export function useAuthSession() {
           loading: false,
           user: nextUser,
           role: "customer",
+          organizationId: resolveOrganizationId("", ""),
           error: err?.message || "Failed to load role data."
         });
       }
@@ -153,6 +280,7 @@ export function useAuthSession() {
           loading: false,
           user: null,
           role: "customer",
+          organizationId: resolveOrganizationId("", ""),
           error: ""
         });
       }

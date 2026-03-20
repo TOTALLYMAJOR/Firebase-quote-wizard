@@ -129,6 +129,7 @@ function Section({ title, onAdd, children }) {
 export default function AdminCatalogModal({
   open,
   catalog,
+  organizationId = "",
   onClose,
   onSave,
   saving,
@@ -161,6 +162,7 @@ export default function AdminCatalogModal({
   const [menuItemBaselines, setMenuItemBaselines] = useState({});
   const [menuItemDirty, setMenuItemDirty] = useState({});
   const [menuItemSavingId, setMenuItemSavingId] = useState("");
+  const scopedOrganizationId = String(organizationId || "").trim();
 
   const pushToast = (message, tone = "info") => {
     if (typeof onToast === "function") {
@@ -240,7 +242,7 @@ export default function AdminCatalogModal({
     async function loadEventTypeOptions() {
       setMenuLoading(true);
       try {
-        const eventTypes = await getEventTypes();
+        const eventTypes = await getEventTypes({ organizationId: scopedOrganizationId });
         if (!alive) return;
         setMenuEventTypes(eventTypes);
         setManagedEventType(selectedEventTypeProp || eventTypes[0]?.id || "");
@@ -257,7 +259,7 @@ export default function AdminCatalogModal({
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, scopedOrganizationId, selectedEventTypeProp]);
 
   useEffect(() => {
     if (!open) return;
@@ -274,8 +276,8 @@ export default function AdminCatalogModal({
       setMenuLoading(true);
       try {
         const [categories, items] = await Promise.all([
-          getMenuCategories(eventTypeId),
-          getMenuItems(eventTypeId, { includeInactive: true })
+          getMenuCategories(eventTypeId, { organizationId: scopedOrganizationId }),
+          getMenuItems(eventTypeId, { includeInactive: true, organizationId: scopedOrganizationId })
         ]);
         if (!alive) return;
         setMenuCategories(categories);
@@ -298,7 +300,7 @@ export default function AdminCatalogModal({
     return () => {
       alive = false;
     };
-  }, [open, selectedEventType]);
+  }, [open, scopedOrganizationId, selectedEventType]);
 
   useEffect(() => {
     if (!open) return;
@@ -548,7 +550,7 @@ export default function AdminCatalogModal({
   };
 
   const refreshEventTypes = async (preferredId = "") => {
-    const items = await getEventTypes();
+    const items = await getEventTypes({ organizationId: scopedOrganizationId });
     setMenuEventTypes(items);
     const currentId = String(selectedEventType || "").trim();
     const nextId =
@@ -569,8 +571,8 @@ export default function AdminCatalogModal({
       return;
     }
     const [categories, items] = await Promise.all([
-      getMenuCategories(nextEventTypeId),
-      getMenuItems(nextEventTypeId, { includeInactive: true })
+      getMenuCategories(nextEventTypeId, { organizationId: scopedOrganizationId }),
+      getMenuItems(nextEventTypeId, { includeInactive: true, organizationId: scopedOrganizationId })
     ]);
     setMenuCategories(categories);
     applyManagedMenuItems(items);
@@ -588,7 +590,7 @@ export default function AdminCatalogModal({
     }
     setMenuActionLoading(true);
     try {
-      const created = await createEventType({ name });
+      const created = await createEventType({ name, organizationId: scopedOrganizationId });
       setNewEventTypeName("");
       await refreshEventTypes(created.id);
       await refreshEventMenuData(created.id);
@@ -616,7 +618,8 @@ export default function AdminCatalogModal({
     try {
       const created = await createCategory({
         eventTypeId: selectedEventType,
-        name
+        name,
+        organizationId: scopedOrganizationId
       });
       setNewCategoryName("");
       await refreshEventMenuData(selectedEventType);
@@ -644,7 +647,7 @@ export default function AdminCatalogModal({
 
     setMenuActionLoading(true);
     try {
-      await updateEventType(selectedEventType, { name });
+      await updateEventType(selectedEventType, { name, organizationId: scopedOrganizationId });
       await refreshEventTypes(selectedEventType);
       setStatus("Event type updated.");
       pushToast("Event type updated.", "success");
@@ -671,7 +674,8 @@ export default function AdminCatalogModal({
     try {
       await updateCategory(selectedCategory, {
         name,
-        eventTypeId: selectedEventType
+        eventTypeId: selectedEventType,
+        organizationId: scopedOrganizationId
       });
       await refreshEventMenuData(selectedEventType);
       setStatus("Category updated.");
@@ -702,7 +706,8 @@ export default function AdminCatalogModal({
         name,
         price: Number(newItemDraft.price || 0),
         pricingType: normalizePricingType(newItemDraft.pricingType, "per_event"),
-        active: newItemDraft.active !== false
+        active: newItemDraft.active !== false,
+        organizationId: scopedOrganizationId
       });
       setNewItemDraft({ name: "", price: 0, pricingType: "per_event", active: true });
       await refreshEventMenuData(selectedEventType);
@@ -751,7 +756,8 @@ export default function AdminCatalogModal({
       await updateMenuItem(item.id, {
         ...nextPayload,
         eventTypeId: selectedEventType,
-        categoryId: selectedCategory || item.categoryId
+        categoryId: selectedCategory || item.categoryId,
+        organizationId: scopedOrganizationId
       });
       setMenuItems((prev) =>
         prev.map((entry) =>
@@ -813,7 +819,7 @@ export default function AdminCatalogModal({
   const handleDeleteManagedMenuItem = async (id) => {
     setMenuActionLoading(true);
     try {
-      await deleteMenuItem(id);
+      await deleteMenuItem(id, { organizationId: scopedOrganizationId });
       setStatus("Menu item deleted.");
       pushToast("Menu item deleted.", "success");
       await refreshEventMenuData(selectedEventType);

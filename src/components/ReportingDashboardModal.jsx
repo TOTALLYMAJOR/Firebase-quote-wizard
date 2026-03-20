@@ -24,13 +24,13 @@ function recentMonthKeys(count) {
   return out;
 }
 
-export default function ReportingDashboardModal({ open, onClose }) {
+export default function ReportingDashboardModal({ open, onClose, organizationId = "" }) {
   const [state, setState] = useState({ loading: false, error: "", source: "", quotes: [] });
 
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
     try {
-      const result = await getQuoteHistory();
+      const result = await getQuoteHistory({ organizationId });
       setState({
         loading: false,
         error: "",
@@ -50,7 +50,7 @@ export default function ReportingDashboardModal({ open, onClose }) {
     if (open) {
       load();
     }
-  }, [open]);
+  }, [open, organizationId]);
 
   const metrics = useMemo(() => {
     const totals = {

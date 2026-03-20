@@ -5,10 +5,29 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function hasRole(role) {
+    function roleDocExists() {
       return isSignedIn()
-        && exists(/databases/$(database)/documents/userRoles/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/userRoles/$(request.auth.uid));
+    }
+
+    function hasRole(role) {
+      return roleDocExists()
         && get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.role == role;
+    }
+
+    function userOrganizationId() {
+      return roleDocExists()
+        && get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.organizationId is string
+        ? get(/databases/$(database)/documents/userRoles/$(request.auth.uid)).data.organizationId
+        : "";
+    }
+
+    function roleOrganizationId(uid) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/userRoles/$(uid))
+        && get(/databases/$(database)/documents/userRoles/$(uid)).data.organizationId is string
+        ? get(/databases/$(database)/documents/userRoles/$(uid)).data.organizationId
+        : "";
     }
 
     function isBootstrapAdmin() {
@@ -26,7 +45,33 @@ service cloud.firestore {
       return isAdmin() || hasRole("sales");
     }
 
-    function quoteBelongsToUser(data) {
+    function sameOrg(orgId) {
+      return isSignedIn()
+        && orgId is string
+        && orgId == userOrganizationId();
+    }
+
+    function isOrgAdmin(orgId) {
+      return isBootstrapAdmin() || (sameOrg(orgId) && hasRole("admin"));
+    }
+
+    function isOrgStaff(orgId) {
+      return isOrgAdmin(orgId) || (sameOrg(orgId) && hasRole("sales"));
+    }
+
+    function quoteBelongsToUser(data, orgId) {
+      return isSignedIn()
+        && (
+          (sameOrg(orgId) && data.ownerUid == request.auth.uid)
+          || (
+            data.customerEmailKey != null
+            && request.auth.token.email != null
+            && data.customerEmailKey == request.auth.token.email
+          )
+        );
+    }
+
+    function quoteBelongsToUserLegacy(data) {
       return isSignedIn()
         && (
           data.ownerUid == request.auth.uid
@@ -48,18 +93,149 @@ service cloud.firestore {
       && request.resource.data.portalKey == resource.data.portalKey;
     }
 
+    function portalSnapshotExists(portalKey) {
+      return portalKey is string
+        && portalKey.size() >= 20
+        && exists(/databases/$(database)/documents/customerPortalQuotes/$(portalKey));
+    }
+
+    function portalMatchesOrgQuote(portalKey, quoteId, orgId) {
+      return portalSnapshotExists(portalKey)
+        && get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.quoteId == quoteId
+        && (
+          (
+            get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.organizationId is string
+            && get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.organizationId == orgId
+          )
+          || (
+            !(get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.organizationId is string)
+            || get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.organizationId == ""
+          )
+        );
+    }
+
+    function portalMatchesLegacyQuote(portalKey, quoteId) {
+      return portalSnapshotExists(portalKey)
+        && get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.quoteId == quoteId
+        && (
+          !(get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.organizationId is string)
+          || get(/databases/$(database)/documents/customerPortalQuotes/$(portalKey)).data.organizationId == ""
+        );
+    }
+
+    function portalStatusPatchOnly(portalKey) {
+      return statusPatchOnly()
+        && request.resource.data.portalKey == portalKey
+        && resource.data.portalKey == portalKey;
+    }
+
     match /userRoles/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create: if isAdmin()
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid
+        || isBootstrapAdmin()
+        || (
+          hasRole("admin")
+          && userOrganizationId() != ""
+          && roleOrganizationId(uid) == userOrganizationId()
+        )
+      );
+      allow create: if (
+          isBootstrapAdmin()
+          && isSignedIn()
+          && request.auth.uid == uid
+          && request.resource.data.role == "admin"
+          && request.resource.data.email == request.auth.token.email
+        )
         || (
           isSignedIn()
           && request.auth.uid == uid
           && request.resource.data.role == "customer"
           && request.resource.data.email == request.auth.token.email
+        )
+        || (
+          hasRole("admin")
+          && request.resource.data.organizationId is string
+          && request.resource.data.organizationId == userOrganizationId()
         );
-      allow update, delete: if isAdmin();
+      allow update: if isBootstrapAdmin()
+        || (
+          hasRole("admin")
+          && resource.data.organizationId is string
+          && request.resource.data.organizationId is string
+          && resource.data.organizationId == userOrganizationId()
+          && request.resource.data.organizationId == userOrganizationId()
+        );
+      allow delete: if isBootstrapAdmin()
+        || (
+          hasRole("admin")
+          && resource.data.organizationId is string
+          && resource.data.organizationId == userOrganizationId()
+        );
     }
 
+    match /organizations/{orgId} {
+      allow read: if isOrgStaff(orgId);
+      allow create, update, delete: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/settings/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/catalogPackages/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/catalogAddons/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/catalogRentals/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/eventTypes/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/menuCategories/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/menuItems/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/customers/{docId} {
+      allow read: if isOrgStaff(orgId);
+      allow write: if isOrgStaff(orgId);
+    }
+
+    match /organizations/{orgId}/quotes/{quoteId} {
+      allow create: if isOrgStaff(orgId)
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.organizationId == orgId
+        && request.resource.data.portalKey is string
+        && request.resource.data.portalKey.size() >= 20;
+      allow read: if isOrgStaff(orgId) || quoteBelongsToUser(resource.data, orgId);
+      allow update: if isOrgStaff(orgId)
+        || (statusPatchOnly() && portalMatchesOrgQuote(resource.data.portalKey, quoteId, orgId));
+      allow delete: if isOrgAdmin(orgId);
+    }
+
+    match /organizations/{orgId}/quotes/{quoteId}/versions/{versionId} {
+      allow read, create: if isOrgStaff(orgId);
+      allow update, delete: if false;
+    }
+
+    // Temporary legacy global collections while additive migration is in progress.
     match /catalogPackages/{docId} {
       allow read: if isStaff();
       allow write: if isAdmin();
@@ -100,16 +276,25 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.portalKey is string
         && request.resource.data.portalKey.size() >= 20;
-      allow read: if isStaff() || quoteBelongsToUser(resource.data);
-      allow update: if isStaff() || statusPatchOnly();
+      allow read: if isStaff() || quoteBelongsToUserLegacy(resource.data);
+      allow update: if isStaff()
+        || (statusPatchOnly() && portalMatchesLegacyQuote(resource.data.portalKey, quoteId));
       allow delete: if isAdmin();
     }
 
     match /customerPortalQuotes/{portalKey} {
-      allow get: if portalKey.size() >= 20;
+      allow get: if portalKey.size() >= 20
+        && resource.data.portalKey == portalKey
+        && resource.data.quoteId is string
+        && resource.data.quoteId.size() > 0;
       allow list: if false;
       allow create, delete: if isStaff();
-      allow update: if isStaff() || statusPatchOnly();
+      allow update: if isStaff()
+        || (
+          portalStatusPatchOnly(portalKey)
+          && resource.data.quoteId is string
+          && resource.data.quoteId.size() > 0
+        );
     }
 
     match /quoteHistory/{historyId} {

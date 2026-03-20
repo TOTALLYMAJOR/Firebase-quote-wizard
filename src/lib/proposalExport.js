@@ -49,6 +49,18 @@ function resolveImageFormat(mimeType = "") {
   return "PNG";
 }
 
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer || 0);
+  if (!bytes.length) return "";
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
 function logImageIssue(message, details = null, error = null) {
   const payload = details ? { ...details } : undefined;
   if (error) {
@@ -249,7 +261,7 @@ function renderHeader({
   return y + 56;
 }
 
-export async function exportQuoteProposal(quote, { basePortalUrl = "" } = {}) {
+export async function exportQuoteProposal(quote, { basePortalUrl = "", output = "save" } = {}) {
   if (!quote) {
     throw new Error("Missing quote data for PDF export.");
   }
@@ -509,5 +521,19 @@ export async function exportQuoteProposal(quote, { basePortalUrl = "" } = {}) {
     .replace(/[^\w.-]/g, "_")
     .replace(/_+/g, "_")
     .replace(/^-+|-+$/g, "");
-  doc.save(filename);
+  const pdfFilename = `${filename || "quote"}.pdf`;
+
+  if (output === "base64") {
+    const arrayBuffer = doc.output("arraybuffer");
+    return {
+      filename: pdfFilename,
+      mimeType: "application/pdf",
+      base64: arrayBufferToBase64(arrayBuffer)
+    };
+  }
+
+  doc.save(pdfFilename);
+  return {
+    filename: pdfFilename
+  };
 }

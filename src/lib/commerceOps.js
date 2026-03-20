@@ -43,3 +43,31 @@ export async function sendIntegrationTestSms({ message = "" } = {}) {
   });
   return result.data || {};
 }
+
+export async function sendQuoteToCustomerEmail({ quoteId, portalLink = "", attachment = null } = {}) {
+  ensureFunctionsReady();
+  const call = httpsCallable(cloudFunctions, "sendQuoteToCustomer");
+  const result = await call({
+    quoteId,
+    portalLink,
+    attachment
+  });
+  return result.data || {};
+}
+
+export async function sendPaymentRequestToCustomerEmail({
+  quoteId,
+  paymentLink = "",
+  portalLink = "",
+  attachment = null
+} = {}) {
+  ensureFunctionsReady();
+  const call = httpsCallable(cloudFunctions, "sendPaymentRequestEmail");
+  const result = await call({
+    quoteId,
+    paymentLink,
+    portalLink,
+    attachment
+  });
+  return result.data || {};
+}

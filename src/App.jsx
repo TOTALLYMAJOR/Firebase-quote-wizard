@@ -4,13 +4,22 @@ import CustomerPortalView from "./components/CustomerPortalView";
 import LiveBreakdown from "./components/LiveBreakdown";
 import { StepEvent, StepMenu, StepReview, StepServices } from "./components/WizardSteps";
 import { useEventType } from "./context/EventTypeContext";
+import { useOrganization } from "./context/OrganizationContext";
 import { DEFAULT_FEATURE_FLAGS, STAFF_RULES } from "./data/mockCatalog";
 import { useAuthSession } from "./hooks/useAuthSession";
 import { useCatalogData } from "./hooks/useCatalogData";
-import { notifyOwnerNewQuote } from "./lib/commerceOps";
+import { notifyOwnerNewQuote, sendQuoteToCustomerEmail } from "./lib/commerceOps";
+import { setActiveOrganizationId } from "./lib/organizationService";
 import { calculateQuote, currency } from "./lib/quoteCalculator";
 import { buildUpsellRecommendations } from "./lib/recommendations";
-import { checkEventAvailability, submitQuote, updateQuote } from "./lib/quoteStore";
+import {
+  checkEventAvailability,
+  getQuoteById,
+  setQuoteStoreOrganizationId,
+  submitQuote,
+  updateQuote,
+  updateQuoteStatus
+} from "./lib/quoteStore";
 import { recordDiagnosticError, setDiagnosticsUserContext } from "./lib/sessionDiagnostics";
 
 const AdminCatalogModal = lazy(() => import("./components/AdminCatalogModal"));
@@ -64,10 +73,14 @@ function normalizeFeatureFlags(input) {
 export default function App() {
   const wizardRef = useRef(null);
   const { eventTypeId: globalEventTypeId, setEventTypeId: setGlobalEventTypeId } = useEventType();
+  const { setOrganizationId } = useOrganization();
   const authSession = useAuthSession();
   const [portalKey, setPortalKey] = useState(() => readPortalKeyFromUrl());
   const [portalMode, setPortalMode] = useState(Boolean(portalKey));
-  const catalog = useCatalogData({ enabled: authSession.isStaff });
+  const catalog = useCatalogData({
+    enabled: authSession.isStaff,
+    organizationId: authSession.organizationId
+  });
   const [dynamicMenuSections, setDynamicMenuSections] = useState([]);
   const [dynamicMenuLoading, setDynamicMenuLoading] = useState(false);
   const [dynamicMenuError, setDynamicMenuError] = useState("");
@@ -79,7 +92,14 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dashboardOpen, setDashboardOpen] = useState(false);
   const [compareOpen, setCompareOpen] = useState(false);
-  const [submitState, setSubmitState] = useState({ saving: false, message: "", portalLink: "" });
+  const [submitState, setSubmitState] = useState({
+    saving: false,
+    sendingQuoteEmail: false,
+    message: "",
+    portalLink: "",
+    quoteId: "",
+    quoteNumber: ""
+  });
   const [availabilityNotice, setAvailabilityNotice] = useState("");
   const [editingQuote, setEditingQuote] = useState({ id: "", quoteNumber: "" });
   const [toasts, setToasts] = useState([]);
@@ -152,6 +172,12 @@ export default function App() {
   const diagnosticsEnabled = featureFlags.diagnostics !== false;
   const dashboardEnabled = featureFlags.reportingDashboard !== false;
   const quoteCompareEnabled = featureFlags.quoteCompare !== false;
+
+  useEffect(() => {
+    setOrganizationId(authSession.organizationId);
+    setActiveOrganizationId(authSession.organizationId);
+    setQuoteStoreOrganizationId(authSession.organizationId);
+  }, [authSession.organizationId, setOrganizationId]);
 
   useEffect(() => {
     if (catalog.loading) return;
@@ -499,11 +525,18 @@ export default function App() {
                       : "";
 
     if (requiredError) {
-      setSubmitState({ saving: false, message: requiredError, portalLink: "" });
+      setSubmitState((prev) => ({ ...prev, saving: false, message: requiredError }));
       return;
     }
 
-    setSubmitState({ saving: true, message: "", portalLink: "" });
+    setSubmitState((prev) => ({
+      ...prev,
+      saving: true,
+      message: "",
+      portalLink: "",
+      quoteId: "",
+      quoteNumber: ""
+    }));
     try {
       const availability = await checkEventAvailability({
         eventDate: form.date,
@@ -512,7 +545,8 @@ export default function App() {
         eventHours: form.hours,
         eventGuests: form.guests,
         capacityLimit: scheduleCapacityLimit,
-        excludeQuoteId: isEditingQuote ? editingQuote.id : ""
+        excludeQuoteId: isEditingQuote ? editingQuote.id : "",
+        organizationId: authSession.organizationId
       });
       if (availability.hasBlockingConflict) {
         const conflictRefs = availability.conflicts
@@ -525,11 +559,14 @@ export default function App() {
           : "";
         setSubmitState({
           saving: false,
+          sendingQuoteEmail: false,
           message:
             `Availability conflict: this date/venue is already booked.` +
             `${conflictRefs ? ` Existing booking(s): ${conflictRefs}.` : ""}` +
             capacityNote,
-          portalLink: ""
+          portalLink: "",
+          quoteId: "",
+          quoteNumber: ""
         });
         return;
       }
@@ -564,7 +601,8 @@ export default function App() {
           settings: effectiveSettings,
           catalog,
           ownerUid: authSession.user?.uid || "",
-          ownerEmail: authSession.user?.email || ""
+          ownerEmail: authSession.user?.email || "",
+          organizationId: authSession.organizationId
         })
         : await submitQuote({
           form,
@@ -573,7 +611,8 @@ export default function App() {
           settings: effectiveSettings,
           catalog,
           ownerUid: authSession.user?.uid || "",
-          ownerEmail: authSession.user?.email || ""
+          ownerEmail: authSession.user?.email || "",
+          organizationId: authSession.organizationId
         });
       const basePath = `${window.location.origin}${window.location.pathname}`;
       const portalLink = result.portalKey ? `${basePath}?portal=${result.portalKey}` : "";
@@ -581,8 +620,11 @@ export default function App() {
       if (isEditingQuote) {
         setSubmitState({
           saving: false,
+          sendingQuoteEmail: false,
           message: `Quote ${result.quoteNumber} updated in ${result.storage}. Version snapshot saved and rates locked.`,
-          portalLink
+          portalLink,
+          quoteId: result.id,
+          quoteNumber: result.quoteNumber || ""
         });
         pushToast(`Quote ${result.quoteNumber} updated.`, "success");
         setHistoryOpen(true);
@@ -611,8 +653,11 @@ export default function App() {
       }
       setSubmitState({
         saving: false,
+        sendingQuoteEmail: false,
         message: `Quote ${result.quoteNumber} saved to ${result.storage}.${smsSuffix}`,
-        portalLink
+        portalLink,
+        quoteId: result.id,
+        quoteNumber: result.quoteNumber || ""
       });
       pushToast(`Quote ${result.quoteNumber} saved.`, "success");
       setHistoryOpen(true);
@@ -625,7 +670,15 @@ export default function App() {
         guests: totals.guests
       });
       pushToast(err?.message || "Failed to save quote.", "error");
-      setSubmitState({ saving: false, message: err?.message || "Failed to save quote.", portalLink: "" });
+      setSubmitState((prev) => ({
+        ...prev,
+        saving: false,
+        sendingQuoteEmail: false,
+        message: err?.message || "Failed to save quote.",
+        portalLink: "",
+        quoteId: "",
+        quoteNumber: ""
+      }));
     }
   };
 
@@ -725,8 +778,11 @@ export default function App() {
     setStep(1);
     setSubmitState({
       saving: false,
+      sendingQuoteEmail: false,
       message: `Editing ${quote.quoteNumber || quote.id}. Save will update this quote and keep a version snapshot.`,
-      portalLink: ""
+      portalLink: "",
+      quoteId: "",
+      quoteNumber: ""
     });
     wizardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -745,6 +801,70 @@ export default function App() {
         ...prev,
         message: err?.message || "Failed to copy customer portal link."
       }));
+    }
+  };
+
+  const handleSendQuoteEmail = async () => {
+    const quoteId = String(submitState.quoteId || "").trim();
+    if (!quoteId) {
+      setSubmitState((prev) => ({ ...prev, message: "Save a quote before sending email." }));
+      return;
+    }
+
+    setSubmitState((prev) => ({
+      ...prev,
+      sendingQuoteEmail: true,
+      message: ""
+    }));
+
+    try {
+      const quote = await getQuoteById(quoteId);
+      const { exportQuoteProposal } = await import("./lib/proposalExport");
+      const basePortalUrl = `${window.location.origin}${window.location.pathname}`;
+      const attachment = await exportQuoteProposal(quote, {
+        basePortalUrl,
+        output: "base64"
+      });
+      const fallbackPortalLink = quote.portalKey ? `${basePortalUrl}?portal=${quote.portalKey}` : "";
+      const portalLink = submitState.portalLink || fallbackPortalLink;
+
+      await sendQuoteToCustomerEmail({
+        quoteId,
+        portalLink,
+        attachment
+      });
+
+      const currentStatus = String(quote.status || "draft").trim().toLowerCase();
+      if (currentStatus === "draft") {
+        try {
+          await updateQuoteStatus(quoteId, "sent");
+        } catch (statusErr) {
+          recordDiagnosticError(statusErr, {
+            surface: "app",
+            action: "mark-quote-sent-after-email",
+            quoteId
+          });
+        }
+      }
+
+      setSubmitState((prev) => ({
+        ...prev,
+        sendingQuoteEmail: false,
+        message: `Quote ${quote.quoteNumber || submitState.quoteNumber || quoteId} emailed with portal link and PDF attachment.`
+      }));
+      pushToast(`Quote ${quote.quoteNumber || quoteId} emailed to customer.`, "success");
+    } catch (err) {
+      recordDiagnosticError(err, {
+        surface: "app",
+        action: "send-quote-email",
+        quoteId
+      });
+      setSubmitState((prev) => ({
+        ...prev,
+        sendingQuoteEmail: false,
+        message: err?.message || "Failed to send quote email."
+      }));
+      pushToast(err?.message || "Failed to send quote email.", "error");
     }
   };
 
@@ -1005,10 +1125,22 @@ export default function App() {
             </div>
           </div>
 
-          {submitState.portalLink && (
+          {(submitState.portalLink || submitState.quoteId) && (
             <div className="portal-link-row">
-              <input type="text" readOnly value={submitState.portalLink} />
-              <button type="button" className="ghost" onClick={handleCopyPortalLink}>Copy Portal Link</button>
+              {submitState.portalLink && <input type="text" readOnly value={submitState.portalLink} />}
+              {submitState.portalLink && (
+                <button type="button" className="ghost" onClick={handleCopyPortalLink}>Copy Portal Link</button>
+              )}
+              {submitState.quoteId && (
+                <button
+                  type="button"
+                  className="cta"
+                  onClick={handleSendQuoteEmail}
+                  disabled={submitState.saving || submitState.sendingQuoteEmail}
+                >
+                  {submitState.sendingQuoteEmail ? "Sending Quote Email..." : "Send Quote Email (Portal + PDF)"}
+                </button>
+              )}
             </div>
           )}
 
@@ -1042,6 +1174,7 @@ export default function App() {
           <AdminCatalogModal
             open={adminOpen}
             catalog={catalog}
+            organizationId={authSession.organizationId}
             onClose={() => setAdminOpen(false)}
             onSave={catalog.saveCatalog}
             saving={catalog.saving}
@@ -1055,6 +1188,7 @@ export default function App() {
           open={historyOpen}
           onClose={() => setHistoryOpen(false)}
           basePortalUrl={`${window.location.origin}${window.location.pathname}`}
+          organizationId={authSession.organizationId}
           currentUserUid={authSession.user?.uid || ""}
           currentUserEmail={authSession.user?.email || ""}
           onEditQuote={handleEditQuote}
@@ -1065,6 +1199,7 @@ export default function App() {
           <EventScheduleModal
             open={scheduleOpen}
             onClose={() => setScheduleOpen(false)}
+            organizationId={authSession.organizationId}
             staffLeads={scheduleStaffLeads}
             capacityLimit={scheduleCapacityLimit}
           />
@@ -1074,6 +1209,7 @@ export default function App() {
           <IntegrationOpsModal
             open={integrationsOpen}
             onClose={() => setIntegrationsOpen(false)}
+            organizationId={authSession.organizationId}
             settings={effectiveSettings}
             currentUserEmail={authSession.user?.email || ""}
           />
@@ -1103,6 +1239,7 @@ export default function App() {
           <ReportingDashboardModal
             open={dashboardOpen}
             onClose={() => setDashboardOpen(false)}
+            organizationId={authSession.organizationId}
           />
         )}
       </Suspense>

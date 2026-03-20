@@ -2,6 +2,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { EventTypeProvider } from "./context/EventTypeContext";
+import { OrganizationProvider } from "./context/OrganizationContext";
 import { initSessionDiagnostics, recordDiagnosticError } from "./lib/sessionDiagnostics";
 import "./styles.css";
 
@@ -22,8 +23,10 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <EventTypeProvider>
-      <App />
-    </EventTypeProvider>
+    <OrganizationProvider>
+      <EventTypeProvider>
+        <App />
+      </EventTypeProvider>
+    </OrganizationProvider>
   </React.StrictMode>
 );

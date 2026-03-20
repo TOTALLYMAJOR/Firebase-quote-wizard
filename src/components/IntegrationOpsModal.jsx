@@ -91,6 +91,7 @@ function flattenLogs(quotes) {
 export default function IntegrationOpsModal({
   open,
   onClose,
+  organizationId = "",
   settings = {},
   currentUserEmail = ""
 }) {
@@ -133,7 +134,7 @@ export default function IntegrationOpsModal({
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
     try {
-      const result = await getQuoteHistory();
+      const result = await getQuoteHistory({ organizationId });
       setState({
         loading: false,
         error: "",
@@ -219,7 +220,7 @@ export default function IntegrationOpsModal({
       ...prev,
       appBaseUrl: prev.appBaseUrl || getWindowBaseUrl()
     }));
-  }, [open, settings.crmProvider]);
+  }, [open, organizationId, settings.crmProvider]);
 
   const activityRows = useMemo(() => flattenLogs(state.quotes), [state.quotes]);
 

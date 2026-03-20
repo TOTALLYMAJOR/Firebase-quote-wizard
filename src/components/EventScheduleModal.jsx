@@ -299,6 +299,7 @@ function buildKitchenCheckpoints(event) {
 export default function EventScheduleModal({
   open,
   onClose,
+  organizationId = "",
   staffLeads = [],
   capacityLimit = 400
 }) {
@@ -314,7 +315,7 @@ export default function EventScheduleModal({
   const load = async () => {
     setState((prev) => ({ ...prev, loading: true, error: "" }));
     try {
-      const result = await getQuoteHistory();
+      const result = await getQuoteHistory({ organizationId });
       setState({
         loading: false,
         error: "",
@@ -335,7 +336,7 @@ export default function EventScheduleModal({
     setFeedback("");
     setDropLaneKey("");
     load();
-  }, [open]);
+  }, [open, organizationId]);
 
   const anchorDate = parseIsoDate(anchorIso) || parseIsoDate(todayIso) || new Date();
 

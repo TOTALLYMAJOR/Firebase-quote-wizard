@@ -2,13 +2,19 @@ import {
   addDoc,
   collection,
   deleteDoc,
-  doc,
   getDocs,
   query,
   updateDoc,
   where
 } from "firebase/firestore";
 import { db, firebaseReady } from "./firebase";
+import {
+  allowLegacyGlobalFallback,
+  getActiveOrganizationId,
+  getOrganizationCollectionRef,
+  getOrganizationSubDocRef,
+  normalizeOrganizationId
+} from "./organizationService";
 
 function ensureReady() {
   if (!firebaseReady || !db) {
@@ -49,39 +55,90 @@ function sortByName(items) {
   return [...items].sort((a, b) => asText(a?.name).localeCompare(asText(b?.name)));
 }
 
-export async function getEventTypes() {
-  if (!firebaseReady || !db) return [];
-  const snap = await getDocs(query(collection(db, "eventTypes")));
-  return sortByName(
-    mapDocs(snap).map((item) => ({
-      ...item,
-      name: asText(item.name, "Untitled Event Type")
-    }))
-  );
+function resolveScopedOrganizationId(organizationId = "") {
+  return normalizeOrganizationId(organizationId || getActiveOrganizationId());
 }
 
-export async function getMenuCategories(eventTypeId) {
+function requireOrganizationId(organizationId = "", action = "menu operation") {
+  const resolvedOrgId = resolveScopedOrganizationId(organizationId);
+  if (!resolvedOrgId) {
+    throw new Error(`organizationId is required for ${action}.`);
+  }
+  return resolvedOrgId;
+}
+
+function orgCollectionRef(collectionName, organizationId) {
+  return getOrganizationCollectionRef(collectionName, organizationId);
+}
+
+function orgDocRef(collectionName, docId, organizationId) {
+  return getOrganizationSubDocRef(collectionName, docId, organizationId);
+}
+
+export async function getEventTypes({ organizationId = "" } = {}) {
+  if (!firebaseReady || !db) return [];
+  const resolvedOrgId = resolveScopedOrganizationId(organizationId);
+  const mapEventType = (item) => ({
+    ...item,
+    name: asText(item.name, "Untitled Event Type")
+  });
+
+  if (!resolvedOrgId) {
+    if (!allowLegacyGlobalFallback()) {
+      return [];
+    }
+    const legacySnap = await getDocs(query(collection(db, "eventTypes")));
+    return sortByName(mapDocs(legacySnap).map(mapEventType));
+  }
+
+  const scopedSnap = await getDocs(query(orgCollectionRef("eventTypes", resolvedOrgId)));
+  const scopedItems = mapDocs(scopedSnap).map(mapEventType);
+  if (scopedItems.length || !allowLegacyGlobalFallback()) {
+    return sortByName(scopedItems);
+  }
+  const legacySnap = await getDocs(query(collection(db, "eventTypes")));
+  return sortByName(mapDocs(legacySnap).map(mapEventType));
+}
+
+export async function getMenuCategories(eventTypeId, { organizationId = "" } = {}) {
   const nextEventTypeId = asText(eventTypeId);
   if (!nextEventTypeId || !firebaseReady || !db) return [];
-  const snap = await getDocs(
+  const resolvedOrgId = resolveScopedOrganizationId(organizationId);
+  const mapCategory = (item) => ({
+    ...item,
+    eventTypeId: asText(item.eventTypeId),
+    name: asText(item.name, "Untitled Category")
+  });
+
+  if (!resolvedOrgId) {
+    if (!allowLegacyGlobalFallback()) {
+      return [];
+    }
+    const legacySnap = await getDocs(
+      query(collection(db, "menuCategories"), where("eventTypeId", "==", nextEventTypeId))
+    );
+    return sortByName(mapDocs(legacySnap).map(mapCategory));
+  }
+
+  const scopedSnap = await getDocs(
+    query(orgCollectionRef("menuCategories", resolvedOrgId), where("eventTypeId", "==", nextEventTypeId))
+  );
+  const scopedItems = mapDocs(scopedSnap).map(mapCategory);
+  if (scopedItems.length || !allowLegacyGlobalFallback()) {
+    return sortByName(scopedItems);
+  }
+  const legacySnap = await getDocs(
     query(collection(db, "menuCategories"), where("eventTypeId", "==", nextEventTypeId))
   );
-  return sortByName(
-    mapDocs(snap).map((item) => ({
-      ...item,
-      eventTypeId: asText(item.eventTypeId),
-      name: asText(item.name, "Untitled Category")
-    }))
-  );
+  return sortByName(mapDocs(legacySnap).map(mapCategory));
 }
 
-export async function getMenuItems(eventTypeId, { includeInactive = false } = {}) {
+export async function getMenuItems(eventTypeId, { includeInactive = false, organizationId = "" } = {}) {
   const nextEventTypeId = asText(eventTypeId);
   if (!nextEventTypeId || !firebaseReady || !db) return [];
-  const snap = await getDocs(
-    query(collection(db, "menuItems"), where("eventTypeId", "==", nextEventTypeId))
-  );
-  const mapped = mapDocs(snap).map((item) => {
+  const resolvedOrgId = resolveScopedOrganizationId(organizationId);
+
+  const mapItem = (item) => {
     const pricingType = normalizePriceType(item.pricingType || item.type);
     return {
       ...item,
@@ -93,12 +150,37 @@ export async function getMenuItems(eventTypeId, { includeInactive = false } = {}
       type: pricingType,
       active: normalizeActive(item.active, true)
     };
-  });
+  };
+
+  if (!resolvedOrgId) {
+    if (!allowLegacyGlobalFallback()) {
+      return [];
+    }
+    const legacySnap = await getDocs(
+      query(collection(db, "menuItems"), where("eventTypeId", "==", nextEventTypeId))
+    );
+    const mapped = mapDocs(legacySnap).map(mapItem);
+    return sortByName(includeInactive ? mapped : mapped.filter((item) => item.active !== false));
+  }
+
+  const scopedSnap = await getDocs(
+    query(orgCollectionRef("menuItems", resolvedOrgId), where("eventTypeId", "==", nextEventTypeId))
+  );
+  const scopedMapped = mapDocs(scopedSnap).map(mapItem);
+  if (scopedMapped.length || !allowLegacyGlobalFallback()) {
+    return sortByName(includeInactive ? scopedMapped : scopedMapped.filter((item) => item.active !== false));
+  }
+
+  const legacySnap = await getDocs(
+    query(collection(db, "menuItems"), where("eventTypeId", "==", nextEventTypeId))
+  );
+  const mapped = mapDocs(legacySnap).map(mapItem);
   return sortByName(includeInactive ? mapped : mapped.filter((item) => item.active !== false));
 }
 
 export async function createMenuItem(data = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(data.organizationId, "createMenuItem");
   const pricingType = normalizePriceType(data.pricingType || data.type);
   const payload = {
     eventTypeId: asText(data.eventTypeId),
@@ -116,7 +198,7 @@ export async function createMenuItem(data = {}) {
   if (!payload.categoryId) {
     throw new Error("categoryId is required.");
   }
-  const ref = await addDoc(collection(db, "menuItems"), payload);
+  const ref = await addDoc(orgCollectionRef("menuItems", resolvedOrgId), payload);
   return {
     id: ref.id,
     ...payload
@@ -125,6 +207,7 @@ export async function createMenuItem(data = {}) {
 
 export async function updateMenuItem(id, data = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(data.organizationId, "updateMenuItem");
   const itemId = asText(id);
   if (!itemId) {
     throw new Error("Menu item id is required.");
@@ -158,25 +241,27 @@ export async function updateMenuItem(id, data = {}) {
   }
   payload.updatedAtISO = new Date().toISOString();
 
-  await updateDoc(doc(db, "menuItems", itemId), payload);
+  await updateDoc(orgDocRef("menuItems", itemId, resolvedOrgId), payload);
   return {
     id: itemId,
     ...payload
   };
 }
 
-export async function deleteMenuItem(id) {
+export async function deleteMenuItem(id, { organizationId = "" } = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(organizationId, "deleteMenuItem");
   const itemId = asText(id);
   if (!itemId) {
     throw new Error("Menu item id is required.");
   }
-  await deleteDoc(doc(db, "menuItems", itemId));
+  await deleteDoc(orgDocRef("menuItems", itemId, resolvedOrgId));
   return { ok: true, id: itemId };
 }
 
 export async function createCategory(data = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(data.organizationId, "createCategory");
   const payload = {
     eventTypeId: asText(data.eventTypeId),
     name: asText(data.name, "New Category"),
@@ -185,7 +270,7 @@ export async function createCategory(data = {}) {
   if (!payload.eventTypeId) {
     throw new Error("eventTypeId is required.");
   }
-  const ref = await addDoc(collection(db, "menuCategories"), payload);
+  const ref = await addDoc(orgCollectionRef("menuCategories", resolvedOrgId), payload);
   return {
     id: ref.id,
     ...payload
@@ -194,6 +279,7 @@ export async function createCategory(data = {}) {
 
 export async function updateCategory(id, data = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(data.organizationId, "updateCategory");
   const categoryId = asText(id);
   if (!categoryId) {
     throw new Error("Category id is required.");
@@ -208,7 +294,7 @@ export async function updateCategory(id, data = {}) {
   }
   payload.updatedAtISO = new Date().toISOString();
 
-  await updateDoc(doc(db, "menuCategories", categoryId), payload);
+  await updateDoc(orgDocRef("menuCategories", categoryId, resolvedOrgId), payload);
   return {
     id: categoryId,
     ...payload
@@ -217,11 +303,12 @@ export async function updateCategory(id, data = {}) {
 
 export async function createEventType(data = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(data.organizationId, "createEventType");
   const payload = {
     name: asText(data.name, "New Event Type"),
     createdAtISO: new Date().toISOString()
   };
-  const ref = await addDoc(collection(db, "eventTypes"), payload);
+  const ref = await addDoc(orgCollectionRef("eventTypes", resolvedOrgId), payload);
   return {
     id: ref.id,
     ...payload
@@ -230,6 +317,7 @@ export async function createEventType(data = {}) {
 
 export async function updateEventType(id, data = {}) {
   ensureReady();
+  const resolvedOrgId = requireOrganizationId(data.organizationId, "updateEventType");
   const eventTypeId = asText(id);
   if (!eventTypeId) {
     throw new Error("Event type id is required.");
@@ -241,7 +329,7 @@ export async function updateEventType(id, data = {}) {
   }
   payload.updatedAtISO = new Date().toISOString();
 
-  await updateDoc(doc(db, "eventTypes", eventTypeId), payload);
+  await updateDoc(orgDocRef("eventTypes", eventTypeId, resolvedOrgId), payload);
   return {
     id: eventTypeId,
     ...payload

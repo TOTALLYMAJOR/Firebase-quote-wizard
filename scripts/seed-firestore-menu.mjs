@@ -2,7 +2,14 @@
 
 import { createRequire } from "node:module";
 import process from "node:process";
-import { DEFAULT_EVENT_TEMPLATES, DEFAULT_MENU_SECTIONS } from "../src/data/mockCatalog.js";
+import {
+  DEFAULT_ADDONS,
+  DEFAULT_EVENT_TEMPLATES,
+  DEFAULT_MENU_SECTIONS,
+  DEFAULT_PACKAGES,
+  DEFAULT_RENTALS,
+  DEFAULT_SETTINGS
+} from "../src/data/mockCatalog.js";
 
 const require = createRequire(import.meta.url);
 const admin = require("../functions/node_modules/firebase-admin");
@@ -125,9 +132,65 @@ function buildSeedDocs(nowISO) {
   return { eventTypeDocs, categoryDocs, itemDocs };
 }
 
+function buildCatalogDocs(nowISO) {
+  const packageDocs = DEFAULT_PACKAGES.map((item) => ({
+    id: slugify(item?.id || item?.name, "package"),
+    data: {
+      name: String(item?.name || "").trim() || "Package",
+      ppp: Number(item?.ppp || 0),
+      source: "seed-script",
+      createdAtISO: nowISO
+    }
+  }));
+
+  const addonDocs = DEFAULT_ADDONS.map((item) => {
+    const pricingType = normalizePricingType(item?.pricingType || item?.type || "per_person", "per_person");
+    return {
+      id: slugify(item?.id || item?.name, "addon"),
+      data: {
+        name: String(item?.name || "").trim() || "Addon",
+        pricingType,
+        type: pricingType,
+        price: Number(item?.price || 0),
+        active: item?.active !== false,
+        source: "seed-script",
+        createdAtISO: nowISO
+      }
+    };
+  });
+
+  const rentalDocs = DEFAULT_RENTALS.map((item) => {
+    const pricingType = normalizePricingType(item?.pricingType || item?.type || "per_item", "per_item");
+    return {
+      id: slugify(item?.id || item?.name, "rental"),
+      data: {
+        name: String(item?.name || "").trim() || "Rental",
+        price: Number(item?.price || 0),
+        qtyPerGuests: Number(item?.qtyPerGuests || 1),
+        pricingType,
+        type: pricingType,
+        active: item?.active !== false,
+        source: "seed-script",
+        createdAtISO: nowISO
+      }
+    };
+  });
+
+  const settingsData = {
+    ...DEFAULT_SETTINGS,
+    source: "seed-script",
+    createdAtISO: nowISO,
+    updatedAtISO: nowISO
+  };
+
+  return { packageDocs, addonDocs, rentalDocs, settingsData };
+}
+
 function parseArgs(argv) {
   const args = Array.isArray(argv) ? argv : [];
   let projectId = "";
+  let organizationId = "";
+  let organizationProvided = false;
   let dryRun = false;
 
   for (let i = 0; i < args.length; i += 1) {
@@ -139,6 +202,12 @@ function parseArgs(argv) {
     if (token === "--project") {
       projectId = String(args[i + 1] || "").trim();
       i += 1;
+      continue;
+    }
+    if (token === "--organization" || token === "--org") {
+      organizationId = slugify(args[i + 1], "default-org");
+      organizationProvided = true;
+      i += 1;
     }
   }
 
@@ -146,15 +215,17 @@ function parseArgs(argv) {
     projectId:
       projectId ||
       String(process.env.GCLOUD_PROJECT || process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || "").trim(),
+    organizationId,
+    organizationProvided,
     dryRun
   };
 }
 
-async function fetchMissingDocs(db, collectionName, docs) {
+async function fetchMissingDocs(db, collectionPath, docs) {
   if (!docs.length) {
     return { missing: [], existingCount: 0 };
   }
-  const refs = docs.map((entry) => db.collection(collectionName).doc(entry.id));
+  const refs = docs.map((entry) => db.collection(collectionPath).doc(entry.id));
   const snapshots = await db.getAll(...refs);
   const missing = [];
   let existingCount = 0;
@@ -170,13 +241,13 @@ async function fetchMissingDocs(db, collectionName, docs) {
   return { missing, existingCount };
 }
 
-async function createDocsInBatches(db, collectionName, docs, { merge = false } = {}) {
+async function createDocsInBatches(db, collectionPath, docs, { merge = false } = {}) {
   let created = 0;
   for (let i = 0; i < docs.length; i += MAX_BATCH_WRITES) {
     const chunk = docs.slice(i, i + MAX_BATCH_WRITES);
     const batch = db.batch();
     chunk.forEach((entry) => {
-      batch.set(db.collection(collectionName).doc(entry.id), entry.data, { merge });
+      batch.set(db.collection(collectionPath).doc(entry.id), entry.data, { merge });
     });
     await batch.commit();
     created += chunk.length;
@@ -184,8 +255,8 @@ async function createDocsInBatches(db, collectionName, docs, { merge = false } =
   return created;
 }
 
-async function seedCollection({ db, collectionName, docs, dryRun }) {
-  const { missing, existingCount } = await fetchMissingDocs(db, collectionName, docs);
+async function seedCollection({ db, collectionPath, docs, dryRun }) {
+  const { missing, existingCount } = await fetchMissingDocs(db, collectionPath, docs);
   if (dryRun || missing.length === 0) {
     return {
       total: docs.length,
@@ -197,7 +268,7 @@ async function seedCollection({ db, collectionName, docs, dryRun }) {
     };
   }
 
-  const created = await createDocsInBatches(db, collectionName, missing);
+  const created = await createDocsInBatches(db, collectionPath, missing);
   return {
     total: docs.length,
     existing: existingCount,
@@ -214,7 +285,7 @@ function normalizePricingType(value, fallback = "per_event") {
   return fallback;
 }
 
-async function seedMenuItemsCollection({ db, docs, dryRun }) {
+async function seedMenuItemsCollection({ db, collectionPath, docs, dryRun }) {
   if (!docs.length) {
     return {
       total: 0,
@@ -226,7 +297,7 @@ async function seedMenuItemsCollection({ db, docs, dryRun }) {
     };
   }
 
-  const refs = docs.map((entry) => db.collection("menuItems").doc(entry.id));
+  const refs = docs.map((entry) => db.collection(collectionPath).doc(entry.id));
   const snapshots = await db.getAll(...refs);
   const missing = [];
   const backfill = [];
@@ -266,8 +337,8 @@ async function seedMenuItemsCollection({ db, docs, dryRun }) {
     };
   }
 
-  const created = missing.length ? await createDocsInBatches(db, "menuItems", missing) : 0;
-  const backfilled = backfill.length ? await createDocsInBatches(db, "menuItems", backfill, { merge: true }) : 0;
+  const created = missing.length ? await createDocsInBatches(db, collectionPath, missing) : 0;
+  const backfilled = backfill.length ? await createDocsInBatches(db, collectionPath, backfill, { merge: true }) : 0;
 
   return {
     total: docs.length,
@@ -279,8 +350,39 @@ async function seedMenuItemsCollection({ db, docs, dryRun }) {
   };
 }
 
+async function seedSettingsDoc({ db, docPath, data, dryRun }) {
+  const ref = db.doc(docPath);
+  const snapshot = await ref.get();
+  if (snapshot.exists) {
+    return {
+      total: 1,
+      existing: 1,
+      created: 0,
+      wouldCreate: 0
+    };
+  }
+  if (dryRun) {
+    return {
+      total: 1,
+      existing: 0,
+      created: 0,
+      wouldCreate: 1
+    };
+  }
+  await ref.set(data);
+  return {
+    total: 1,
+    existing: 0,
+    created: 1,
+    wouldCreate: 0
+  };
+}
+
 async function main() {
-  const { projectId, dryRun } = parseArgs(process.argv.slice(2));
+  const { projectId, organizationId, organizationProvided, dryRun } = parseArgs(process.argv.slice(2));
+  if (!organizationProvided || !organizationId) {
+    throw new Error("Missing organization id. Run with --organization <orgId>.");
+  }
 
   if (!admin.apps.length) {
     const options = projectId ? { projectId } : {};
@@ -289,17 +391,39 @@ async function main() {
 
   const db = admin.firestore();
   const nowISO = new Date().toISOString();
+  const basePath = `organizations/${organizationId}`;
+  const paths = {
+    eventTypes: `${basePath}/eventTypes`,
+    menuCategories: `${basePath}/menuCategories`,
+    menuItems: `${basePath}/menuItems`,
+    catalogPackages: `${basePath}/catalogPackages`,
+    catalogAddons: `${basePath}/catalogAddons`,
+    catalogRentals: `${basePath}/catalogRentals`,
+    settingsConfigDoc: `${basePath}/settings/config`
+  };
+  if (!dryRun) {
+    await db.doc(`organizations/${organizationId}`).set({
+      updatedAtISO: nowISO,
+      seededByScriptAtISO: nowISO
+    }, { merge: true });
+  }
   const { eventTypeDocs, categoryDocs, itemDocs } = buildSeedDocs(nowISO);
+  const { packageDocs, addonDocs, rentalDocs, settingsData } = buildCatalogDocs(nowISO);
 
-  const [eventTypeSummary, categorySummary, itemSummary] = await Promise.all([
-    seedCollection({ db, collectionName: "eventTypes", docs: eventTypeDocs, dryRun }),
-    seedCollection({ db, collectionName: "menuCategories", docs: categoryDocs, dryRun }),
-    seedMenuItemsCollection({ db, docs: itemDocs, dryRun })
+  const [eventTypeSummary, categorySummary, itemSummary, packageSummary, addonSummary, rentalSummary, settingsSummary] = await Promise.all([
+    seedCollection({ db, collectionPath: paths.eventTypes, docs: eventTypeDocs, dryRun }),
+    seedCollection({ db, collectionPath: paths.menuCategories, docs: categoryDocs, dryRun }),
+    seedMenuItemsCollection({ db, collectionPath: paths.menuItems, docs: itemDocs, dryRun }),
+    seedCollection({ db, collectionPath: paths.catalogPackages, docs: packageDocs, dryRun }),
+    seedCollection({ db, collectionPath: paths.catalogAddons, docs: addonDocs, dryRun }),
+    seedCollection({ db, collectionPath: paths.catalogRentals, docs: rentalDocs, dryRun }),
+    seedSettingsDoc({ db, docPath: paths.settingsConfigDoc, data: settingsData, dryRun })
   ]);
 
   const label = dryRun ? "Dry run completed." : "Seed completed.";
   console.log(label);
   console.log(`Project: ${projectId || "(auto-detected)"}`);
+  console.log(`Organization: ${organizationId}`);
   console.log(
     `eventTypes -> total:${eventTypeSummary.total} existing:${eventTypeSummary.existing} created:${eventTypeSummary.created}`
     + (dryRun ? ` wouldCreate:${eventTypeSummary.wouldCreate}` : "")
@@ -313,6 +437,22 @@ async function main() {
     + `${dryRun ? ` wouldCreate:${itemSummary.wouldCreate}` : ""}`
     + ` backfilled:${itemSummary.backfilled}`
     + `${dryRun ? ` wouldBackfill:${itemSummary.wouldBackfill}` : ""}`
+  );
+  console.log(
+    `catalogPackages -> total:${packageSummary.total} existing:${packageSummary.existing} created:${packageSummary.created}`
+    + (dryRun ? ` wouldCreate:${packageSummary.wouldCreate}` : "")
+  );
+  console.log(
+    `catalogAddons -> total:${addonSummary.total} existing:${addonSummary.existing} created:${addonSummary.created}`
+    + (dryRun ? ` wouldCreate:${addonSummary.wouldCreate}` : "")
+  );
+  console.log(
+    `catalogRentals -> total:${rentalSummary.total} existing:${rentalSummary.existing} created:${rentalSummary.created}`
+    + (dryRun ? ` wouldCreate:${rentalSummary.wouldCreate}` : "")
+  );
+  console.log(
+    `settings/config -> total:${settingsSummary.total} existing:${settingsSummary.existing} created:${settingsSummary.created}`
+    + (dryRun ? ` wouldCreate:${settingsSummary.wouldCreate}` : "")
   );
 }
 

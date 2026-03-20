@@ -1,6 +1,11 @@
 # Dev Tasks
 
-Last updated: March 17, 2026
+Last updated: March 19, 2026
+
+## P0 - Deferred Architecture (Come Back To This)
+- Implement multi-tenant organization scoping across app + Firestore + Cloud Functions (parked initiative).
+- Use the phased execution plan in [docs/MULTI_TENANT_ORG_SCOPING_PLAN.md](docs/MULTI_TENANT_ORG_SCOPING_PLAN.md).
+- Target migration style: additive/dual-read transition first, then deprecate global writes.
 
 ## P0 - Security and Reliability
 - Re-establish staging sign-off workflow and release checklist enforcement before broadening `main` merge velocity.
