@@ -1,15 +1,16 @@
 # Dev Tasks
 
-Last updated: March 19, 2026
+Last updated: March 20, 2026
 
-## P0 - Deferred Architecture (Come Back To This)
-- Implement multi-tenant organization scoping across app + Firestore + Cloud Functions (parked initiative).
-- Use the phased execution plan in [docs/MULTI_TENANT_ORG_SCOPING_PLAN.md](docs/MULTI_TENANT_ORG_SCOPING_PLAN.md).
-- Target migration style: additive/dual-read transition first, then deprecate global writes.
+## P0 - Multi-Tenant Hardening (Post Rollout)
+- Run focused emulator tests for cross-org denial on org-scoped quotes/catalog writes.
+- Execute migration script in production with audited dry-run/output capture.
+- Remove legacy global fallback (`VITE_ENABLE_LEGACY_GLOBAL_FALLBACK`) after migration verification.
+- Remove remaining legacy global write paths once fallback retirement is complete.
 
 ## P0 - Security and Reliability
 - Re-establish staging sign-off workflow and release checklist enforcement before broadening `main` merge velocity.
-- Tighten Firestore rules for production-grade least-privilege access.
+- Add explicit portal token expiry/rotation policy and enforcement path.
 - Add targeted E2E scenarios for booking conversion/confirmation edge cases.
 - Add automated secret scanning for non-markdown assets (scripts/config) in CI.
 

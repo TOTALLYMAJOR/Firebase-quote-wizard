@@ -1,7 +1,13 @@
-# Multi-Tenant Organization Scoping Plan (Deferred)
+# Multi-Tenant Organization Scoping Plan
 
-Last updated: March 19, 2026  
-Status: Parked for return implementation
+Last updated: March 20, 2026  
+Status: Implemented (Phases 1-8 complete; additive migration mode active)
+
+## Implementation Status
+- Completed in phased rollout (Phase 1 through Phase 8).
+- Org-scoped paths are active for menu, catalog, quotes, versions, and primary function workflows.
+- Firestore rules and indexes were deployed to `tonicatering` on March 20, 2026.
+- Legacy fallback remains intentionally enabled during additive migration and should be retired after full data migration and cross-org denial verification.
 
 ## Objective
 Transform the app from single-tenant to organization-scoped multi-tenant architecture using org subcollections and additive migration.
@@ -47,20 +53,20 @@ organizations/{orgId}
 - `src/main.jsx`
 
 ## Required Changes
-- Create `organizations` root collection and org profile schema.
-- Add `organizationId` to `userRoles/{uid}`.
-- Implement org bootstrap via callable or transaction-safe privileged path.
-- Add `OrganizationContext` with org readiness state.
-- Refactor menu/catalog reads+writes to org paths.
-- Refactor quote/history/version operations to org paths.
-- Store quote versions at `quotes/{quoteId}/versions/{versionId}`.
-- Update Firestore rules to enforce same-org access.
-- Replace generic ownership checks with tokenized or explicitly modeled customer portal access.
-- Update seed script to require `--organization <orgId>` and seed org defaults.
-- Add migration script to copy legacy global data into a default org.
-- Add temporary dual-read fallback behind a feature flag.
-- Add only indexes required by org-scoped query paths.
-- Update functions to read/write org-scoped collections.
+- [x] Create `organizations` root collection and org profile schema.
+- [x] Add `organizationId` to `userRoles/{uid}`.
+- [x] Implement org bootstrap via callable or transaction-safe privileged path.
+- [x] Add `OrganizationContext` with org readiness state.
+- [x] Refactor menu/catalog reads+writes to org paths.
+- [x] Refactor quote/history/version operations to org paths.
+- [x] Store quote versions at `quotes/{quoteId}/versions/{versionId}`.
+- [x] Update Firestore rules to enforce same-org access.
+- [x] Replace generic ownership checks with tokenized or explicitly modeled customer portal access.
+- [x] Update seed script to require `--organization <orgId>` and seed org defaults.
+- [x] Add migration script to copy legacy global data into a default org.
+- [x] Add temporary dual-read fallback behind a feature flag.
+- [x] Add only indexes required by org-scoped query paths.
+- [x] Update functions to read/write org-scoped collections.
 
 ## Constraints
 - No breaking change to current quote-creation flow during migration.
