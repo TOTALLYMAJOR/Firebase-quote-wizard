@@ -31,6 +31,9 @@ const QuoteHistoryModal = lazy(() => import("./components/QuoteHistoryModal"));
 const ReportingDashboardModal = lazy(() => import("./components/ReportingDashboardModal"));
 
 const STEP_LABELS = ["Event Basics", "Menu Selection", "Add-ons / Rentals", "Pricing Summary", "Save / Submit"];
+const E2E_ALLOW_NON_AUTHORITATIVE_PRICING = ["1", "true", "yes", "on"].includes(
+  String(import.meta.env.VITE_E2E_ALLOW_NON_AUTHORITATIVE_PRICING || "").trim().toLowerCase()
+);
 
 function readPortalKeyFromUrl() {
   if (typeof window === "undefined") return "";
@@ -670,7 +673,9 @@ export default function App() {
         setAvailabilityNotice("");
       }
 
-      const requiresAuthoritativePricing = String(catalog.source || "").trim().toLowerCase().startsWith("firebase");
+      const requiresAuthoritativePricing =
+        !E2E_ALLOW_NON_AUTHORITATIVE_PRICING
+        && String(catalog.source || "").trim().toLowerCase().startsWith("firebase");
       const pricingInput = {
         organizationId: authSession.organizationId || "",
         quoteId: isEditingQuote ? editingQuote.id : "",
