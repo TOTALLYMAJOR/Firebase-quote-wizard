@@ -79,12 +79,29 @@ Optional:
 ```bash
 npm run check:env
 npm run test:unit
+npm run test:rules:firestore
 npm run test:e2e
+npm run test:e2e:firebase
 npm run build
 npm run check:docs:governance
 npm run check:perf:bundle
 npm run check:perf:cwv
 ```
+
+## E2E Test Lanes
+- `npm run test:e2e`
+  - Default browser smoke lane.
+  - Uses `scripts/run-playwright.sh`, which auto-prepares Linux Playwright runtime libs under `.cache/playwright-libs` when needed.
+- `npm run test:e2e:firebase`
+  - Firebase emulator browser lane for real Auth + Firestore rules coverage.
+  - Starts `auth` + `firestore` emulators, seeds org/menu/userRole fixtures, signs in via UI, and validates quote save path.
+  - Auto-prepares local JRE under `.cache/tools/jre21` when system Java is unavailable.
+
+Optional env vars for Firebase emulator lane:
+- `E2E_FIREBASE_PROJECT_ID` (default: `demo-e2e`)
+- `E2E_FIREBASE_ORG_ID` (default: `e2e-org`)
+- `E2E_FIREBASE_EMAIL` (default: `e2e-admin@local.test`)
+- `E2E_FIREBASE_PASSWORD` (default: `Passw0rd!`)
 
 ## Firestore Menu Seed
 Populate baseline dynamic menu collections (`eventTypes`, `menuCategories`, `menuItems`) without touching quotes or pricing.

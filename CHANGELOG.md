@@ -8,6 +8,14 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ### Added
 
+- Firebase emulator browser smoke lane (`npm run test:e2e:firebase`) with seeded auth/org fixtures for real Auth + Firestore rules validation.
+- Runtime helper scripts for local test reliability:
+  - `scripts/run-playwright.sh`
+  - `scripts/ensure-playwright-linux-libs.sh`
+  - `scripts/ensure-local-jre.sh`
+  - `scripts/run-firebase-e2e.mjs`
+  - `scripts/run-firebase-e2e-inner.sh`
+  - `scripts/seed-e2e-emulator-user.mjs`
 - VS Code devcontainer config (`.devcontainer/devcontainer.json`) for isolated development using the existing Docker Compose `web-dev` service.
 - End-user operations guide for staff/admin workflows (`docs/USER_MANUAL.md`).
 - Global event-type context provider for cross-surface event-type synchronization (wizard + admin).
@@ -25,6 +33,8 @@ This changelog is backfilled from git history and will be maintained going forwa
 
 ### Changed
 
+- `test:e2e` and `test:e2e:headed` now run through a Playwright wrapper that auto-resolves Linux shared-library dependencies.
+- Added Firebase client emulator wiring (`auth` + `firestore` + optional functions) for deterministic emulator-backed browser testing.
 - Expanded wizard to a 5-step flow (`Event Basics`, `Menu Selection`, `Add-ons / Rentals`, `Pricing Summary`, `Save / Submit`) with sticky live summary and toast feedback.
 - Added quantity-aware `per_item` pricing support across menu/add-ons/rentals and quote snapshot persistence (`pricingType`, `quantity`, active-aware filtering).
 - Updated Admin Catalog UX to tabbed sections (Packages/Addons/Rentals/Menu/Pricing) with inline menu-item save on blur/Enter and active/pricingType editing.

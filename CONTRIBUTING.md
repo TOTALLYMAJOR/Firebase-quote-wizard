@@ -1,6 +1,6 @@
 # Contributing to Firebase Quote Wizard
 
-Last updated: March 17, 2026
+Last updated: March 21, 2026
 
 ## Setup
 1. Use Node.js 20+.
@@ -34,12 +34,22 @@ Run before merge:
 ```bash
 npm run check:env
 npm run test:unit
+npm run test:rules:firestore
 npm run test:e2e
 npm run build
 npm run check:docs:governance
 npm run check:perf:bundle
 npm run check:perf:cwv
 ```
+
+When auth/rules/Firestore access paths are changed, also run:
+```bash
+npm run test:e2e:firebase
+```
+
+Notes:
+- `test:e2e` uses the Playwright wrapper (`scripts/run-playwright.sh`) and auto-prepares Linux runtime libs in `.cache/playwright-libs`.
+- `test:e2e:firebase` runs browser flow against Firebase emulators with seeded org/user fixtures.
 
 ## Documentation Discipline
 Canonical ownership is defined in `docs/DOC_SYSTEM.md`.
