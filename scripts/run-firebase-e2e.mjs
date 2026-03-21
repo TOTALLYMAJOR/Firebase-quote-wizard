@@ -10,6 +10,14 @@ const projectId = process.env.E2E_FIREBASE_PROJECT_ID || "demo-e2e";
 const orgId = process.env.E2E_FIREBASE_ORG_ID || "e2e-org";
 const email = process.env.E2E_FIREBASE_EMAIL || "e2e-admin@local.test";
 const password = process.env.E2E_FIREBASE_PASSWORD || "Passw0rd!";
+const includeFunctions = ["1", "true", "yes", "on"].includes(
+  String(process.env.E2E_INCLUDE_FUNCTIONS || "").trim().toLowerCase()
+);
+const playwrightConfig = process.env.E2E_PLAYWRIGHT_CONFIG || "playwright.firebase.config.js";
+const playwrightSpec = process.env.E2E_PLAYWRIGHT_SPEC || "e2e/firebase-auth-rules.smoke.spec.js";
+const allowNonAuthoritativePricing = ["1", "true", "yes", "on"].includes(
+  String(process.env.E2E_ALLOW_NON_AUTHORITATIVE_PRICING || "true").trim().toLowerCase()
+);
 
 function run(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, {
@@ -25,7 +33,7 @@ function run(cmd, args, options = {}) {
 run("bash", ["./scripts/ensure-local-jre.sh"]);
 run("bash", [
   "-lc",
-  "for port in 9099 8080 4000 4400 4500; do fuser -k \"${port}/tcp\" >/dev/null 2>&1 || true; done"
+  `for port in 9099 8080 ${includeFunctions ? "5001 " : ""}4000 4400 4500; do fuser -k "$port/tcp" >/dev/null 2>&1 || true; done`
 ]);
 
 const localJre = path.join(rootDir, ".cache", "tools", "jre21");
@@ -35,7 +43,13 @@ const env = {
   E2E_FIREBASE_ORG_ID: orgId,
   E2E_FIREBASE_EMAIL: email,
   E2E_FIREBASE_PASSWORD: password,
-  FUNCTIONS_DISCOVERY_TIMEOUT: process.env.FUNCTIONS_DISCOVERY_TIMEOUT || "30000"
+  E2E_PLAYWRIGHT_CONFIG: playwrightConfig,
+  E2E_PLAYWRIGHT_SPEC: playwrightSpec,
+  E2E_ALLOW_NON_AUTHORITATIVE_PRICING: allowNonAuthoritativePricing ? "true" : "false",
+  FUNCTIONS_DISCOVERY_TIMEOUT: process.env.FUNCTIONS_DISCOVERY_TIMEOUT || "30000",
+  TMPDIR: process.env.TMPDIR || "/tmp",
+  TMP: process.env.TMP || "/tmp",
+  TEMP: process.env.TEMP || "/tmp"
 };
 
 if (!process.env.JAVA_HOME && fs.existsSync(path.join(localJre, "bin", "java"))) {
@@ -51,7 +65,7 @@ run(
     "--project",
     projectId,
     "--only",
-    "auth,firestore",
+    includeFunctions ? "auth,firestore,functions" : "auth,firestore",
     "bash ./scripts/run-firebase-e2e-inner.sh"
   ],
   { env }

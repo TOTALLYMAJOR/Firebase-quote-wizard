@@ -13,6 +13,7 @@
     "test:e2e": "bash ./scripts/run-playwright.sh test",
     "test:e2e:headed": "bash ./scripts/run-playwright.sh test --headed",
     "test:e2e:firebase": "node ./scripts/run-firebase-e2e.mjs",
+    "test:e2e:firebase:authoritative": "node ./scripts/run-firebase-e2e-authoritative.mjs",
     "check:env": "node ./scripts/check-env.mjs",
     "seed:menu:firestore": "node ./scripts/seed-firestore-menu.mjs",
     "migrate:multi-tenant": "node ./scripts/migrate-to-multi-tenant.mjs",

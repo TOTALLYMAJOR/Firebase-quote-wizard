@@ -9,11 +9,13 @@ This changelog is backfilled from git history and will be maintained going forwa
 ### Added
 
 - Firebase emulator browser smoke lane (`npm run test:e2e:firebase`) with seeded auth/org fixtures for real Auth + Firestore rules validation.
+- Firebase authoritative browser smoke lane (`npm run test:e2e:firebase:authoritative`) that starts Functions emulator and validates authoritative pricing callable behavior in save flow.
 - Runtime helper scripts for local test reliability:
   - `scripts/run-playwright.sh`
   - `scripts/ensure-playwright-linux-libs.sh`
   - `scripts/ensure-local-jre.sh`
   - `scripts/run-firebase-e2e.mjs`
+  - `scripts/run-firebase-e2e-authoritative.mjs`
   - `scripts/run-firebase-e2e-inner.sh`
   - `scripts/seed-e2e-emulator-user.mjs`
 - VS Code devcontainer config (`.devcontainer/devcontainer.json`) for isolated development using the existing Docker Compose `web-dev` service.
@@ -34,6 +36,7 @@ This changelog is backfilled from git history and will be maintained going forwa
 ### Changed
 
 - CI quality workflow now runs both Playwright lanes: standard smoke and Firebase emulator smoke (`test:e2e:firebase`).
+- CI quality workflow now also runs Firebase authoritative smoke (`test:e2e:firebase:authoritative`).
 - `test:e2e` and `test:e2e:headed` now run through a Playwright wrapper that auto-resolves Linux shared-library dependencies.
 - Added Firebase client emulator wiring (`auth` + `firestore` + optional functions) for deterministic emulator-backed browser testing.
 - Expanded wizard to a 5-step flow (`Event Basics`, `Menu Selection`, `Add-ons / Rentals`, `Pricing Summary`, `Save / Submit`) with sticky live summary and toast feedback.

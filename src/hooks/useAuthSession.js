@@ -17,6 +17,10 @@ const E2E_ROLE = ROLE_VALUES.has(String(import.meta.env.VITE_E2E_ROLE || "").tri
 const E2E_EMAIL = String(import.meta.env.VITE_E2E_EMAIL || "e2e-admin@local.test").trim().toLowerCase();
 const E2E_UID = String(import.meta.env.VITE_E2E_UID || "e2e-admin").trim() || "e2e-admin";
 const ORG_BOOTSTRAP_CALLABLE = "ensureOrganizationBootstrap";
+const ORG_BOOTSTRAP_TIMEOUT_MS = Math.max(
+  1000,
+  Number(import.meta.env.VITE_ORG_BOOTSTRAP_TIMEOUT_MS || 12000) || 12000
+);
 const BOOTSTRAP_ADMINS = new Set(
   [
     "tonitastefultouch@yahoo.com",
@@ -39,6 +43,20 @@ function normalizeRole(value) {
 function generateOrganizationId() {
   if (!db) return "";
   return doc(collection(db, "organizations")).id;
+}
+
+function withTimeout(promise, timeoutMs, label = "operation") {
+  let timer = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms.`));
+      }, timeoutMs);
+    })
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 async function loadOrCreateRoleLegacy(user) {
@@ -137,7 +155,7 @@ async function bootstrapRoleWithCallable(user) {
     throw new Error("Callable organization bootstrap is unavailable.");
   }
   const call = httpsCallable(cloudFunctions, ORG_BOOTSTRAP_CALLABLE);
-  const result = await call({});
+  const result = await withTimeout(call({}), ORG_BOOTSTRAP_TIMEOUT_MS, "organization bootstrap callable");
   const data = result?.data || {};
   return {
     role: normalizeRole(data.role),

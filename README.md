@@ -82,6 +82,7 @@ npm run test:unit
 npm run test:rules:firestore
 npm run test:e2e
 npm run test:e2e:firebase
+npm run test:e2e:firebase:authoritative
 npm run build
 npm run check:docs:governance
 npm run check:perf:bundle
@@ -96,6 +97,9 @@ npm run check:perf:cwv
   - Firebase emulator browser lane for real Auth + Firestore rules coverage.
   - Starts `auth` + `firestore` emulators, seeds org/menu/userRole fixtures, signs in via UI, and validates quote save path.
   - Auto-prepares local JRE under `.cache/tools/jre21` when system Java is unavailable.
+- `npm run test:e2e:firebase:authoritative`
+  - Firebase emulator browser lane that also starts Functions emulator.
+  - Requires authoritative pricing callable success in the quote save path (no client-only pricing fallback).
 
 Optional env vars for Firebase emulator lane:
 - `E2E_FIREBASE_PROJECT_ID` (default: `demo-e2e`)
