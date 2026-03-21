@@ -50,6 +50,7 @@ npm run test:e2e:firebase
 Notes:
 - `test:e2e` uses the Playwright wrapper (`scripts/run-playwright.sh`) and auto-prepares Linux runtime libs in `.cache/playwright-libs`.
 - `test:e2e:firebase` runs browser flow against Firebase emulators with seeded org/user fixtures.
+- CI (`.github/workflows/ci-quality.yml`) runs both Playwright lanes: default smoke and Firebase emulator smoke.
 
 ## Documentation Discipline
 Canonical ownership is defined in `docs/DOC_SYSTEM.md`.
