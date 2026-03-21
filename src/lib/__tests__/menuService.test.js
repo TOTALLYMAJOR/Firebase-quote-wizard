@@ -19,8 +19,14 @@ import {
 } from "../menuService";
 
 describe("menuService fallback behavior", () => {
-  test("returns empty lists when firebase is unavailable", async () => {
-    await expect(getEventTypes()).resolves.toEqual([]);
+  test("returns local event type fallbacks when firebase is unavailable", async () => {
+    await expect(getEventTypes()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "birthday" }),
+        expect.objectContaining({ id: "church" }),
+        expect.objectContaining({ id: "corporate" })
+      ])
+    );
     await expect(getMenuCategories("wedding")).resolves.toEqual([]);
     await expect(getMenuItems("wedding")).resolves.toEqual([]);
   });

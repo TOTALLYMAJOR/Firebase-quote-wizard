@@ -15,6 +15,25 @@ import {
   getOrganizationSubDocRef,
   normalizeOrganizationId
 } from "./organizationService";
+import { DEFAULT_SETTINGS } from "../data/mockCatalog";
+
+const LOCAL_EVENT_TYPES = (() => {
+  const templates = Array.isArray(DEFAULT_SETTINGS?.eventTemplates)
+    ? DEFAULT_SETTINGS.eventTemplates
+    : [];
+  const seen = new Set();
+  const items = [];
+  templates.forEach((template) => {
+    const id = asText(template?.id);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    items.push({
+      id,
+      name: asText(template?.name, id)
+    });
+  });
+  return sortByName(items);
+})();
 
 function ensureReady() {
   if (!firebaseReady || !db) {
@@ -76,7 +95,7 @@ function orgDocRef(collectionName, docId, organizationId) {
 }
 
 export async function getEventTypes({ organizationId = "" } = {}) {
-  if (!firebaseReady || !db) return [];
+  if (!firebaseReady || !db) return [...LOCAL_EVENT_TYPES];
   const resolvedOrgId = resolveScopedOrganizationId(organizationId);
   const mapEventType = (item) => ({
     ...item,

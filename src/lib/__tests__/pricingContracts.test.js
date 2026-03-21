@@ -46,7 +46,9 @@ describe("pricingContracts", () => {
       settings: {
         serviceFeePct: 0.18,
         taxRate: 0.1,
-        depositPct: 0.3
+        depositPct: 0.3,
+        pricingSettingsVersion: 4,
+        pricingSettingsUpdatedAtISO: "2026-03-20T00:00:00.000Z"
       }
     };
 
@@ -59,6 +61,8 @@ describe("pricingContracts", () => {
     expect(first.selection.rentals[0].pricingMode).toBe("per_item");
     expect(first.selection.menuItems[0].pricingMode).toBe("per_event");
     expect(first.actor.email).toBe("staff@example.com");
+    expect(first.settings.pricingSettingsVersion).toBe(4);
+    expect(first.settings.pricingSettingsUpdatedAtISO).toBe("2026-03-20T00:00:00.000Z");
   });
 
   test("builds normalized client-preview pricing snapshot from totals", () => {
@@ -111,7 +115,9 @@ describe("pricingContracts", () => {
       settings: {
         serviceFeePct: 0.18,
         taxRate: 0.1,
-        depositPct: 0.3
+        depositPct: 0.3,
+        pricingSettingsVersion: 7,
+        pricingSettingsUpdatedAtISO: "2026-03-20T00:00:00.000Z"
       },
       organizationId: "org-alpha",
       quoteId: "q-200",
@@ -132,6 +138,8 @@ describe("pricingContracts", () => {
     expect(snapshot.deposit.amount).toBeCloseTo(1604.772, 6);
     expect(snapshot.lineItems.length).toBeGreaterThanOrEqual(9);
     expect(snapshot.rulesSnapshot.reason).toBe("phase2-contract-test");
+    expect(snapshot.rulesSnapshot.pricingSettingsVersion).toBe(7);
+    expect(snapshot.rulesSnapshot.pricingSettingsUpdatedAtISO).toBe("2026-03-20T00:00:00.000Z");
   });
 
   test("derives normalized snapshot for legacy quote without pricing object", () => {
@@ -163,7 +171,9 @@ describe("pricingContracts", () => {
         seasonProfileId: "standard"
       },
       quoteMeta: {
-        depositPct: 0.3
+        depositPct: 0.3,
+        pricingSettingsVersion: 2,
+        pricingSettingsUpdatedAtISO: "2026-03-01T00:00:00.000Z"
       },
       totals: {
         base: 2200,
@@ -192,6 +202,8 @@ describe("pricingContracts", () => {
     expect(derived.deposit.amount).toBeCloseTo(legacyQuote.totals.deposit, 6);
     expect(derived.inputs.organizationId).toBe("org-alpha");
     expect(derived.tax.regionName).toBe("Local");
+    expect(derived.rulesSnapshot.pricingSettingsVersion).toBe(2);
+    expect(derived.rulesSnapshot.pricingSettingsUpdatedAtISO).toBe("2026-03-01T00:00:00.000Z");
   });
 
   test("normalizes output and version metadata defaults", () => {

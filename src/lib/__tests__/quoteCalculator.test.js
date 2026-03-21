@@ -7,6 +7,14 @@ import {
 } from "./fixtures/quoteCalculationFixtures";
 
 describe("calculateQuote fixtures", () => {
+  test("returns deterministic totals for identical inputs", () => {
+    const fixture = quoteCalculationFixtures[0];
+    const first = calculateQuote(fixture.form, quoteCalculationCatalog, quoteCalculationSettings);
+    const second = calculateQuote(fixture.form, quoteCalculationCatalog, quoteCalculationSettings);
+
+    expect(second).toEqual(first);
+  });
+
   test.each(quoteCalculationFixtures)("covers $id", ({ form, expected }) => {
     const totals = calculateQuote(form, quoteCalculationCatalog, quoteCalculationSettings);
 

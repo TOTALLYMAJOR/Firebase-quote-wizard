@@ -693,6 +693,21 @@ function ensureConvertibleQuote(quote) {
   throw new Error("Only accepted quotes can be converted to a contract.");
 }
 
+function quoteHasVersionPointers(quote = {}) {
+  const latestVersionNumber = toVersionNumber(quote.latestVersionNumber, 0);
+  const activeVersionId = String(quote.activeVersionId || "").trim();
+  return latestVersionNumber > 0 || Boolean(activeVersionId);
+}
+
+function withLegacyReadDefaults(quote) {
+  const hydrated = quote && typeof quote === "object" ? quote : {};
+  return {
+    ...hydrated,
+    pricing: resolveQuotePricingSnapshot(hydrated),
+    versionMeta: resolveQuoteVersionMetadata(hydrated)
+  };
+}
+
 async function readQuoteById(quoteId) {
   const id = String(quoteId || "").trim();
   if (!id) {
@@ -715,7 +730,7 @@ async function readQuoteById(quoteId) {
     }
     const data = quoteSnap.data();
     const createdAtISO = timestampToISO(data.createdAtISO || data.createdAt, nowISO);
-    return hydrateQuote(
+    return withLegacyReadDefaults(hydrateQuote(
       {
         id,
         ...data,
@@ -723,7 +738,7 @@ async function readQuoteById(quoteId) {
         createdAtISO
       },
       nowISO
-    );
+    ));
   }
 
   const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
@@ -731,7 +746,7 @@ async function readQuoteById(quoteId) {
   if (!match) {
     throw new Error("Quote not found.");
   }
-  return hydrateQuote(match, nowISO);
+  return withLegacyReadDefaults(hydrateQuote(match, nowISO));
 }
 
 export async function getQuoteById(quoteId) {
@@ -760,6 +775,106 @@ export function resolveQuoteVersionMetadata(quote) {
     ownerEmail: source.ownerEmail,
     reason: source.versionReason || source.reason || ""
   });
+}
+
+function buildLegacyReadFallbackVersion(quote, { reason = "legacy_read_fallback" } = {}) {
+  const versionMeta = resolveQuoteVersionMetadata(quote);
+  const versionId = String(quote?.activeVersionId || "").trim() || buildQuoteVersionId(versionMeta.versionNumber);
+  const snapshot = JSON.parse(JSON.stringify(quote || {}));
+  return {
+    id: versionId,
+    versionId,
+    quoteId: String(quote?.id || "").trim(),
+    organizationId: String(quote?.organizationId || "").trim(),
+    versionNumber: versionMeta.versionNumber,
+    createdAtISO: versionMeta.createdAt || quote?.updatedAtISO || quote?.createdAtISO || isoNow(),
+    reason: versionMeta.reason || reason,
+    createdBy: versionMeta.createdBy,
+    status: normalizeStatus(quote?.status),
+    pricing: resolveQuotePricingSnapshot(snapshot),
+    snapshot,
+    legacySynthetic: true
+  };
+}
+
+export async function ensureLegacyQuoteCompatibility(
+  quoteId,
+  { organizationId = undefined, persistVersion = true } = {}
+) {
+  const quote = await readQuoteById(quoteId);
+  const resolvedOrganizationId = resolveQuoteOrganizationId(
+    organizationId !== undefined ? organizationId : quote.organizationId
+  );
+  const hasPointers = quoteHasVersionPointers(quote);
+  const history = await getQuoteVersionHistory(quote.id, {
+    organizationId: resolvedOrganizationId
+  });
+
+  if (hasPointers || !persistVersion) {
+    return {
+      ok: true,
+      upgraded: false,
+      reason: hasPointers ? "already_versioned" : "persist_disabled",
+      activeVersionId: String(quote.activeVersionId || "").trim(),
+      latestVersionNumber: toVersionNumber(quote.latestVersionNumber, 0)
+    };
+  }
+
+  if (history.versions.length) {
+    const latest = history.versions[0] || {};
+    const latestVersionId = String(latest.versionId || latest.id || "").trim()
+      || buildQuoteVersionId(toVersionNumber(latest.versionNumber, 1));
+    const latestVersionMeta = normalizeVersionMetadata({
+      versionNumber: latest.versionNumber,
+      createdAt: latest.createdAtISO || latest.timestamp || quote.updatedAtISO || quote.createdAtISO || isoNow(),
+      createdBy: latest.createdBy,
+      ownerUid: quote.ownerUid,
+      ownerEmail: quote.ownerEmail,
+      reason: latest.reason || "legacy_existing_history"
+    });
+
+    if (firebaseReady) {
+      await updateDoc(quoteDocRef(quote.id, resolvedOrganizationId), {
+        activeVersionId: latestVersionId,
+        latestVersionNumber: latestVersionMeta.versionNumber,
+        versionMeta: latestVersionMeta
+      });
+    } else {
+      const existing = JSON.parse(localStorage.getItem(LOCAL_QUOTES_KEY) || "[]");
+      const next = existing.map((item) => {
+        if (item.id !== quote.id) return item;
+        return {
+          ...item,
+          activeVersionId: latestVersionId,
+          latestVersionNumber: latestVersionMeta.versionNumber,
+          versionMeta: latestVersionMeta
+        };
+      });
+      localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+    }
+
+    return {
+      ok: true,
+      upgraded: true,
+      reason: "attached_existing_history",
+      activeVersionId: latestVersionId,
+      latestVersionNumber: latestVersionMeta.versionNumber
+    };
+  }
+
+  const seeded = await saveQuoteVersion(quote.id, {
+    reason: "legacy_lazy_upgrade_baseline",
+    setActive: true,
+    organizationId: resolvedOrganizationId
+  });
+
+  return {
+    ok: true,
+    upgraded: true,
+    reason: "seeded_baseline",
+    activeVersionId: seeded.versionId,
+    latestVersionNumber: seeded.versionNumber
+  };
 }
 
 export async function saveQuoteVersion(
@@ -922,22 +1037,39 @@ export async function getQuoteVersionHistory(quoteId, { organizationId = undefin
 }
 
 export async function getActiveQuoteVersion(quoteId, { organizationId = undefined } = {}) {
-  const quote = await readQuoteById(quoteId);
-  const history = await getQuoteVersionHistory(quote.id, {
-    organizationId: organizationId !== undefined ? organizationId : quote.organizationId
+  let quote = await readQuoteById(quoteId);
+  const resolvedOrganizationId = resolveQuoteOrganizationId(
+    organizationId !== undefined ? organizationId : quote.organizationId
+  );
+  let history = await getQuoteVersionHistory(quote.id, {
+    organizationId: resolvedOrganizationId
   });
+  if (!history.versions.length && !quoteHasVersionPointers(quote)) {
+    const migration = await ensureLegacyQuoteCompatibility(quote.id, {
+      organizationId: resolvedOrganizationId,
+      persistVersion: true
+    });
+    if (migration.upgraded) {
+      quote = await readQuoteById(quote.id);
+      history = await getQuoteVersionHistory(quote.id, {
+        organizationId: resolvedOrganizationId
+      });
+    }
+  }
+  const fallbackVersion = history.versions.length ? null : buildLegacyReadFallbackVersion(quote);
+  const versions = fallbackVersion ? [fallbackVersion] : history.versions;
   const activeVersionId = String(quote.activeVersionId || "").trim();
-  const activeVersion = history.versions.find((item) => {
+  const activeVersion = versions.find((item) => {
     const id = String(item.versionId || item.id || "").trim();
     return id && id === activeVersionId;
-  }) || history.versions[0] || null;
+  }) || versions[0] || null;
 
   return {
-    source: history.source,
+    source: fallbackVersion ? `${history.source}-legacy-fallback` : history.source,
     quoteId: quote.id,
     activeVersionId: activeVersionId || String(activeVersion?.versionId || activeVersion?.id || "").trim(),
     version: activeVersion,
-    versions: history.versions
+    versions
   };
 }
 
@@ -1645,6 +1777,8 @@ export async function submitQuote({
       disposablesNote: settings?.disposablesNote || "",
       depositNotice: settings?.depositNotice || "",
       quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
+      pricingSettingsVersion: Math.max(0, Math.round(toNumber(settings?.pricingSettingsVersion, 0))),
+      pricingSettingsUpdatedAtISO: String(settings?.pricingSettingsUpdatedAtISO || "").trim(),
       crmEnabled: Boolean(settings?.crmEnabled),
       crmProvider,
       crmWebhookUrl: settings?.crmWebhookUrl || "",
@@ -1746,6 +1880,14 @@ export async function updateQuote({
   const nextOrganizationId = resolveQuoteOrganizationId(
     organizationId !== undefined ? organizationId : existing.organizationId
   );
+  const hasVersionHistory =
+    toVersionNumber(existing.latestVersionNumber, 0) > 0 || Boolean(String(existing.activeVersionId || "").trim());
+  if (!hasVersionHistory) {
+    await saveQuoteVersion(id, {
+      reason: "legacy_pre_edit_baseline",
+      organizationId: nextOrganizationId
+    });
+  }
 
   const existingPayment = hydratePayment(existing.payment);
   const nextDepositLink = String(form.depositLink || "").trim();
@@ -1925,6 +2067,8 @@ export async function updateQuote({
       disposablesNote: settings?.disposablesNote || "",
       depositNotice: settings?.depositNotice || "",
       quoteValidityDays: Number(settings?.quoteValidityDays || DEFAULT_VALIDITY_DAYS),
+      pricingSettingsVersion: Math.max(0, Math.round(toNumber(settings?.pricingSettingsVersion, 0))),
+      pricingSettingsUpdatedAtISO: String(settings?.pricingSettingsUpdatedAtISO || "").trim(),
       crmEnabled: Boolean(settings?.crmEnabled),
       crmProvider,
       crmWebhookUrl: settings?.crmWebhookUrl || "",
@@ -1945,16 +2089,21 @@ export async function updateQuote({
     updatedAtISO: nowISO
   };
 
-  await saveQuoteVersion(id);
-
   if (firebaseReady) {
     await updateDoc(quoteDocRef(id, existing.organizationId), patch);
     await syncPortalSnapshotFromQuoteDoc(id, existing.organizationId);
+    const versionResult = await saveQuoteVersion(id, {
+      reason: "quote_edit",
+      setActive: true,
+      organizationId: nextOrganizationId
+    });
     return {
       id,
       quoteNumber: existing.quoteNumber || "",
       portalKey: existing.portalKey || "",
-      storage: "firebase"
+      storage: "firebase",
+      activeVersionId: versionResult.versionId,
+      latestVersionNumber: versionResult.versionNumber
     };
   }
 
@@ -1972,11 +2121,18 @@ export async function updateQuote({
     throw new Error("Quote not found.");
   }
   localStorage.setItem(LOCAL_QUOTES_KEY, JSON.stringify(next));
+  const versionResult = await saveQuoteVersion(id, {
+    reason: "quote_edit",
+    setActive: true,
+    organizationId: nextOrganizationId
+  });
   return {
     id,
     quoteNumber: existing.quoteNumber || "",
     portalKey: existing.portalKey || "",
-    storage: "local"
+    storage: "local",
+    activeVersionId: versionResult.versionId,
+    latestVersionNumber: versionResult.versionNumber
   };
 }
 
@@ -2369,13 +2525,47 @@ export async function reopenQuote(id) {
   }
 
   const quote = await readQuoteById(quoteId);
+  const activeVersionResult = await getActiveQuoteVersion(quoteId, {
+    organizationId: quote.organizationId
+  });
+  const activeSnapshot =
+    activeVersionResult?.version?.snapshot && typeof activeVersionResult.version.snapshot === "object"
+      ? activeVersionResult.version.snapshot
+      : null;
   const nowISO = isoNow();
   const lifecycle = lifecycleObject("draft", nowISO, quote.lifecycle);
+  const restoredPatch = activeSnapshot
+    ? {
+      customer: activeSnapshot.customer || quote.customer,
+      customerEmailKey: normalizeEmail(
+        activeSnapshot.customerEmailKey || activeSnapshot.customer?.email || quote.customerEmailKey
+      ),
+      customerNameKey: normalizeCustomerNameKey(
+        activeSnapshot.customerNameKey || activeSnapshot.customer?.name || quote.customerNameKey
+      ),
+      eventTypeId: String(activeSnapshot.eventTypeId || activeSnapshot.selection?.eventTypeId || quote.eventTypeId || "").trim(),
+      ownerUid: String(activeSnapshot.ownerUid || quote.ownerUid || "").trim(),
+      ownerEmail: normalizeEmail(activeSnapshot.ownerEmail || quote.ownerEmail || ""),
+      event: activeSnapshot.event || quote.event,
+      selection: activeSnapshot.selection || quote.selection,
+      payment: hydratePayment(activeSnapshot.payment || quote.payment),
+      booking: hydrateBooking(activeSnapshot.booking || quote.booking),
+      totals: activeSnapshot.totals || quote.totals,
+      pricing: resolveQuotePricingSnapshot(activeSnapshot),
+      quoteMeta: activeSnapshot.quoteMeta || quote.quoteMeta,
+      source: activeSnapshot.source || quote.source,
+      expiresAtISO: activeSnapshot.expiresAtISO || quote.expiresAtISO
+    }
+    : {};
 
-  await saveQuoteVersion(quoteId);
+  await saveQuoteVersion(quoteId, {
+    reason: "reopen_quote_before_restore",
+    organizationId: quote.organizationId
+  });
 
   if (firebaseReady) {
     await updateDoc(quoteDocRef(quoteId, quote.organizationId), {
+      ...restoredPatch,
       status: "draft",
       deletedAtISO: "",
       updatedAtISO: nowISO,
@@ -2390,6 +2580,7 @@ export async function reopenQuote(id) {
     if (item.id !== quoteId) return item;
     return {
       ...item,
+      ...restoredPatch,
       status: "draft",
       deletedAtISO: "",
       updatedAtISO: nowISO,

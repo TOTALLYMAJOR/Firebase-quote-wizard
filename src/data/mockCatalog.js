@@ -395,6 +395,8 @@ export const DEFAULT_SETTINGS = {
   crmAutoSyncOnBooked: true,
   integrationRetryLimit: 3,
   integrationAuditRetention: 50,
+  pricingSettingsVersion: 0,
+  pricingSettingsUpdatedAtISO: "",
   featureFlags: { ...DEFAULT_FEATURE_FLAGS },
   guidedSellingEnabled: true,
   staffingLaborEnabled: true,
@@ -421,6 +423,13 @@ function normalizeId(value, fallback) {
   const raw = String(value || fallback || "").trim().toLowerCase();
   const sanitized = raw.replace(/[^\w-]+/g, "-").replace(/-{2,}/g, "-").replace(/^-|-$/g, "");
   return sanitized || fallback;
+}
+
+function normalizeISO(value, fallback = "") {
+  const raw = String(value || "").trim();
+  if (!raw) return fallback;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
 }
 
 function normalizePricingType(value, fallback = "per_event") {
@@ -861,6 +870,8 @@ export function normalizeCatalog(raw) {
         10,
         200
       ),
+      pricingSettingsVersion: Math.max(0, Math.round(toNumber(rawSettings.pricingSettingsVersion, 0))),
+      pricingSettingsUpdatedAtISO: normalizeISO(rawSettings.pricingSettingsUpdatedAtISO, ""),
       featureFlags,
       guidedSellingEnabled:
         toBoolean(rawSettings.guidedSellingEnabled, DEFAULT_SETTINGS.guidedSellingEnabled) &&

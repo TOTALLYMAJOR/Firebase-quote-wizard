@@ -186,7 +186,9 @@ export function normalizePricingInput(payload = {}) {
       taxRate: toNumber(source.settings?.taxRate, 0),
       depositPct: toNumber(source.settings?.depositPct, 0),
       defaultTaxRegion: toText(source.settings?.defaultTaxRegion),
-      defaultSeasonProfile: toText(source.settings?.defaultSeasonProfile)
+      defaultSeasonProfile: toText(source.settings?.defaultSeasonProfile),
+      pricingSettingsVersion: Math.max(0, toInt(source.settings?.pricingSettingsVersion, 0)),
+      pricingSettingsUpdatedAtISO: normalizeISO(source.settings?.pricingSettingsUpdatedAtISO, "")
     },
     metadata: {
       source: toText(source.source),
@@ -340,6 +342,26 @@ export function buildPricingSnapshotFromClientTotals({
       addonMultiplier: toNumber(totals.addonMultiplier, 1),
       rentalMultiplier: toNumber(totals.rentalMultiplier, 1),
       depositPct: toNumber(settings.depositPct, 0),
+      pricingSettingsVersion: Math.max(0, toInt(settings.pricingSettingsVersion, 0)),
+      pricingSettingsUpdatedAtISO: normalizeISO(settings.pricingSettingsUpdatedAtISO, ""),
+      settingsSnapshot: {
+        serviceFeePct: toNumber(settings.serviceFeePct, 0),
+        serviceFeeTiers: Array.isArray(settings.serviceFeeTiers) ? [...settings.serviceFeeTiers] : [],
+        taxRate: toNumber(settings.taxRate, 0),
+        taxRegions: Array.isArray(settings.taxRegions) ? [...settings.taxRegions] : [],
+        defaultTaxRegion: toText(settings.defaultTaxRegion),
+        depositPct: toNumber(settings.depositPct, 0),
+        seasonalProfiles: Array.isArray(settings.seasonalProfiles) ? [...settings.seasonalProfiles] : [],
+        defaultSeasonProfile: toText(settings.defaultSeasonProfile),
+        staffingLaborEnabled: settings.staffingLaborEnabled !== false,
+        perMileRate: toNumber(settings.perMileRate, 0),
+        longDistancePerMileRate: toNumber(settings.longDistancePerMileRate, 0),
+        deliveryThresholdMiles: toNumber(settings.deliveryThresholdMiles, 0),
+        bartenderRateTypes: Array.isArray(settings.bartenderRateTypes) ? [...settings.bartenderRateTypes] : [],
+        defaultBartenderRateType: toText(settings.defaultBartenderRateType),
+        staffingRateTypes: Array.isArray(settings.staffingRateTypes) ? [...settings.staffingRateTypes] : [],
+        defaultStaffingRateType: toText(settings.defaultStaffingRateType)
+      },
       pricingModeDefaults: {
         package: "per_person",
         addons: "per_person",
@@ -432,6 +454,8 @@ export function deriveLegacyPricingSnapshot(quote = {}) {
       packageMultiplier: toNumber(totals.packageMultiplier, 1),
       addonMultiplier: toNumber(totals.addonMultiplier, 1),
       rentalMultiplier: toNumber(totals.rentalMultiplier, 1),
+      pricingSettingsVersion: Math.max(0, toInt(meta.pricingSettingsVersion, 0)),
+      pricingSettingsUpdatedAtISO: normalizeISO(meta.pricingSettingsUpdatedAtISO || meta.updatedAtISO, ""),
       laborRateSnapshot:
         selection.laborRateSnapshot && typeof selection.laborRateSnapshot === "object"
           ? { ...selection.laborRateSnapshot }

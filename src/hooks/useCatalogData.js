@@ -81,6 +81,22 @@ function normalizeMenuSectionsFromEvent(categories = [], items = []) {
   });
 }
 
+function deriveEventTypesFromSettings(settings = {}) {
+  const templates = Array.isArray(settings?.eventTemplates) ? settings.eventTemplates : [];
+  const seen = new Set();
+  return templates
+    .map((template) => ({
+      id: String(template?.id || "").trim(),
+      name: String(template?.name || "").trim() || String(template?.id || "").trim()
+    }))
+    .filter((item) => {
+      if (!item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 async function loadFromFirebase() {
   const [pkgSnap, addSnap, rentSnap, settingsSnap] = await Promise.all([
     getDocs(collection(db, "catalogPackages")),
@@ -270,14 +286,17 @@ async function saveToFirebaseGlobal(catalog) {
 }
 
 export function useCatalogData({ enabled = true, organizationId = "" } = {}) {
+  const baseCatalog = enabled && !firebaseReady && !ALLOW_LOCAL_CATALOG_FALLBACK
+    ? blockedCatalog()
+    : defaultCatalog();
   const [state, setState] = useState(() => ({
     loading: enabled,
     saving: false,
     source: enabled ? (firebaseReady ? "firebase" : ALLOW_LOCAL_CATALOG_FALLBACK ? "local-defaults" : "firebase-required") : "auth-required",
     error: "",
     requiresFirebase: enabled && !firebaseReady && !ALLOW_LOCAL_CATALOG_FALLBACK,
-    eventTypes: [],
-    ...(enabled && !firebaseReady && !ALLOW_LOCAL_CATALOG_FALLBACK ? blockedCatalog() : defaultCatalog())
+    eventTypes: deriveEventTypesFromSettings(baseCatalog.settings),
+    ...baseCatalog
   }));
 
   useEffect(() => {
@@ -358,7 +377,7 @@ export function useCatalogData({ enabled = true, organizationId = "" } = {}) {
           loading: false,
           source: cached ? "local-cache" : "local-defaults",
           requiresFirebase: false,
-          eventTypes: [],
+          eventTypes: deriveEventTypesFromSettings(catalog.settings),
           ...catalog
         }));
       } catch (err) {
@@ -376,7 +395,7 @@ export function useCatalogData({ enabled = true, organizationId = "" } = {}) {
           error: ALLOW_LOCAL_CATALOG_FALLBACK
             ? err?.message || "Failed to load catalog."
             : "Firebase catalog is required in this environment. Configure Firebase to continue.",
-          eventTypes: [],
+          eventTypes: deriveEventTypesFromSettings(fallback.settings),
           ...fallback
         }));
       }
@@ -396,22 +415,37 @@ export function useCatalogData({ enabled = true, organizationId = "" } = {}) {
       return { ok: false, error: "Firebase catalog is required in this environment." };
     }
     const normalized = normalizeCatalog(nextCatalog);
+    const baseVersion = Math.max(
+      0,
+      Number(state.settings?.pricingSettingsVersion || 0),
+      Number(normalized.settings?.pricingSettingsVersion || 0)
+    );
+    const settingsVersion = baseVersion > 0 ? baseVersion + 1 : 1;
+    const settingsUpdatedAtISO = new Date().toISOString();
+    const normalizedWithPricingVersion = normalizeCatalog({
+      ...normalized,
+      settings: {
+        ...normalized.settings,
+        pricingSettingsVersion: settingsVersion,
+        pricingSettingsUpdatedAtISO: settingsUpdatedAtISO
+      }
+    });
     setState((prev) => ({ ...prev, saving: true, error: "" }));
 
     try {
       if (firebaseReady) {
-        await saveToFirebase(normalized, organizationId);
+        await saveToFirebase(normalizedWithPricingVersion, organizationId);
       }
 
       if (ALLOW_LOCAL_CATALOG_FALLBACK) {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify(toStorageCatalog(normalized)));
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(toStorageCatalog(normalizedWithPricingVersion)));
       }
       setState((prev) => ({
         ...prev,
         saving: false,
         source: firebaseReady ? "firebase" : "local-cache",
         requiresFirebase: false,
-        ...normalized
+        ...normalizedWithPricingVersion
       }));
       return { ok: true };
     } catch (err) {
@@ -426,7 +460,7 @@ export function useCatalogData({ enabled = true, organizationId = "" } = {}) {
       }));
       return { ok: false, error: err?.message || "Failed to save catalog." };
     }
-  }, [enabled, organizationId]);
+  }, [enabled, organizationId, state.settings?.pricingSettingsVersion]);
 
   const loadMenuByEvent = useCallback(async (eventTypeId) => {
     const nextEventTypeId = String(eventTypeId || "").trim();

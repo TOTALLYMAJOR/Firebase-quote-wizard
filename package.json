@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
+    "test:rules:firestore": "npx firebase-tools emulators:exec --only firestore \"vitest run src/rules/__tests__/firestore.rules.test.js\"",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "check:env": "node ./scripts/check-env.mjs",
@@ -30,6 +31,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^4.0.1",
     "@lhci/cli": "^0.14.0",
     "@playwright/test": "^1.54.2",
     "@vitejs/plugin-react": "^5.2.0",

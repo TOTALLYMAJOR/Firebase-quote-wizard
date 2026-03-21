@@ -80,7 +80,9 @@ const DEFAULT_PRICING_SETTINGS = {
   defaultBartenderRateType: "standard",
   staffingRateTypes: DEFAULT_STAFFING_RATE_TYPES,
   defaultStaffingRateType: "standard",
-  menuSections: []
+  menuSections: [],
+  pricingSettingsVersion: 0,
+  pricingSettingsUpdatedAtISO: ""
 };
 
 const STAFF_RULES = {
@@ -600,10 +602,72 @@ function normalizePricingSettings(settings = {}) {
     defaultBartenderRateType: toText(source.defaultBartenderRateType, DEFAULT_PRICING_SETTINGS.defaultBartenderRateType),
     staffingRateTypes: normalizeStaffingRateTypes(source.staffingRateTypes, serverRate, chefRate),
     defaultStaffingRateType: toText(source.defaultStaffingRateType, DEFAULT_PRICING_SETTINGS.defaultStaffingRateType),
-    menuSections: normalizeMenuSections(source.menuSections)
+    menuSections: normalizeMenuSections(source.menuSections),
+    pricingSettingsVersion: Math.max(0, toInt(source.pricingSettingsVersion, DEFAULT_PRICING_SETTINGS.pricingSettingsVersion)),
+    pricingSettingsUpdatedAtISO: normalizeISO(
+      source.pricingSettingsUpdatedAtISO || source.updatedAtISO || "",
+      DEFAULT_PRICING_SETTINGS.pricingSettingsUpdatedAtISO
+    )
   };
 
   return normalized;
+}
+
+function buildRulesSettingsSnapshot(settings = {}) {
+  const serviceFeeTiers = Array.isArray(settings.serviceFeeTiers) ? settings.serviceFeeTiers : [];
+  const taxRegions = Array.isArray(settings.taxRegions) ? settings.taxRegions : [];
+  const seasonalProfiles = Array.isArray(settings.seasonalProfiles) ? settings.seasonalProfiles : [];
+  const bartenderRateTypes = Array.isArray(settings.bartenderRateTypes) ? settings.bartenderRateTypes : [];
+  const staffingRateTypes = Array.isArray(settings.staffingRateTypes) ? settings.staffingRateTypes : [];
+
+  return {
+    pricingSettingsVersion: Math.max(0, toInt(settings.pricingSettingsVersion, 0)),
+    pricingSettingsUpdatedAtISO: normalizeISO(settings.pricingSettingsUpdatedAtISO, ""),
+    serviceFeePct: toNumber(settings.serviceFeePct, 0),
+    serviceFeeTiers: serviceFeeTiers.map((tier) => ({
+      id: toText(tier.id),
+      minGuests: Math.max(0, toInt(tier.minGuests, 0)),
+      maxGuests: Math.max(0, toInt(tier.maxGuests, 0)),
+      pct: toNumber(tier.pct, 0)
+    })),
+    taxRate: toNumber(settings.taxRate, 0),
+    taxRegions: taxRegions.map((region) => ({
+      id: toText(region.id),
+      name: toText(region.name),
+      rate: toNumber(region.rate, 0)
+    })),
+    defaultTaxRegion: toText(settings.defaultTaxRegion),
+    depositPct: toNumber(settings.depositPct, 0),
+    seasonalProfiles: seasonalProfiles.map((profile) => ({
+      id: toText(profile.id),
+      name: toText(profile.name),
+      startMonth: Math.max(1, toInt(profile.startMonth, 1)),
+      startDay: Math.max(1, toInt(profile.startDay, 1)),
+      endMonth: Math.max(1, toInt(profile.endMonth, 12)),
+      endDay: Math.max(1, toInt(profile.endDay, 31)),
+      packageMultiplier: toNumber(profile.packageMultiplier, 1),
+      addonMultiplier: toNumber(profile.addonMultiplier, 1),
+      rentalMultiplier: toNumber(profile.rentalMultiplier, 1)
+    })),
+    defaultSeasonProfile: toText(settings.defaultSeasonProfile),
+    staffingLaborEnabled: settings.staffingLaborEnabled !== false,
+    perMileRate: toNumber(settings.perMileRate, 0),
+    longDistancePerMileRate: toNumber(settings.longDistancePerMileRate, 0),
+    deliveryThresholdMiles: toNumber(settings.deliveryThresholdMiles, 0),
+    bartenderRateTypes: bartenderRateTypes.map((item) => ({
+      id: toText(item.id),
+      name: toText(item.name),
+      rate: toNumber(item.rate, 0)
+    })),
+    defaultBartenderRateType: toText(settings.defaultBartenderRateType),
+    staffingRateTypes: staffingRateTypes.map((item) => ({
+      id: toText(item.id),
+      name: toText(item.name),
+      serverRate: toNumber(item.serverRate, 0),
+      chefRate: toNumber(item.chefRate, 0)
+    })),
+    defaultStaffingRateType: toText(settings.defaultStaffingRateType)
+  };
 }
 
 function normalizeCatalogBundle(bundle = {}) {
@@ -1161,7 +1225,9 @@ function calculateAuthoritativePricing(input, catalog, settings, catalogSource =
       taxRate: toNumber(settings.taxRate, 0),
       depositPct: toNumber(settings.depositPct, 0),
       defaultTaxRegion: toText(settings.defaultTaxRegion),
-      defaultSeasonProfile: toText(settings.defaultSeasonProfile)
+      defaultSeasonProfile: toText(settings.defaultSeasonProfile),
+      pricingSettingsVersion: Math.max(0, toInt(settings.pricingSettingsVersion, 0)),
+      pricingSettingsUpdatedAtISO: normalizeISO(settings.pricingSettingsUpdatedAtISO, "")
     },
     metadata: {
       source: toText(input.metadata.source),
@@ -1206,6 +1272,9 @@ function calculateAuthoritativePricing(input, catalog, settings, catalogSource =
       addonMultiplier,
       rentalMultiplier,
       depositPct: toNumber(settings.depositPct, 0),
+      pricingSettingsVersion: Math.max(0, toInt(settings.pricingSettingsVersion, 0)),
+      pricingSettingsUpdatedAtISO: normalizeISO(settings.pricingSettingsUpdatedAtISO, ""),
+      settingsSnapshot: buildRulesSettingsSnapshot(settings),
       staffingLaborEnabled,
       laborRateSnapshot: {
         bartenderRateApplied: laborRates.bartenderRateApplied,
