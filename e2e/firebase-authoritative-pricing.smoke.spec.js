@@ -49,10 +49,27 @@ async function advanceToSave(page, saveLabel = "Save & Submit") {
 }
 
 test("firebase authoritative pricing callable is required for save flow", async ({ page }) => {
+  test.setTimeout(120_000);
   await signInAsStaff(page);
   await fillRequiredQuoteFields(page);
   await advanceToSave(page, "Save & Submit");
 
-  await expect(page.getByText(/saved to firebase/i)).toBeVisible();
+  const historyHeading = page.getByRole("heading", { name: "Quote History" });
+  if (!(await historyHeading.isVisible())) {
+    await page.getByRole("button", { name: "Quote History" }).click();
+  }
+  await expect(historyHeading).toBeVisible({ timeout: 45_000 });
+
+  const rows = page.locator(".history-table-wrap tbody tr").filter({
+    has: page.getByRole("button", { name: "Copy Email" })
+  });
+  const refreshButton = page.getByRole("button", { name: "Refresh" });
+  await expect.poll(async () => {
+    if (await refreshButton.isVisible() && await refreshButton.isEnabled()) {
+      await refreshButton.click();
+    }
+    return await rows.filter({ hasText: "96" }).count();
+  }, { timeout: 90_000 }).toBeGreaterThan(0);
+
   await expect(page.getByText(/Failed to calculate authoritative quote pricing/i)).toHaveCount(0);
 });

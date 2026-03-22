@@ -1,5 +1,6 @@
 const functions = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const { FieldValue } = require("firebase-admin/firestore");
 const Stripe = require("stripe");
 const twilio = require("twilio");
 const {
@@ -236,13 +237,13 @@ async function ensureOrganizationBootstrapInternal({
           slug: slugify(organizationSlug || resolvedName || organizationId, organizationId.slice(0, 12)),
           ownerUid: normalizedUid,
           ownerEmail: normalizedEmail,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp()
         }, { merge: true });
         createdOrganization = true;
       } else {
         tx.set(orgRef, {
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+          updatedAt: FieldValue.serverTimestamp()
         }, { merge: true });
       }
     }
@@ -251,10 +252,10 @@ async function ensureOrganizationBootstrapInternal({
       role,
       email: normalizedEmail,
       organizationId: organizationId || "",
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      updatedAt: FieldValue.serverTimestamp()
     };
     if (!roleSnap.exists) {
-      rolePayload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      rolePayload.createdAt = FieldValue.serverTimestamp();
     }
 
     tx.set(roleRef, rolePayload, { merge: true });

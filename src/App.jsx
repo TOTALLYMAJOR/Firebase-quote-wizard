@@ -53,6 +53,39 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function toPositiveTimeout(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1_000, Math.round(parsed));
+}
+
+async function withTimeout(promise, timeoutMs, operation = "operation") {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
+}
+
+const SAVE_FLOW_TIMEOUT_MS = toPositiveTimeout(
+  import.meta.env.VITE_SAVE_FLOW_TIMEOUT_MS,
+  30_000
+);
+const OWNER_SMS_TIMEOUT_MS = toPositiveTimeout(
+  import.meta.env.VITE_OWNER_SMS_TIMEOUT_MS,
+  15_000
+);
+
 function toOptionalNumber(value) {
   if (value === null || value === undefined || value === "") return "";
   const n = Number(value);
@@ -719,30 +752,34 @@ export default function App() {
         }
       }
 
-      const result = isEditingQuote
-        ? await updateQuote({
-          quoteId: editingQuote.id,
-          form,
-          totals: totalsForPersistence,
-          pricingSnapshot,
-          catalogSource: catalog.source,
-          settings: effectiveSettings,
-          catalog,
-          ownerUid: authSession.user?.uid || "",
-          ownerEmail: authSession.user?.email || "",
-          organizationId: authSession.organizationId
-        })
-        : await submitQuote({
-          form,
-          totals: totalsForPersistence,
-          pricingSnapshot,
-          catalogSource: catalog.source,
-          settings: effectiveSettings,
-          catalog,
-          ownerUid: authSession.user?.uid || "",
-          ownerEmail: authSession.user?.email || "",
-          organizationId: authSession.organizationId
-        });
+      const result = await withTimeout(
+        isEditingQuote
+          ? updateQuote({
+            quoteId: editingQuote.id,
+            form,
+            totals: totalsForPersistence,
+            pricingSnapshot,
+            catalogSource: catalog.source,
+            settings: effectiveSettings,
+            catalog,
+            ownerUid: authSession.user?.uid || "",
+            ownerEmail: authSession.user?.email || "",
+            organizationId: authSession.organizationId
+          })
+          : submitQuote({
+            form,
+            totals: totalsForPersistence,
+            pricingSnapshot,
+            catalogSource: catalog.source,
+            settings: effectiveSettings,
+            catalog,
+            ownerUid: authSession.user?.uid || "",
+            ownerEmail: authSession.user?.email || "",
+            organizationId: authSession.organizationId
+          }),
+        SAVE_FLOW_TIMEOUT_MS,
+        isEditingQuote ? "updateQuote" : "submitQuote"
+      );
       const basePath = `${window.location.origin}${window.location.pathname}`;
       const portalLink = result.portalKey ? `${basePath}?portal=${result.portalKey}` : "";
 
@@ -763,10 +800,14 @@ export default function App() {
       let smsSuffix = "";
       if (result.storage === "firebase") {
         try {
-          const smsResult = await notifyOwnerNewQuote({
-            quoteId: result.id,
-            portalLink
-          });
+          const smsResult = await withTimeout(
+            notifyOwnerNewQuote({
+              quoteId: result.id,
+              portalLink
+            }),
+            OWNER_SMS_TIMEOUT_MS,
+            "notifyOwnerNewQuote"
+          );
           if (smsResult?.sms?.sent) {
             smsSuffix = " Owner SMS sent.";
           } else if (smsResult?.sms?.reason === "sms_not_configured") {

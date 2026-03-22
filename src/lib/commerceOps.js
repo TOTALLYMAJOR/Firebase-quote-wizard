@@ -2,11 +2,42 @@ import { httpsCallable } from "firebase/functions";
 import { cloudFunctions, firebaseReady } from "./firebase";
 
 const MAX_EMAIL_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+const DEFAULT_SAVE_CALLABLE_TIMEOUT_MS = 45_000;
+
+function toPositiveTimeout(value, fallback) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1_000, Math.round(parsed));
+}
+
+const SAVE_CALLABLE_TIMEOUT_MS = toPositiveTimeout(
+  import.meta.env?.VITE_SAVE_CALLABLE_TIMEOUT_MS
+    ?? import.meta.env?.VITE_CALLABLE_TIMEOUT_MS,
+  DEFAULT_SAVE_CALLABLE_TIMEOUT_MS
+);
 
 function ensureFunctionsReady() {
   if (!firebaseReady || !cloudFunctions) {
     throw new Error("Cloud Functions unavailable. Check Firebase env configuration.");
   }
+}
+
+async function withTimeout(promise, timeoutMs, operation) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+
+    Promise.resolve(promise)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+  });
 }
 
 function estimateBase64SizeBytes(base64Value = "") {
@@ -27,10 +58,14 @@ function assertAttachmentWithinEmailLimit(attachment) {
 export async function notifyOwnerNewQuote({ quoteId, portalLink = "" }) {
   ensureFunctionsReady();
   const call = httpsCallable(cloudFunctions, "notifyOwnerNewQuote");
-  const result = await call({
-    quoteId,
-    portalLink
-  });
+  const result = await withTimeout(
+    call({
+      quoteId,
+      portalLink
+    }),
+    SAVE_CALLABLE_TIMEOUT_MS,
+    "notifyOwnerNewQuote"
+  );
   return result.data || {};
 }
 
@@ -71,7 +106,11 @@ export async function calculateQuotePricing({ organizationId = "", pricingInput 
   if (form && typeof form === "object") {
     payload.form = form;
   }
-  const result = await call(payload);
+  const result = await withTimeout(
+    call(payload),
+    SAVE_CALLABLE_TIMEOUT_MS,
+    "calculateQuotePricing"
+  );
   return result.data || {};
 }
 
